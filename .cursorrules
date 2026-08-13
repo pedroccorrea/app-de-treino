@@ -1,22 +1,13 @@
-# Regras do Projeto (Meu App de Treino)
+# Regras Operacionais da IA para o Projeto (Meu App de Treino)
 
-## Perfil do Desenvolvedor e Metodologia
-- O usuário está em processo de evolução como desenvolvedor Fullstack.
-- SEMPRE explique o "porquê" das decisões arquiteturais tomadas antes de apresentar o código.
-- Prefira soluções limpas, modulares e focadas em legibilidade.
+1. **Contexto Geral & Visão do Produto:**
+   - Leia e siga ESTRITAMENTE todas as diretrizes, roadmap e padrões definidos no arquivo `PROJECT_CONTEXT.md`.
 
-## Stack Tecnológica
-- **Backend:** PHP 8.5+ com Laravel (usar SQLite para banco de dados local).
-- **Frontend:** Vue 3 utilizando estritamente Composition API com `<script setup>`.
-- **Comunicação:** Inertia.js (use `useForm`, `<Link>`, `router.visit` em vez de chamadas Axios manuais para rotas da aplicação).
-- **Estilização:** Tailwind CSS (foco em responsividade mobile-first, suporte a dark mode e destaque para a paleta violet/purple `#8B5CF6`).
+2. **Diretrizes de Implementação:**
+   - **Backend:** Laravel com PHP 8.5+, SQLite, Service Pattern para regras de negócio (`app/Services/`), FormRequests para validação, e PHP Enums para tipos fixos.
+   - **Frontend:** Vue 3 estritamente com `<script setup>` (Composition API), Inertia.js para comunicação e navegação SPA, Tailwind CSS (Mobile-First, Dark mode, acento roxo violeta `#8B5CF6`).
 
-## Padrões de Código
-1. **Laravel:**
-   - Regras de negócio complexas devem ir em `app/Services/` (Service Pattern).
-   - Validações devem usar `FormRequest` dedicados.
-   - Rotas nomeadas e organizadas em `routes/web.php`.
-
-2. **Vue 3:**
-   - Componentes na pasta `resources/js/Pages/` para páginas do Inertia e `resources/js/Components/` para itens reutilizáveis.
-   - Código conciso e reativo usando `ref`, `computed` e props tipadas.
+3. **Didática & Mentoria:**
+   - O desenvolvedor prioriza o entendimento dos conceitos e da arquitetura.
+   - Sempre explique brevemente o "porquê" das decisões arquiteturais tomadas.
+   - Entregue código modular, limpo e legível.
