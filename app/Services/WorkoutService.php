@@ -31,12 +31,12 @@ class WorkoutService
             ->global()
             ->orderBy('name')
             ->get()
-            ->groupBy(fn (Exercise $exercise) => $exercise->primary_muscle_group->value)
+            ->groupBy(fn(Exercise $exercise) => $exercise->primary_muscle_group->value)
             ->map(function ($exercises, string $muscleKey) {
                 return [
                     'muscle' => MuscleGroup::from($muscleKey)->label(),
                     'muscle_key' => $muscleKey,
-                    'exercises' => $exercises->map(fn (Exercise $exercise) => [
+                    'exercises' => $exercises->map(fn(Exercise $exercise) => [
                         'id' => $exercise->id,
                         'name' => $exercise->name,
                         'primary_muscle' => $exercise->primary_muscle_group->label(),
@@ -66,6 +66,22 @@ class WorkoutService
             }
 
             return $workout->load('exercises');
+        });
+    }
+
+    /**
+     * Persists the new sort order of exercises in the `workout_exercises` pivot.
+     *
+     * @param  array<int>  $exerciseIds  Ordered array of exercise IDs.
+     */
+    public function reorderExercises(Workout $workout, array $exerciseIds): void
+    {
+        DB::transaction(function () use ($workout, $exerciseIds) {
+            foreach ($exerciseIds as $position => $exerciseId) {
+                $workout->workoutExercises()
+                    ->where('exercise_id', $exerciseId)
+                    ->update(['order' => $position]);
+            }
         });
     }
 }

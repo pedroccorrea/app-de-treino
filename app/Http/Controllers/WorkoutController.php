@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\StoreWorkoutRequest;
 use App\Models\Workout;
 use App\Services\WorkoutService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -15,10 +16,17 @@ class WorkoutController extends Controller
     public function index(Request $request, WorkoutService $workoutService): Response
     {
         $workouts = $workoutService->getUserWorkouts($request->user())
-            ->map(fn (Workout $workout) => $this->formatWorkout($workout));
+            ->map(fn(Workout $workout) => $this->formatWorkout($workout));
 
         return Inertia::render('Workouts/Index', [
             'workouts' => $workouts,
+            'exercisesCatalog' => $workoutService->getAvailableExercises(),
+        ]);
+    }
+
+    public function create(WorkoutService $workoutService): Response
+    {
+        return Inertia::render('Workouts/Create', [
             'exercisesCatalog' => $workoutService->getAvailableExercises(),
         ]);
     }
@@ -43,6 +51,20 @@ class WorkoutController extends Controller
             ->with('success', 'Treino criado com sucesso!');
     }
 
+    public function reorder(Request $request, Workout $workout, WorkoutService $workoutService): RedirectResponse
+    {
+        abort_if($workout->user_id !== $request->user()->id, 403);
+
+        $validated = $request->validate([
+            'exercise_ids' => ['required', 'array'],
+            'exercise_ids.*' => ['required', 'integer'],
+        ]);
+
+        $workoutService->reorderExercises($workout, $validated['exercise_ids']);
+
+        return redirect()->back();
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -64,7 +86,7 @@ class WorkoutController extends Controller
             'description' => $workout->description,
             'exercises_count' => $workout->exercises->count(),
             'muscle_groups' => $muscleGroups->unique()->values()->all(),
-            'exercises' => $workout->exercises->map(fn ($exercise) => [
+            'exercises' => $workout->exercises->map(fn($exercise) => [
                 'id' => $exercise->id,
                 'name' => $exercise->name,
                 'primary_muscle' => $exercise->primary_muscle_group->label(),

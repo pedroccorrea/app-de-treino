@@ -1,7 +1,7 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, Link } from '@inertiajs/vue3';
-import { computed } from 'vue';
+import { Head, Link, router } from '@inertiajs/vue3';
+import { computed, ref } from 'vue';
 
 const props = defineProps({
     workout: {
@@ -10,25 +10,78 @@ const props = defineProps({
     },
 });
 
+// Drag & Drop state
+const exercises = ref([...props.workout.exercises].sort((a, b) => a.order - b.order));
+const draggingIndex = ref(null);
+const dragOverIndex = ref(null);
+
 const formatTarget = (exercise) => {
     const parts = [];
-
     if (exercise.target_sets) {
-        parts.push(
-            `${exercise.target_sets} ${
-                exercise.target_sets === 1 ? 'série' : 'séries'
-            }`,
-        );
+        parts.push(`${exercise.target_sets} ${exercise.target_sets === 1 ? 'série' : 'séries'}`);
     }
-
     if (exercise.target_reps) {
         parts.push(exercise.target_reps + ' reps');
     }
-
     return parts.length ? parts.join(' × ') : 'Metas não definidas';
 };
 
-const hasExercises = computed(() => props.workout.exercises.length > 0);
+const hasExercises = computed(() => exercises.value.length > 0);
+
+// --- Drag & Drop handlers ---
+const onDragStart = (index) => {
+    draggingIndex.value = index;
+};
+
+const onDragOver = (e, index) => {
+    e.preventDefault();
+    dragOverIndex.value = index;
+};
+
+const onDrop = (targetIndex) => {
+    if (draggingIndex.value === null || draggingIndex.value === targetIndex) {
+        draggingIndex.value = null;
+        dragOverIndex.value = null;
+        return;
+    }
+    const reordered = [...exercises.value];
+    const [moved] = reordered.splice(draggingIndex.value, 1);
+    reordered.splice(targetIndex, 0, moved);
+    exercises.value = reordered;
+    draggingIndex.value = null;
+    dragOverIndex.value = null;
+    persistOrder();
+};
+
+const onDragEnd = () => {
+    draggingIndex.value = null;
+    dragOverIndex.value = null;
+};
+
+// --- Reorder buttons ---
+const moveUp = (index) => {
+    if (index === 0) return;
+    const arr = [...exercises.value];
+    [arr[index - 1], arr[index]] = [arr[index], arr[index - 1]];
+    exercises.value = arr;
+    persistOrder();
+};
+
+const moveDown = (index) => {
+    if (index === exercises.value.length - 1) return;
+    const arr = [...exercises.value];
+    [arr[index], arr[index + 1]] = [arr[index + 1], arr[index]];
+    exercises.value = arr;
+    persistOrder();
+};
+
+const persistOrder = () => {
+    router.patch(
+        route('workouts.reorder', props.workout.id),
+        { exercise_ids: exercises.value.map((e) => e.id) },
+        { preserveScroll: true, preserveState: true },
+    );
+};
 </script>
 
 <template>
@@ -41,25 +94,13 @@ const hasExercises = computed(() => props.workout.exercises.length > 0);
                     :href="route('workouts.index')"
                     class="inline-flex items-center gap-1 text-sm font-medium text-gray-500 transition hover:text-violet-500 dark:text-gray-400 dark:hover:text-violet-400"
                 >
-                    <svg
-                        class="h-4 w-4"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                    >
-                        <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="2"
-                            d="M15 19l-7-7 7-7"
-                        />
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
                     </svg>
                     Voltar aos treinos
                 </Link>
 
-                <h2
-                    class="text-xl font-semibold leading-tight text-gray-800 dark:text-gray-200"
-                >
+                <h2 class="text-xl font-semibold leading-tight text-gray-800 dark:text-gray-200">
                     {{ workout.name }}
                 </h2>
             </div>
@@ -70,6 +111,7 @@ const hasExercises = computed(() => props.workout.exercises.length > 0);
                 <div
                     class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800"
                 >
+                    <!-- Description & Muscle Groups -->
                     <div class="border-b border-gray-100 p-6 dark:border-gray-700">
                         <p
                             v-if="workout.description"
@@ -77,17 +119,11 @@ const hasExercises = computed(() => props.workout.exercises.length > 0);
                         >
                             {{ workout.description }}
                         </p>
-                        <p
-                            v-else
-                            class="text-sm italic text-gray-500 dark:text-gray-400"
-                        >
+                        <p v-else class="text-sm italic text-gray-500 dark:text-gray-400">
                             Sem descrição para este treino.
                         </p>
 
-                        <div
-                            v-if="workout.muscle_groups.length"
-                            class="mt-4 flex flex-wrap gap-2"
-                        >
+                        <div v-if="workout.muscle_groups.length" class="mt-4 flex flex-wrap gap-2">
                             <span
                                 v-for="muscle in workout.muscle_groups"
                                 :key="muscle"
@@ -98,69 +134,126 @@ const hasExercises = computed(() => props.workout.exercises.length > 0);
                         </div>
                     </div>
 
+                    <!-- Exercises List -->
                     <div class="p-6">
-                        <h3
-                            class="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
-                        >
-                            Exercícios ({{ workout.exercises_count }})
-                        </h3>
+                        <div class="mb-4 flex items-center justify-between">
+                            <h3
+                                class="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
+                            >
+                                Exercícios ({{ exercises.length }})
+                            </h3>
+                            <p
+                                v-if="hasExercises"
+                                class="text-xs text-gray-400 dark:text-gray-500"
+                            >
+                                ⠿ Arraste para reordenar
+                            </p>
+                        </div>
 
+                        <!-- Empty state -->
                         <div
                             v-if="!hasExercises"
                             class="rounded-xl border border-dashed border-gray-300 px-4 py-10 text-center dark:border-gray-600"
                         >
                             <p class="text-sm text-gray-500 dark:text-gray-400">
-                                Este treino ainda não possui exercícios
-                                cadastrados.
+                                Este treino ainda não possui exercícios cadastrados.
                             </p>
                         </div>
 
-                        <ol v-else class="space-y-3">
+                        <!-- Draggable list -->
+                        <ol v-else class="space-y-2">
                             <li
-                                v-for="(exercise, index) in workout.exercises"
+                                v-for="(exercise, index) in exercises"
                                 :key="exercise.id"
-                                class="flex items-start gap-4 rounded-xl border border-gray-100 bg-gray-50/50 p-4 transition hover:border-violet-500/30 dark:border-gray-700 dark:bg-gray-900/40"
+                                draggable="true"
+                                @dragstart="onDragStart(index)"
+                                @dragover="(e) => onDragOver(e, index)"
+                                @drop="onDrop(index)"
+                                @dragend="onDragEnd"
+                                :class="[
+                                    'group flex items-center gap-3 rounded-xl border p-4 transition-all duration-200 cursor-grab active:cursor-grabbing',
+                                    dragOverIndex === index && draggingIndex !== index
+                                        ? 'border-violet-500 bg-violet-500/5 dark:bg-violet-500/10'
+                                        : 'border-gray-100 bg-gray-50/50 hover:border-violet-500/30 dark:border-gray-700 dark:bg-gray-900/40',
+                                    draggingIndex === index ? 'opacity-40' : 'opacity-100',
+                                ]"
                             >
+                                <!-- Drag handle -->
                                 <span
-                                    class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-violet-500/10 text-sm font-bold text-violet-600 dark:text-violet-400"
+                                    class="select-none text-lg text-gray-300 dark:text-gray-600 group-hover:text-violet-400 transition-colors"
+                                    title="Arrastar para reordenar"
+                                >
+                                    ⠿
+                                </span>
+
+                                <!-- Order number -->
+                                <span
+                                    class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-violet-500/10 text-xs font-bold text-violet-600 dark:text-violet-400"
                                 >
                                     {{ index + 1 }}
                                 </span>
 
+                                <!-- Exercise info -->
                                 <div class="min-w-0 flex-1">
-                                    <p
-                                        class="font-medium text-gray-900 dark:text-gray-100"
-                                    >
+                                    <p class="font-medium text-gray-900 dark:text-gray-100">
                                         {{ exercise.name }}
                                     </p>
-                                    <p
-                                        class="mt-0.5 text-xs text-gray-500 dark:text-gray-400"
-                                    >
+                                    <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
                                         {{ exercise.primary_muscle }}
                                     </p>
                                     <p
-                                        class="mt-2 text-sm font-semibold text-violet-600 dark:text-violet-400"
+                                        class="mt-1.5 text-sm font-semibold text-violet-600 dark:text-violet-400"
                                     >
                                         {{ formatTarget(exercise) }}
                                     </p>
+                                </div>
+
+                                <!-- Reorder buttons (visible on hover) -->
+                                <div
+                                    class="flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                                >
+                                    <button
+                                        type="button"
+                                        @click.stop="moveUp(index)"
+                                        :disabled="index === 0"
+                                        class="rounded-md p-1 text-gray-400 transition hover:bg-violet-500/10 hover:text-violet-500 disabled:opacity-20 disabled:cursor-not-allowed"
+                                        title="Mover para cima"
+                                    >
+                                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 15l7-7 7 7" />
+                                        </svg>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        @click.stop="moveDown(index)"
+                                        :disabled="index === exercises.length - 1"
+                                        class="rounded-md p-1 text-gray-400 transition hover:bg-violet-500/10 hover:text-violet-500 disabled:opacity-20 disabled:cursor-not-allowed"
+                                        title="Mover para baixo"
+                                    >
+                                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7" />
+                                        </svg>
+                                    </button>
                                 </div>
                             </li>
                         </ol>
                     </div>
 
+                    <!-- Start Workout Footer -->
                     <div
                         class="border-t border-gray-100 bg-gray-50/80 p-6 dark:border-gray-700 dark:bg-gray-900/30"
                     >
-                        <button
+                        <Link
+                            :href="route('workouts.start', workout.id)"
+                            method="post"
+                            as="button"
                             type="button"
-                            class="flex w-full items-center justify-center gap-2 rounded-xl bg-violet-500 px-6 py-3.5 text-base font-semibold text-white shadow-lg shadow-violet-500/25 transition hover:bg-violet-600 hover:shadow-violet-500/40 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800"
+                            class="flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-6 py-3.5 text-base font-bold text-white shadow-lg shadow-violet-500/25 transition hover:bg-violet-700 hover:shadow-violet-500/40 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800"
                         >
                             🔥 Iniciar Treino
-                        </button>
-                        <p
-                            class="mt-2 text-center text-xs text-gray-500 dark:text-gray-400"
-                        >
-                            Em breve: registre séries, peso e RPE em tempo real.
+                        </Link>
+                        <p class="mt-2 text-center text-xs text-gray-500 dark:text-gray-400">
+                            Registre suas séries, repetições, pesos e tempo de descanso em tempo real.
                         </p>
                     </div>
                 </div>
