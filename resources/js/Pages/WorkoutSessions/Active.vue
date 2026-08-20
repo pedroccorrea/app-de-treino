@@ -32,7 +32,8 @@ const pendingNavIndex = ref(null);
 const showFinishModal = ref(false);
 const finishing = ref(false);
 
-// ─── Exercise timer ───────────────────────────────────────────────────────────
+// ─── Exercise timer (runs while a set is "executing") ─────────────────────────
+// Timer starts when user clicks "▶ Iniciar Série X", stops when set is saved.
 const exerciseTimerActive = ref(false);
 const exerciseTimerSeconds = ref(0);
 let exerciseTimerInterval = null;
@@ -49,6 +50,11 @@ const startExerciseTimer = () => {
 const stopExerciseTimer = () => {
     exerciseTimerActive.value = false;
     clearInterval(exerciseTimerInterval);
+};
+
+const resetExerciseTimer = () => {
+    stopExerciseTimer();
+    exerciseTimerSeconds.value = 0;
 };
 
 const exerciseTimerDisplay = computed(() => {
@@ -77,93 +83,79 @@ const elapsedDisplay = computed(() => {
         : `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
 });
 
-// ─── Sets state (per exercise, per set number) ────────────────────────────────
+// ─── Set States: waiting | running | done ─────────────────────────────────────
+// setState[exerciseId][setNumber] = 'waiting' | 'running' | 'done'
+const setStates = ref({});
+
 // setInputs[exerciseId][setNumber] = { weight, reps }
 const setInputs = ref({});
-// Which set is "active" (focused) per exercise
-const activeSetNumber = ref({});
-// Which sets have been saved
+
+// Which sets have been persisted to backend
 const savedSets = ref({}); // { [exerciseId]: Set<setNumber> }
+
+// Extra sets added dynamically
+const extraSets = ref({});
 
 const initSetsForExercise = (exercise) => {
     const exId = exercise.id;
-    if (!setInputs.value[exId]) {
-        setInputs.value[exId] = {};
-    }
-    if (!savedSets.value[exId]) {
-        savedSets.value[exId] = new Set();
-    }
 
-    // Pre-fill from existing setLogs
-    const logsForExercise = props.setLogs.filter((l) => l.exercise_id === exId);
-    for (const log of logsForExercise) {
+    if (!setInputs.value[exId]) setInputs.value[exId] = {};
+    if (!savedSets.value[exId]) savedSets.value[exId] = new Set();
+    if (!setStates.value[exId]) setStates.value[exId] = {};
+    if (!extraSets.value[exId]) extraSets.value[exId] = 0;
+
+    const targetSets = exercise.target_sets ?? 3;
+    const last = props.lastLogs?.[exId];
+
+    // Pre-fill from persisted setLogs
+    for (const log of props.setLogs.filter((l) => l.exercise_id === exId)) {
         setInputs.value[exId][log.set_number] = {
             weight: log.weight ?? '',
             reps: log.reps ?? '',
         };
         savedSets.value[exId].add(log.set_number);
+        setStates.value[exId][log.set_number] = 'done';
     }
 
-    // Default first set input if not pre-filled
-    const targetSets = exercise.target_sets ?? 3;
+    // Init remaining sets
     for (let n = 1; n <= targetSets; n++) {
         if (!setInputs.value[exId][n]) {
-            const last = props.lastLogs?.[exId];
             setInputs.value[exId][n] = {
                 weight: last?.weight ?? '',
                 reps: last?.reps ?? '',
             };
         }
+        if (!setStates.value[exId][n]) {
+            setStates.value[exId][n] = 'waiting';
+        }
     }
-
-    // Track extra sets added dynamically
-    if (!extraSets.value[exId]) {
-        extraSets.value[exId] = 0;
-    }
-
-    // First active set is the first unsaved one
-    if (!activeSetNumber.value[exId]) {
-        const firstUnsaved = getFirstUnsavedSet(exId, exercise.target_sets ?? 3);
-        activeSetNumber.value[exId] = firstUnsaved ?? 1;
-    }
-};
-
-// ─── Extra sets ───────────────────────────────────────────────────────────────
-const extraSets = ref({});
-
-const totalSetsForExercise = (exercise) => {
-    return (exercise.target_sets ?? 3) + (extraSets.value[exercise.id] ?? 0);
-};
-
-const addExtraSet = (exercise) => {
-    const exId = exercise.id;
-    extraSets.value[exId] = (extraSets.value[exId] ?? 0) + 1;
-    const newSetNum = totalSetsForExercise(exercise);
-    const last = props.lastLogs?.[exId];
-    setInputs.value[exId][newSetNum] = {
-        weight: last?.weight ?? '',
-        reps: last?.reps ?? '',
-    };
-    activeSetNumber.value[exId] = newSetNum;
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-const getFirstUnsavedSet = (exId, targetSets) => {
-    const total = (targetSets ?? 3) + (extraSets.value[exId] ?? 0);
-    for (let n = 1; n <= total; n++) {
-        if (!savedSets.value[exId]?.has(n)) return n;
-    }
-    return null;
-};
+const totalSetsForExercise = (exercise) =>
+    (exercise.target_sets ?? 3) + (extraSets.value[exercise.id] ?? 0);
 
-const isSetSaved = (exId, setNumber) => savedSets.value[exId]?.has(setNumber) ?? false;
+const isSetSaved = (exId, n) => savedSets.value[exId]?.has(n) ?? false;
+
+const getSetState = (exId, n) => setStates.value[exId]?.[n] ?? 'waiting';
 
 const isExerciseDone = (exercise) => {
     const total = totalSetsForExercise(exercise);
+    if (total === 0) return false;
     for (let n = 1; n <= total; n++) {
         if (!isSetSaved(exercise.id, n)) return false;
     }
-    return total > 0;
+    return true;
+};
+
+// Returns next set number that is in "waiting" state
+const nextWaitingSet = (exercise) => {
+    const exId = exercise.id;
+    const total = totalSetsForExercise(exercise);
+    for (let n = 1; n <= total; n++) {
+        if (getSetState(exId, n) === 'waiting') return n;
+    }
+    return null;
 };
 
 // ─── Progress ─────────────────────────────────────────────────────────────────
@@ -172,9 +164,7 @@ const totalPlannedSets = computed(() =>
 );
 
 const totalDoneSets = computed(() =>
-    sortedExercises.value.reduce((sum, ex) => {
-        return sum + (savedSets.value[ex.id]?.size ?? 0);
-    }, 0),
+    sortedExercises.value.reduce((sum, ex) => sum + (savedSets.value[ex.id]?.size ?? 0), 0),
 );
 
 const progressPercent = computed(() =>
@@ -184,25 +174,92 @@ const progressPercent = computed(() =>
 );
 
 // ─── Total volume ─────────────────────────────────────────────────────────────
-const totalVolume = computed(() => {
-    return props.setLogs.reduce((sum, log) => {
-        if (log.weight && log.reps) {
-            return sum + parseFloat(log.weight) * parseInt(log.reps);
-        }
+const totalVolume = computed(() =>
+    props.setLogs.reduce((sum, log) => {
+        if (log.weight && log.reps) return sum + parseFloat(log.weight) * parseInt(log.reps);
         return sum;
-    }, 0);
-});
+    }, 0),
+);
 
-// ─── Navigation ───────────────────────────────────────────────────────────────
-const hasPendingSets = (index) => {
-    const ex = sortedExercises.value[index];
-    if (!ex) return false;
-    return exerciseTimerActive.value && !isExerciseDone(ex);
+// ─── Start a set (waiting → running) ─────────────────────────────────────────
+const startSet = (exercise, setNumber) => {
+    const exId = exercise.id;
+    // Mark any previously "running" sets back to waiting
+    for (const n in setStates.value[exId] ?? {}) {
+        if (setStates.value[exId][n] === 'running') {
+            setStates.value[exId][n] = 'waiting';
+        }
+    }
+    setStates.value[exId][setNumber] = 'running';
+    startExerciseTimer();
 };
 
+// ─── Complete a set (running → done) ─────────────────────────────────────────
+const savingSet = ref(null);
+
+const completeSet = (exercise, setNumber) => {
+    const exId = exercise.id;
+    const inputs = setInputs.value[exId]?.[setNumber] ?? {};
+    savingSet.value = `${exId}-${setNumber}`;
+
+    router.post(
+        route('workout-sessions.sets.store', props.session.id),
+        {
+            exercise_id: exId,
+            set_number: setNumber,
+            weight: inputs.weight !== '' ? inputs.weight : null,
+            reps: inputs.reps,
+        },
+        {
+            preserveScroll: true,
+            preserveState: true,
+            onSuccess: () => {
+                if (!savedSets.value[exId]) savedSets.value[exId] = new Set();
+                savedSets.value[exId].add(setNumber);
+                setStates.value[exId][setNumber] = 'done';
+                savingSet.value = null;
+
+                // Stop exercise timer and start rest
+                stopExerciseTimer();
+                exerciseTimerSeconds.value = 0;
+                const restSecs = exercise.rest_seconds ?? 60;
+                startRest(restSecs);
+            },
+            onError: () => {
+                savingSet.value = null;
+            },
+        },
+    );
+};
+
+// ─── Quick weight/reps adjustments ───────────────────────────────────────────
+const adjustWeight = (exercise, setNumber, delta) => {
+    const exId = exercise.id;
+    const current = parseFloat(setInputs.value[exId]?.[setNumber]?.weight) || 0;
+    setInputs.value[exId][setNumber].weight = Math.max(0, current + delta);
+};
+
+const adjustReps = (exercise, setNumber, delta) => {
+    const exId = exercise.id;
+    const current = parseInt(setInputs.value[exId]?.[setNumber]?.reps) || 0;
+    setInputs.value[exId][setNumber].reps = Math.max(1, current + delta);
+};
+
+// ─── Add extra set ────────────────────────────────────────────────────────────
+const addExtraSet = (exercise) => {
+    const exId = exercise.id;
+    extraSets.value[exId] = (extraSets.value[exId] ?? 0) + 1;
+    const newSetNum = totalSetsForExercise(exercise);
+    const last = props.lastLogs?.[exId];
+    setInputs.value[exId][newSetNum] = { weight: last?.weight ?? '', reps: last?.reps ?? '' };
+    setStates.value[exId][newSetNum] = 'waiting';
+};
+
+// ─── Navigation ───────────────────────────────────────────────────────────────
 const tryNavigateTo = (index) => {
     if (index < 0 || index >= totalExercises.value) return;
-    if (hasPendingSets(currentIndex.value)) {
+    // Guard: if exercise timer is running (a set is in "running" state)
+    if (exerciseTimerActive.value) {
         pendingNavIndex.value = index;
         showNavGuard.value = true;
         return;
@@ -211,7 +268,7 @@ const tryNavigateTo = (index) => {
 };
 
 const navigateTo = (index) => {
-    stopExerciseTimer();
+    resetExerciseTimer();
     currentIndex.value = index;
     showNavGuard.value = false;
     pendingNavIndex.value = null;
@@ -225,11 +282,10 @@ const confirmNavigation = () => {
     }
 };
 
-// ─── Rest timer ───────────────────────────────────────────────────────────────
+// ─── Rest timer (full-screen overlay) ────────────────────────────────────────
 const restActive = ref(false);
 const restTotal = ref(60);
 const restRemaining = ref(60);
-const restPaused = ref(false);
 let restInterval = null;
 
 const restPercent = computed(() =>
@@ -240,24 +296,29 @@ const startRest = (seconds = 60) => {
     clearInterval(restInterval);
     restTotal.value = seconds;
     restRemaining.value = seconds;
-    restPaused.value = false;
     restActive.value = true;
 
     restInterval = setInterval(() => {
-        if (restPaused.value) return;
         restRemaining.value--;
         if (restRemaining.value <= 0) {
             clearInterval(restInterval);
-            restActive.value = false;
             playChime();
             if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+            // Auto-close after chime
+            setTimeout(() => { restActive.value = false; }, 800);
         }
     }, 1000);
 };
 
-const toggleRestPause = () => { restPaused.value = !restPaused.value; };
-const addRestTime = (secs) => { restRemaining.value += secs; restTotal.value += secs; };
-const skipRest = () => { clearInterval(restInterval); restActive.value = false; };
+const addRestTime = (secs) => {
+    restRemaining.value += secs;
+    restTotal.value += secs;
+};
+
+const endRest = () => {
+    clearInterval(restInterval);
+    restActive.value = false;
+};
 
 const restDisplay = computed(() => {
     const s = restRemaining.value;
@@ -284,62 +345,6 @@ const playChime = () => {
     } catch (_) {}
 };
 
-// ─── Save set ─────────────────────────────────────────────────────────────────
-const savingSet = ref(null);
-
-const completeSet = (exercise, setNumber) => {
-    const exId = exercise.id;
-    const inputs = setInputs.value[exId]?.[setNumber] ?? {};
-    savingSet.value = `${exId}-${setNumber}`;
-
-    router.post(
-        route('workout-sessions.sets.store', props.session.id),
-        {
-            exercise_id: exId,
-            set_number: setNumber,
-            weight: inputs.weight !== '' ? inputs.weight : null,
-            reps: inputs.reps,
-        },
-        {
-            preserveScroll: true,
-            preserveState: true,
-            onSuccess: () => {
-                // Mark as saved
-                if (!savedSets.value[exId]) savedSets.value[exId] = new Set();
-                savedSets.value[exId].add(setNumber);
-                savingSet.value = null;
-
-                // Start rest timer
-                const restSecs = exercise.rest_seconds ?? 60;
-                startRest(restSecs);
-
-                // Advance to next set
-                const total = totalSetsForExercise(exercise);
-                const nextUnsaved = getFirstUnsavedSet(exId, exercise.target_sets ?? 3);
-                if (nextUnsaved && nextUnsaved <= total) {
-                    activeSetNumber.value[exId] = nextUnsaved;
-                }
-            },
-            onError: () => {
-                savingSet.value = null;
-            },
-        },
-    );
-};
-
-// ─── Quick weight adjustments ─────────────────────────────────────────────────
-const adjustWeight = (exercise, setNumber, delta) => {
-    const exId = exercise.id;
-    const current = parseFloat(setInputs.value[exId]?.[setNumber]?.weight) || 0;
-    setInputs.value[exId][setNumber].weight = Math.max(0, current + delta);
-};
-
-const adjustReps = (exercise, setNumber, delta) => {
-    const exId = exercise.id;
-    const current = parseInt(setInputs.value[exId]?.[setNumber]?.reps) || 0;
-    setInputs.value[exId][setNumber].reps = Math.max(1, current + delta);
-};
-
 // ─── Finish workout ───────────────────────────────────────────────────────────
 const finishWorkout = () => {
     finishing.value = true;
@@ -354,8 +359,6 @@ const finishWorkout = () => {
 onMounted(() => {
     elapsedSeconds.value = calculateInitialElapsed();
     workoutTimerInterval = setInterval(() => { elapsedSeconds.value++; }, 1000);
-
-    // Init all exercises upfront
     sortedExercises.value.forEach((ex) => initSetsForExercise(ex));
 });
 
@@ -365,15 +368,15 @@ onUnmounted(() => {
     clearInterval(restInterval);
 });
 
-// Sync saved sets when props.setLogs change (after Inertia reload)
 watch(
     () => props.setLogs,
     (newLogs) => {
         for (const log of newLogs) {
-            if (!savedSets.value[log.exercise_id]) {
-                savedSets.value[log.exercise_id] = new Set();
-            }
-            savedSets.value[log.exercise_id].add(log.set_number);
+            const exId = log.exercise_id;
+            if (!savedSets.value[exId]) savedSets.value[exId] = new Set();
+            if (!setStates.value[exId]) setStates.value[exId] = {};
+            savedSets.value[exId].add(log.set_number);
+            setStates.value[exId][log.set_number] = 'done';
         }
     },
     { deep: true },
@@ -383,22 +386,32 @@ watch(
 <template>
     <Head :title="`🔥 ${workout.name}`" />
 
-    <!-- ─── Workout Elapsed Timer Bar ─────────────────────────────────── -->
     <div class="fixed inset-0 flex flex-col bg-gray-950 text-white" style="z-index: 50">
 
-        <!-- Top Header -->
+        <!-- ─── Top Header ──────────────────────────────────────────────── -->
         <header class="flex-shrink-0 border-b border-gray-800 bg-gray-900/80 backdrop-blur-sm px-4 py-3">
             <div class="flex items-center justify-between gap-3">
-                <!-- Left: workout name + elapsed -->
+                <!-- Left: workout name + elapsed + exercise timer -->
                 <div class="min-w-0">
                     <div class="flex items-center gap-2">
-                        <span class="relative flex h-2 w-2">
+                        <span class="relative flex h-2 w-2 flex-shrink-0">
                             <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-75"></span>
                             <span class="relative inline-flex rounded-full h-2 w-2 bg-violet-500"></span>
                         </span>
                         <p class="truncate text-sm font-bold text-white">{{ workout.name }}</p>
                     </div>
-                    <p class="mt-0.5 text-xs font-mono text-violet-400">⏱ {{ elapsedDisplay }}</p>
+                    <!-- Dual timers: workout elapsed + current set timer -->
+                    <div class="mt-0.5 flex items-center gap-3">
+                        <p class="text-xs font-mono text-violet-400">⏱ {{ elapsedDisplay }}</p>
+                        <Transition name="fade">
+                            <p
+                                v-if="exerciseTimerActive"
+                                class="text-xs font-mono font-bold text-orange-400"
+                            >
+                                🏋️ {{ exerciseTimerDisplay }}
+                            </p>
+                        </Transition>
+                    </div>
                 </div>
 
                 <!-- Right: overview + progress -->
@@ -428,7 +441,6 @@ watch(
         <!-- ─── Stepper ─────────────────────────────────────────────────── -->
         <div class="flex-shrink-0 border-b border-gray-800 bg-gray-900/60 px-4 py-3">
             <div class="flex items-center justify-between gap-2">
-                <!-- Prev button -->
                 <button
                     @click="tryNavigateTo(currentIndex - 1)"
                     :disabled="currentIndex === 0"
@@ -439,7 +451,6 @@ watch(
                     </svg>
                 </button>
 
-                <!-- Pills -->
                 <div class="flex flex-1 items-center justify-center gap-1.5 overflow-x-auto px-1">
                     <button
                         v-for="(ex, idx) in sortedExercises"
@@ -457,7 +468,6 @@ watch(
                     />
                 </div>
 
-                <!-- Next button -->
                 <button
                     @click="tryNavigateTo(currentIndex + 1)"
                     :disabled="currentIndex === totalExercises - 1"
@@ -469,7 +479,6 @@ watch(
                 </button>
             </div>
 
-            <!-- Exercise name & position -->
             <p class="mt-2 text-center text-sm font-semibold text-white truncate px-10">
                 {{ currentExercise?.name }}
             </p>
@@ -480,32 +489,13 @@ watch(
 
         <!-- ─── Main Focus Area ──────────────────────────────────────────── -->
         <main class="flex-1 overflow-y-auto px-4 py-5 pb-32" v-if="currentExercise">
+
             <!-- Exercise meta card -->
             <div class="rounded-2xl bg-gray-900 border border-gray-800 p-4 mb-4">
                 <div class="flex items-start justify-between gap-3">
-                    <div class="min-w-0">
+                    <div class="min-w-0 flex-1">
                         <h2 class="text-xl font-bold text-white truncate">{{ currentExercise.name }}</h2>
                         <p class="mt-0.5 text-sm text-gray-400">{{ currentExercise.primary_muscle }}</p>
-                    </div>
-
-                    <!-- Exercise timer -->
-                    <div class="flex-shrink-0 text-right">
-                        <button
-                            v-if="!exerciseTimerActive"
-                            @click="startExerciseTimer"
-                            class="flex items-center gap-1.5 rounded-xl bg-gray-800 px-3 py-2 text-xs font-semibold text-gray-300 transition hover:bg-violet-500/20 hover:text-violet-300"
-                        >
-                            <span>▶</span> Cronometrar
-                        </button>
-                        <div v-else class="text-center">
-                            <p class="font-mono text-lg font-bold text-violet-400">{{ exerciseTimerDisplay }}</p>
-                            <button
-                                @click="stopExerciseTimer"
-                                class="mt-0.5 text-xs text-gray-500 hover:text-red-400 transition"
-                            >
-                                ✕ parar
-                            </button>
-                        </div>
                     </div>
                 </div>
 
@@ -540,12 +530,13 @@ watch(
             <!-- ─── Sets ─────────────────────────────────────────────── -->
             <div class="space-y-3">
                 <template v-for="n in totalSetsForExercise(currentExercise)" :key="n">
-                    <!-- Saved set (collapsed green) -->
+
+                    <!-- ── DONE: Saved set (compact green row) ── -->
                     <div
-                        v-if="isSetSaved(currentExercise.id, n)"
+                        v-if="getSetState(currentExercise.id, n) === 'done'"
                         class="flex items-center gap-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3"
                     >
-                        <span class="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 text-sm font-bold text-white">
+                        <span class="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 text-sm font-bold text-white flex-shrink-0">
                             ✓
                         </span>
                         <div class="flex-1">
@@ -555,19 +546,33 @@ watch(
                                 × {{ setInputs[currentExercise.id]?.[n]?.reps || '—' }} reps
                             </p>
                         </div>
-                        <span class="text-emerald-500 text-lg">✓</span>
+                        <svg class="h-5 w-5 text-emerald-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+                        </svg>
                     </div>
 
-                    <!-- Active set (expanded) -->
+                    <!-- ── RUNNING: Active set with inputs ── -->
                     <div
-                        v-else-if="n === activeSetNumber[currentExercise.id]"
-                        class="rounded-2xl border border-violet-500/50 bg-gray-900 p-4"
+                        v-else-if="getSetState(currentExercise.id, n) === 'running'"
+                        class="rounded-2xl border border-violet-500/60 bg-gray-900 p-4 ring-1 ring-violet-500/20"
                     >
+                        <!-- Header -->
                         <div class="flex items-center justify-between mb-4">
-                            <span class="flex h-8 w-8 items-center justify-center rounded-full bg-violet-600 text-sm font-bold text-white">
-                                {{ n }}
-                            </span>
-                            <p class="text-sm font-semibold text-violet-300">Série {{ n }} — Ativa</p>
+                            <div class="flex items-center gap-2">
+                                <span class="flex h-8 w-8 items-center justify-center rounded-full bg-violet-600 text-sm font-bold text-white">
+                                    {{ n }}
+                                </span>
+                                <p class="text-sm font-semibold text-violet-300">Série {{ n }} — Executando</p>
+                            </div>
+                            <!-- Live set timer badge -->
+                            <Transition name="fade">
+                                <span
+                                    v-if="exerciseTimerActive"
+                                    class="font-mono text-sm font-bold text-orange-400"
+                                >
+                                    {{ exerciseTimerDisplay }}
+                                </span>
+                            </Transition>
                         </div>
 
                         <!-- Weight input -->
@@ -623,7 +628,7 @@ watch(
                             </div>
                         </div>
 
-                        <!-- Complete button -->
+                        <!-- Complete set button -->
                         <button
                             type="button"
                             @click="completeSet(currentExercise, n)"
@@ -641,17 +646,36 @@ watch(
                         </button>
                     </div>
 
-                    <!-- Locked set (future) -->
+                    <!-- ── WAITING: Start button ── -->
                     <div
                         v-else
-                        class="flex items-center gap-3 rounded-2xl border border-gray-800 bg-gray-900/50 px-4 py-3 opacity-50 cursor-pointer hover:opacity-70 transition"
-                        @click="activeSetNumber[currentExercise.id] = n"
+                        class="rounded-2xl border border-gray-800 bg-gray-900/60 p-4"
                     >
-                        <span class="flex h-7 w-7 items-center justify-center rounded-full border border-gray-700 text-xs font-bold text-gray-500">
-                            {{ n }}
-                        </span>
-                        <p class="text-sm text-gray-500">Série {{ n }}</p>
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-2">
+                                <span class="flex h-7 w-7 items-center justify-center rounded-full border border-gray-700 text-xs font-bold text-gray-500">
+                                    {{ n }}
+                                </span>
+                                <p class="text-sm text-gray-500">Série {{ n }}</p>
+                            </div>
+                            <!-- Previous load hint -->
+                            <p v-if="lastLogs?.[currentExercise.id]" class="text-xs text-gray-600">
+                                {{ lastLogs[currentExercise.id].summary }}
+                            </p>
+                        </div>
+
+                        <button
+                            type="button"
+                            @click="startSet(currentExercise, n)"
+                            class="flex w-full items-center justify-center gap-2 rounded-xl bg-gray-800 py-3 text-sm font-bold text-gray-200 transition hover:bg-violet-600 hover:text-white active:scale-[0.98]"
+                        >
+                            <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M8 5v14l11-7z"/>
+                            </svg>
+                            Iniciar Série {{ n }}
+                        </button>
                     </div>
+
                 </template>
             </div>
 
@@ -678,7 +702,6 @@ watch(
                     🔥 Finalizar Treino
                 </button>
 
-                <!-- Add extra set -->
                 <button
                     @click="addExtraSet(currentExercise)"
                     class="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-gray-700 py-2.5 text-sm text-gray-400 transition hover:border-violet-500/50 hover:text-violet-400"
@@ -687,9 +710,8 @@ watch(
                 </button>
             </div>
 
-            <!-- Not done yet: add extra set option -->
             <button
-                v-else-if="totalSetsForExercise(currentExercise) < 10"
+                v-else-if="totalSetsForExercise(currentExercise) < 10 && !nextWaitingSet(currentExercise)"
                 @click="addExtraSet(currentExercise)"
                 class="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-gray-700 py-2.5 text-sm text-gray-400 transition hover:border-violet-500/50 hover:text-violet-400"
             >
@@ -697,48 +719,8 @@ watch(
             </button>
         </main>
 
-        <!-- ─── Floating Rest Timer ──────────────────────────────────────── -->
-        <Transition name="slide-up">
-            <div
-                v-if="restActive"
-                class="absolute bottom-24 left-1/2 -translate-x-1/2 w-[calc(100%-2rem)] max-w-sm z-60"
-            >
-                <div class="rounded-2xl border border-violet-500/40 bg-gray-900/95 backdrop-blur-md p-4 shadow-2xl shadow-violet-500/20">
-                    <div class="flex items-center justify-between mb-2">
-                        <p class="text-xs font-semibold uppercase tracking-wide text-violet-400">⏸ Descanso</p>
-                        <button @click="skipRest" class="text-xs text-gray-500 hover:text-red-400 transition">Pular</button>
-                    </div>
-
-                    <!-- Countdown -->
-                    <div class="text-center">
-                        <p class="font-mono text-5xl font-bold text-white leading-none">{{ restDisplay }}</p>
-                    </div>
-
-                    <!-- Progress bar -->
-                    <div class="mt-3 h-1.5 overflow-hidden rounded-full bg-gray-800">
-                        <div
-                            class="h-full rounded-full bg-gradient-to-r from-violet-500 to-violet-300 transition-all duration-1000"
-                            :style="{ width: restPercent + '%' }"
-                        />
-                    </div>
-
-                    <!-- Controls -->
-                    <div class="mt-3 flex items-center justify-center gap-3">
-                        <button
-                            @click="addRestTime(30)"
-                            class="rounded-xl bg-gray-800 px-4 py-2 text-sm font-semibold text-gray-300 transition hover:bg-gray-700 hover:text-white"
-                        >+30s</button>
-                        <button
-                            @click="toggleRestPause"
-                            class="rounded-xl bg-violet-600 px-5 py-2 text-sm font-bold text-white transition hover:bg-violet-700"
-                        >{{ restPaused ? '▶ Retomar' : '⏸ Pausar' }}</button>
-                    </div>
-                </div>
-            </div>
-        </Transition>
-
         <!-- ─── Bottom Footer ────────────────────────────────────────────── -->
-        <footer class="absolute bottom-0 left-0 right-0 border-t border-gray-800 bg-gray-900/95 backdrop-blur-sm px-4 py-3 z-50">
+        <footer class="absolute bottom-0 left-0 right-0 border-t border-gray-800 bg-gray-900/95 backdrop-blur-sm px-4 py-3 z-40">
             <div class="flex items-center justify-between gap-4">
                 <div>
                     <p class="text-xs text-gray-500">Volume total</p>
@@ -755,6 +737,65 @@ watch(
             </div>
         </footer>
     </div>
+
+    <!-- ─── Rest Timer Overlay (Película Fullscreen) ─────────────────────── -->
+    <Teleport to="body">
+        <Transition name="fade">
+            <div
+                v-if="restActive"
+                class="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-black/85 backdrop-blur-sm px-6"
+                style="overflow: hidden;"
+            >
+                <div class="w-full max-w-sm">
+                    <!-- Label -->
+                    <p class="mb-2 text-center text-xs font-semibold uppercase tracking-widest text-violet-400">
+                        ⏸ Descansando
+                    </p>
+
+                    <!-- Big countdown -->
+                    <div class="text-center">
+                        <p class="font-mono text-8xl font-bold text-white leading-none tabular-nums">
+                            {{ restDisplay }}
+                        </p>
+                    </div>
+
+                    <!-- Arc progress bar -->
+                    <div class="mt-6 h-2 overflow-hidden rounded-full bg-gray-800">
+                        <div
+                            class="h-full rounded-full bg-gradient-to-r from-violet-500 to-violet-300 transition-all duration-1000"
+                            :style="{ width: restPercent + '%' }"
+                        />
+                    </div>
+
+                    <!-- Controls -->
+                    <div class="mt-6 flex flex-col gap-3">
+                        <!-- End rest button (primary action) -->
+                        <button
+                            @click="endRest"
+                            class="w-full rounded-2xl bg-gradient-to-r from-violet-600 to-violet-500 py-4 text-base font-bold text-white shadow-lg shadow-violet-500/30 transition hover:from-violet-700 hover:to-violet-600 active:scale-[0.98]"
+                        >
+                            Encerrar Descanso
+                        </button>
+                        <!-- Add time -->
+                        <button
+                            @click="addRestTime(30)"
+                            class="w-full rounded-2xl border border-gray-700 bg-gray-900/80 py-3 text-sm font-semibold text-gray-300 transition hover:border-gray-600 hover:text-white active:scale-[0.98]"
+                        >
+                            + 30 segundos
+                        </button>
+                    </div>
+
+                    <!-- Next set hint -->
+                    <p
+                        v-if="nextWaitingSet(currentExercise)"
+                        class="mt-4 text-center text-xs text-gray-500"
+                    >
+                        Próxima: Série {{ nextWaitingSet(currentExercise) }}
+                    </p>
+                </div>
+            </div>
+        </Transition>
+    </Teleport>
 
     <!-- ─── Exercise Drawer / Overview ──────────────────────────────────── -->
     <Teleport to="body">
@@ -820,22 +861,22 @@ watch(
                 class="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm px-4"
             >
                 <div class="w-full max-w-sm rounded-3xl border border-gray-700 bg-gray-900 p-6">
-                    <h3 class="text-lg font-bold text-white">Exercício em Andamento</h3>
+                    <h3 class="text-lg font-bold text-white">Série em Execução</h3>
                     <p class="mt-2 text-sm text-gray-400">
-                        Você tem séries não concluídas neste exercício. Deseja descartar e avançar mesmo assim?
+                        Você já iniciou este exercício. Deseja finalizar a série ou trocar de exercício e zerar o cronômetro?
                     </p>
                     <div class="mt-5 flex flex-col gap-2">
-                        <button
-                            @click="confirmNavigation"
-                            class="w-full rounded-2xl bg-gray-700 py-3 text-sm font-bold text-white transition hover:bg-gray-600"
-                        >
-                            Descartar e Avançar
-                        </button>
                         <button
                             @click="showNavGuard = false; pendingNavIndex = null"
                             class="w-full rounded-2xl bg-violet-600 py-3 text-sm font-bold text-white transition hover:bg-violet-700"
                         >
-                            Continuar Exercício
+                            Continuar Série
+                        </button>
+                        <button
+                            @click="confirmNavigation"
+                            class="w-full rounded-2xl bg-gray-700 py-3 text-sm font-bold text-white transition hover:bg-gray-600"
+                        >
+                            Trocar e Zerar Timer
                         </button>
                     </div>
                 </div>
@@ -853,8 +894,8 @@ watch(
                 <div class="w-full max-w-sm rounded-3xl border border-gray-700 bg-gray-900 p-6">
                     <div class="text-center mb-5">
                         <p class="text-4xl">🏆</p>
-                        <h3 class="mt-2 text-xl font-bold text-white">Treino Finalizado!</h3>
-                        <p class="mt-1 text-sm text-gray-400">Confira seu resumo</p>
+                        <h3 class="mt-2 text-xl font-bold text-white">Finalizar Treino?</h3>
+                        <p class="mt-1 text-sm text-gray-400">Confira seu resumo antes de confirmar</p>
                     </div>
 
                     <div class="grid grid-cols-3 gap-3 mb-6">

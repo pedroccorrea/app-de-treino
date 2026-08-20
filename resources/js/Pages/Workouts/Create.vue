@@ -56,13 +56,55 @@ const removeExercise = (index) => {
     });
 };
 
-// --- Drag & Drop (local reordering before save) ---
+const removeExerciseById = (exercise) => {
+    const index = form.exercises.findIndex((e) => e.id === exercise.id);
+    if (index !== -1) {
+        removeExercise(index);
+    }
+};
+
+const toggleExercise = (exercise) => {
+    const index = form.exercises.findIndex((e) => e.id === exercise.id);
+    if (index !== -1) {
+        removeExercise(index);
+    } else {
+        addExercise(exercise);
+    }
+};
+
+// ─── Drag & Drop ─────────────────────────────────────────────────────────────
 const draggingIndex = ref(null);
 const dragOverIndex = ref(null);
 
-const onDragStart = (index) => { draggingIndex.value = index; };
-const onDragOver = (e, index) => { e.preventDefault(); dragOverIndex.value = index; };
-const onDragEnd = () => { draggingIndex.value = null; dragOverIndex.value = null; };
+// Ignore drag when clicking inside interactive elements
+const DRAG_IGNORE = ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'A', 'LABEL'];
+
+const isDraggableTarget = (event) => {
+    let el = event.target;
+    while (el && el !== event.currentTarget) {
+        if (DRAG_IGNORE.includes(el.tagName)) return false;
+        el = el.parentElement;
+    }
+    return true;
+};
+
+const onDragStart = (event, index) => {
+    if (!isDraggableTarget(event)) {
+        event.preventDefault();
+        return;
+    }
+    draggingIndex.value = index;
+};
+
+const onDragOver = (e, index) => {
+    e.preventDefault();
+    dragOverIndex.value = index;
+};
+
+const onDragEnd = () => {
+    draggingIndex.value = null;
+    dragOverIndex.value = null;
+};
 
 const onDrop = (targetIndex) => {
     if (draggingIndex.value === null || draggingIndex.value === targetIndex) {
@@ -91,22 +133,6 @@ const moveDown = (index) => {
     [arr[index], arr[index + 1]] = [arr[index + 1], arr[index]];
     arr.forEach((ex, i) => { ex.order = i; });
     form.exercises = arr;
-};
-
-const removeExerciseById = (exercise) => {
-    const index = form.exercises.findIndex((e) => e.id === exercise.id);
-    if (index !== -1) {
-        removeExercise(index);
-    }
-};
-
-const toggleExercise = (exercise) => {
-    const index = form.exercises.findIndex((e) => e.id === exercise.id);
-    if (index !== -1) {
-        removeExercise(index);
-    } else {
-        addExercise(exercise);
-    }
 };
 
 const submit = () => {
@@ -216,18 +242,26 @@ const submit = () => {
                         <div
                             class="pb-4 border-b border-gray-100 dark:border-gray-700"
                         >
-                            <div class="flex items-center gap-2">
-                                <h3
-                                    class="text-base font-bold text-gray-900 dark:text-gray-100"
+                            <div class="flex items-center justify-between gap-2">
+                                <div class="flex items-center gap-2">
+                                    <h3
+                                        class="text-base font-bold text-gray-900 dark:text-gray-100"
+                                    >
+                                        Exercícios do Treino
+                                    </h3>
+                                    <span
+                                        v-if="form.exercises.length > 0"
+                                        class="rounded-full bg-violet-500/10 px-2.5 py-0.5 text-xs font-bold text-violet-600 dark:text-violet-400"
+                                    >
+                                        {{ form.exercises.length }} selecionado(s)
+                                    </span>
+                                </div>
+                                <p
+                                    v-if="form.exercises.length > 1"
+                                    class="text-xs text-gray-400 dark:text-gray-500"
                                 >
-                                    Exercícios do Treino
-                                </h3>
-                                <span
-                                    v-if="form.exercises.length > 0"
-                                    class="rounded-full bg-violet-500/10 px-2.5 py-0.5 text-xs font-bold text-violet-600 dark:text-violet-400"
-                                >
-                                    {{ form.exercises.length }} selecionado(s)
-                                </span>
+                                    Arraste para reordenar
+                                </p>
                             </div>
                             <p
                                 class="mt-0.5 text-sm text-gray-500 dark:text-gray-400"
@@ -278,11 +312,8 @@ const submit = () => {
                             </button>
                         </div>
 
-                        <!-- Exercises list with series & reps settings -->
+                        <!-- Exercises list with drag & drop -->
                         <div v-else class="mt-6 space-y-4">
-                            <p class="text-xs text-gray-400 dark:text-gray-500">
-                                ⠿ Arraste os cards para reordenar
-                            </p>
                             <TransitionGroup
                                 tag="ul"
                                 name="exercise-list"
@@ -292,25 +323,20 @@ const submit = () => {
                                     v-for="(exercise, index) in form.exercises"
                                     :key="exercise.id"
                                     draggable="true"
-                                    @dragstart="onDragStart(index)"
+                                    @dragstart="(e) => onDragStart(e, index)"
                                     @dragover="(e) => onDragOver(e, index)"
                                     @drop="onDrop(index)"
                                     @dragend="onDragEnd"
                                     :class="[
-                                        'group rounded-2xl border p-4 transition-all duration-200 cursor-grab active:cursor-grabbing',
+                                        'group rounded-2xl border p-4 transition-all duration-200',
                                         dragOverIndex === index && draggingIndex !== index
-                                            ? 'border-violet-500 bg-violet-500/5 dark:bg-violet-500/10'
-                                            : 'border-gray-200 bg-gray-50/70 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-900/50',
-                                        draggingIndex === index ? 'opacity-40' : 'opacity-100',
+                                            ? 'border-violet-500 bg-violet-500/5 dark:bg-violet-500/10 cursor-copy'
+                                            : 'border-gray-200 bg-gray-50/70 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-900/50 cursor-grab active:cursor-grabbing',
+                                        draggingIndex === index ? 'opacity-40 scale-[0.98]' : 'opacity-100',
                                     ]"
                                 >
                                     <div class="flex items-start justify-between gap-3 mb-3">
-                                        <div class="flex items-center gap-3">
-                                            <!-- Drag handle -->
-                                            <span
-                                                class="select-none text-lg text-gray-300 dark:text-gray-600 group-hover:text-violet-400 transition-colors"
-                                                title="Arrastar para reordenar"
-                                            >⠿</span>
+                                        <div class="flex items-center gap-3 select-none">
                                             <span
                                                 class="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-600 text-xs font-bold text-white"
                                             >
@@ -358,14 +384,16 @@ const submit = () => {
                                                     </svg>
                                                 </button>
                                             </div>
+
+                                            <!-- Trash icon (remove exercise) -->
                                             <button
                                                 type="button"
-                                                @click="removeExercise(index)"
+                                                @click.stop="removeExercise(index)"
                                                 class="rounded-lg p-1.5 text-gray-400 transition hover:bg-red-500/10 hover:text-red-500 focus:outline-none"
                                                 title="Remover exercício"
                                             >
                                                 <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                                 </svg>
                                             </button>
                                         </div>

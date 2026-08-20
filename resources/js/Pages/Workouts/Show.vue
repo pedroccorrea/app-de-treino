@@ -29,7 +29,23 @@ const formatTarget = (exercise) => {
 const hasExercises = computed(() => exercises.value.length > 0);
 
 // --- Drag & Drop handlers ---
-const onDragStart = (index) => {
+// We only start a drag if the pointer-down target is NOT an interactive element
+const DRAG_IGNORE = ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'A', 'LABEL'];
+
+const isDraggableTarget = (event) => {
+    let el = event.target;
+    while (el && el !== event.currentTarget) {
+        if (DRAG_IGNORE.includes(el.tagName)) return false;
+        el = el.parentElement;
+    }
+    return true;
+};
+
+const onDragStart = (event, index) => {
+    if (!isDraggableTarget(event)) {
+        event.preventDefault();
+        return;
+    }
     draggingIndex.value = index;
 };
 
@@ -58,7 +74,7 @@ const onDragEnd = () => {
     dragOverIndex.value = null;
 };
 
-// --- Reorder buttons ---
+// --- Reorder buttons (↑ / ↓) ---
 const moveUp = (index) => {
     if (index === 0) return;
     const arr = [...exercises.value];
@@ -146,7 +162,7 @@ const persistOrder = () => {
                                 v-if="hasExercises"
                                 class="text-xs text-gray-400 dark:text-gray-500"
                             >
-                                ⠿ Arraste para reordenar
+                                Arraste para reordenar
                             </p>
                         </div>
 
@@ -160,41 +176,33 @@ const persistOrder = () => {
                             </p>
                         </div>
 
-                        <!-- Draggable list -->
+                        <!-- Draggable list — the entire card is the drag target -->
                         <ol v-else class="space-y-2">
                             <li
                                 v-for="(exercise, index) in exercises"
                                 :key="exercise.id"
                                 draggable="true"
-                                @dragstart="onDragStart(index)"
+                                @dragstart="(e) => onDragStart(e, index)"
                                 @dragover="(e) => onDragOver(e, index)"
                                 @drop="onDrop(index)"
                                 @dragend="onDragEnd"
                                 :class="[
-                                    'group flex items-center gap-3 rounded-xl border p-4 transition-all duration-200 cursor-grab active:cursor-grabbing',
+                                    'group flex items-center gap-3 rounded-xl border p-4 transition-all duration-200',
                                     dragOverIndex === index && draggingIndex !== index
-                                        ? 'border-violet-500 bg-violet-500/5 dark:bg-violet-500/10'
-                                        : 'border-gray-100 bg-gray-50/50 hover:border-violet-500/30 dark:border-gray-700 dark:bg-gray-900/40',
-                                    draggingIndex === index ? 'opacity-40' : 'opacity-100',
+                                        ? 'border-violet-500 bg-violet-500/5 dark:bg-violet-500/10 cursor-copy'
+                                        : 'border-gray-100 bg-gray-50/50 hover:border-violet-500/30 dark:border-gray-700 dark:bg-gray-900/40 cursor-grab active:cursor-grabbing',
+                                    draggingIndex === index ? 'opacity-40 scale-[0.98]' : 'opacity-100',
                                 ]"
                             >
-                                <!-- Drag handle -->
-                                <span
-                                    class="select-none text-lg text-gray-300 dark:text-gray-600 group-hover:text-violet-400 transition-colors"
-                                    title="Arrastar para reordenar"
-                                >
-                                    ⠿
-                                </span>
-
                                 <!-- Order number -->
                                 <span
-                                    class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-violet-500/10 text-xs font-bold text-violet-600 dark:text-violet-400"
+                                    class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-violet-500/10 text-xs font-bold text-violet-600 dark:text-violet-400 select-none"
                                 >
                                     {{ index + 1 }}
                                 </span>
 
                                 <!-- Exercise info -->
-                                <div class="min-w-0 flex-1">
+                                <div class="min-w-0 flex-1 select-none">
                                     <p class="font-medium text-gray-900 dark:text-gray-100">
                                         {{ exercise.name }}
                                     </p>
@@ -208,7 +216,7 @@ const persistOrder = () => {
                                     </p>
                                 </div>
 
-                                <!-- Reorder buttons (visible on hover) -->
+                                <!-- Reorder buttons -->
                                 <div
                                     class="flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
                                 >
