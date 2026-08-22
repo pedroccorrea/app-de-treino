@@ -1,13 +1,34 @@
 <script setup>
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
 import ApplicationLogo from '@/Components/ApplicationLogo.vue';
 import Dropdown from '@/Components/Dropdown.vue';
 import DropdownLink from '@/Components/DropdownLink.vue';
 import NavLink from '@/Components/NavLink.vue';
 import ResponsiveNavLink from '@/Components/ResponsiveNavLink.vue';
-import { Link } from '@inertiajs/vue3';
+import { Link, usePage } from '@inertiajs/vue3';
 
 const showingNavigationDropdown = ref(false);
+
+// ─── Success toast ──────────────────────────────────────────────────────────
+// Whenever a redirect carries a `flash.success` message, show it as a
+// self-dismissing toast on top of whatever page the redirect landed on.
+const page = usePage();
+const toastMessage = ref(null);
+let toastTimeout = null;
+
+watch(
+    () => page.props.flash?.success,
+    (message) => {
+        if (!message) return;
+
+        toastMessage.value = message;
+        clearTimeout(toastTimeout);
+        toastTimeout = setTimeout(() => {
+            toastMessage.value = null;
+        }, 3000);
+    },
+    { immediate: true },
+);
 </script>
 
 <template>
@@ -206,5 +227,37 @@ const showingNavigationDropdown = ref(false);
                 <slot />
             </main>
         </div>
+
+        <!-- Success Toast -->
+        <Teleport to="body">
+            <Transition
+                enter-active-class="transition duration-300 ease-out"
+                enter-from-class="opacity-0 -translate-y-2 sm:translate-y-0 sm:translate-x-4"
+                enter-to-class="opacity-100 translate-y-0 translate-x-0"
+                leave-active-class="transition duration-200 ease-in"
+                leave-from-class="opacity-100 translate-y-0 translate-x-0"
+                leave-to-class="opacity-0 -translate-y-2 sm:translate-y-0 sm:translate-x-4"
+            >
+                <div
+                    v-if="toastMessage"
+                    class="fixed inset-x-4 top-4 z-[100] flex justify-center sm:inset-x-auto sm:right-6 sm:justify-end"
+                >
+                    <div
+                        class="flex w-full max-w-sm items-center gap-3 rounded-2xl border border-violet-500/30 bg-white/95 px-4 py-3.5 shadow-xl shadow-violet-500/10 backdrop-blur dark:border-violet-500/30 dark:bg-gray-800/95"
+                    >
+                        <span
+                            class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-violet-500/15 text-violet-600 dark:text-violet-400"
+                        >
+                            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+                            </svg>
+                        </span>
+                        <p class="text-sm font-semibold text-gray-800 dark:text-gray-100">
+                            {{ toastMessage }}
+                        </p>
+                    </div>
+                </div>
+            </Transition>
+        </Teleport>
     </div>
 </template>

@@ -1,0 +1,6 @@
+{
+  "status": "warning",
+  "neglected_muscles": ["LEGS_QUADS", "LEGS_HAMSTRINGS"],
+  "dominant_muscles": ["CHEST", "TRICEPS"],
+  "summary": "Você acumulou 18 séries de Peito e Tríceps nesta semana, mas realizou 0 séries para Membros Inferiores. Recomendamos priorizar o treino de pernas nos próximos dias."
+}

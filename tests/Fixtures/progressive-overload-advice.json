@@ -1,0 +1,18 @@
+{
+  "recommendations": [
+    {
+      "exercise_name": "Supino Reto Barra",
+      "current_load": "30kg",
+      "suggested_load": "32kg",
+      "suggested_reps": "8-10",
+      "rationale": "Você completou 3 séries de 12 repetições com facilidade no último treino. Hora de progredir a carga."
+    },
+    {
+      "exercise_name": "Tríceps Corda no Pulley",
+      "current_load": "20kg",
+      "suggested_load": "20kg",
+      "suggested_reps": "12-15",
+      "rationale": "Mantenha a carga e foque na cadência e controle na fase excêntrica antes de subir o peso."
+    }
+  ]
+}

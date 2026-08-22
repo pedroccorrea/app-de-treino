@@ -25,6 +25,8 @@ Route::middleware('auth')->group(function () {
     Route::get('/workouts/create', [WorkoutController::class, 'create'])->name('workouts.create');
     Route::post('/workouts', [WorkoutController::class, 'store'])->name('workouts.store');
     Route::get('/workouts/{workout}', [WorkoutController::class, 'show'])->name('workouts.show');
+    Route::get('/workouts/{workout}/edit', [WorkoutController::class, 'edit'])->name('workouts.edit');
+    Route::put('/workouts/{workout}', [WorkoutController::class, 'update'])->name('workouts.update');
     Route::patch('/workouts/{workout}/reorder', [WorkoutController::class, 'reorder'])->name('workouts.reorder');
     Route::post('/workouts/{workout}/start', [WorkoutSessionController::class, 'start'])->name('workouts.start');
 
@@ -37,4 +39,4 @@ Route::middleware('auth')->group(function () {
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 });
 
-require __DIR__ . '/auth.php';
+require __DIR__.'/auth.php';

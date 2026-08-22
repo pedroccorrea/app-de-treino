@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\DayOfWeek;
 use App\Enums\MuscleGroup;
 use App\Models\Exercise;
 use App\Models\User;
@@ -12,6 +13,9 @@ use Illuminate\Support\Facades\DB;
 class WorkoutService
 {
     /**
+     * Fetches the user's workouts ordered by their scheduled weekday
+     * (Monday → Sunday). Workouts without a scheduled day are listed last.
+     *
      * @return Collection<int, Workout>
      */
     public function getUserWorkouts(User $user): Collection
@@ -19,7 +23,22 @@ class WorkoutService
         return $user->workouts()
             ->with('exercises')
             ->latest()
-            ->get();
+            ->get()
+            ->sortBy(function (Workout $workout) {
+                $days = $workout->days_of_week;
+
+                if (! $days || $days->isEmpty()) {
+                    return PHP_INT_MAX;
+                }
+
+                return $days->map(fn (DayOfWeek $day) => $day->value)->min();
+            })
+            ->values();
+    }
+
+    public function todayDayOfWeek(): DayOfWeek
+    {
+        return DayOfWeek::from(now()->dayOfWeekIso);
     }
 
     /**
@@ -31,12 +50,12 @@ class WorkoutService
             ->global()
             ->orderBy('name')
             ->get()
-            ->groupBy(fn(Exercise $exercise) => $exercise->primary_muscle_group->value)
+            ->groupBy(fn (Exercise $exercise) => $exercise->primary_muscle_group->value)
             ->map(function ($exercises, string $muscleKey) {
                 return [
                     'muscle' => MuscleGroup::from($muscleKey)->label(),
                     'muscle_key' => $muscleKey,
-                    'exercises' => $exercises->map(fn(Exercise $exercise) => [
+                    'exercises' => $exercises->map(fn (Exercise $exercise) => [
                         'id' => $exercise->id,
                         'name' => $exercise->name,
                         'primary_muscle' => $exercise->primary_muscle_group->label(),
@@ -54,6 +73,7 @@ class WorkoutService
             $workout = $user->workouts()->create([
                 'name' => $data['name'],
                 'description' => $data['description'] ?? null,
+                'days_of_week' => $data['days_of_week'] ?? null,
             ]);
 
             foreach ($data['exercises'] ?? [] as $index => $exercise) {
@@ -63,6 +83,41 @@ class WorkoutService
                     'target_sets' => $exercise['target_sets'] ?? null,
                     'target_reps' => $exercise['target_reps'] ?? null,
                 ]);
+            }
+
+            return $workout->load('exercises');
+        });
+    }
+
+    /**
+     * Updates a workout's own data and syncs its exercises against the
+     * `workout_exercises` pivot: exercises no longer submitted are removed,
+     * the rest are upserted with their (possibly new) order/sets/reps.
+     */
+    public function updateWorkout(Workout $workout, array $data): Workout
+    {
+        return DB::transaction(function () use ($workout, $data) {
+            $workout->update([
+                'name' => $data['name'],
+                'description' => $data['description'] ?? null,
+                'days_of_week' => $data['days_of_week'] ?? null,
+            ]);
+
+            $exercises = collect($data['exercises'] ?? []);
+
+            $workout->workoutExercises()
+                ->whereNotIn('exercise_id', $exercises->pluck('id'))
+                ->delete();
+
+            foreach ($exercises as $index => $exercise) {
+                $workout->workoutExercises()->updateOrCreate(
+                    ['exercise_id' => $exercise['id']],
+                    [
+                        'order' => $exercise['order'] ?? $index,
+                        'target_sets' => $exercise['target_sets'] ?? null,
+                        'target_reps' => $exercise['target_reps'] ?? null,
+                    ]
+                );
             }
 
             return $workout->load('exercises');

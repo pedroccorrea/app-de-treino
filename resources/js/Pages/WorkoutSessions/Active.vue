@@ -158,6 +158,21 @@ const nextWaitingSet = (exercise) => {
     return null;
 };
 
+// Auto-starts the next pending set of an exercise (no manual "Iniciar Série" click needed).
+// No-op if the exercise is already finished or already has a set running.
+const autoStartNextSet = (exercise) => {
+    if (!exercise || isExerciseDone(exercise)) return;
+
+    const exId = exercise.id;
+    const alreadyRunning = Object.values(setStates.value[exId] ?? {}).includes('running');
+    if (alreadyRunning) return;
+
+    const nextSet = nextWaitingSet(exercise);
+    if (nextSet !== null) {
+        startSet(exercise, nextSet);
+    }
+};
+
 // ─── Progress ─────────────────────────────────────────────────────────────────
 const totalPlannedSets = computed(() =>
     sortedExercises.value.reduce((sum, ex) => sum + totalSetsForExercise(ex), 0),
@@ -253,6 +268,7 @@ const addExtraSet = (exercise) => {
     const last = props.lastLogs?.[exId];
     setInputs.value[exId][newSetNum] = { weight: last?.weight ?? '', reps: last?.reps ?? '' };
     setStates.value[exId][newSetNum] = 'waiting';
+    autoStartNextSet(exercise);
 };
 
 // ─── Navigation ───────────────────────────────────────────────────────────────
@@ -274,6 +290,7 @@ const navigateTo = (index) => {
     pendingNavIndex.value = null;
     showDrawer.value = false;
     initSetsForExercise(sortedExercises.value[index]);
+    autoStartNextSet(sortedExercises.value[index]);
 };
 
 const confirmNavigation = () => {
@@ -304,8 +321,8 @@ const startRest = (seconds = 60) => {
             clearInterval(restInterval);
             playChime();
             if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-            // Auto-close after chime
-            setTimeout(() => { restActive.value = false; }, 800);
+            // Auto-close after chime, same as clicking "Encerrar Descanso"
+            setTimeout(() => { endRest(); }, 800);
         }
     }, 1000);
 };
@@ -318,6 +335,7 @@ const addRestTime = (secs) => {
 const endRest = () => {
     clearInterval(restInterval);
     restActive.value = false;
+    autoStartNextSet(currentExercise.value);
 };
 
 const restDisplay = computed(() => {
@@ -360,6 +378,7 @@ onMounted(() => {
     elapsedSeconds.value = calculateInitialElapsed();
     workoutTimerInterval = setInterval(() => { elapsedSeconds.value++; }, 1000);
     sortedExercises.value.forEach((ex) => initSetsForExercise(ex));
+    autoStartNextSet(currentExercise.value);
 });
 
 onUnmounted(() => {
@@ -562,7 +581,9 @@ watch(
                                 <span class="flex h-8 w-8 items-center justify-center rounded-full bg-violet-600 text-sm font-bold text-white">
                                     {{ n }}
                                 </span>
-                                <p class="text-sm font-semibold text-violet-300">Série {{ n }} — Executando</p>
+                                <p class="text-sm font-semibold text-violet-300">
+                                    Série {{ n }}/{{ totalSetsForExercise(currentExercise) }} — Executando
+                                </p>
                             </div>
                             <!-- Live set timer badge -->
                             <Transition name="fade">
@@ -646,35 +667,8 @@ watch(
                         </button>
                     </div>
 
-                    <!-- ── WAITING: Start button ── -->
-                    <div
-                        v-else
-                        class="rounded-2xl border border-gray-800 bg-gray-900/60 p-4"
-                    >
-                        <div class="flex items-center justify-between mb-3">
-                            <div class="flex items-center gap-2">
-                                <span class="flex h-7 w-7 items-center justify-center rounded-full border border-gray-700 text-xs font-bold text-gray-500">
-                                    {{ n }}
-                                </span>
-                                <p class="text-sm text-gray-500">Série {{ n }}</p>
-                            </div>
-                            <!-- Previous load hint -->
-                            <p v-if="lastLogs?.[currentExercise.id]" class="text-xs text-gray-600">
-                                {{ lastLogs[currentExercise.id].summary }}
-                            </p>
-                        </div>
-
-                        <button
-                            type="button"
-                            @click="startSet(currentExercise, n)"
-                            class="flex w-full items-center justify-center gap-2 rounded-xl bg-gray-800 py-3 text-sm font-bold text-gray-200 transition hover:bg-violet-600 hover:text-white active:scale-[0.98]"
-                        >
-                            <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
-                                <path d="M8 5v14l11-7z"/>
-                            </svg>
-                            Iniciar Série {{ n }}
-                        </button>
-                    </div>
+                    <!-- Sets in "waiting" state are intentionally not rendered: the next
+                         set only becomes visible (and running) after rest ends. -->
 
                 </template>
             </div>

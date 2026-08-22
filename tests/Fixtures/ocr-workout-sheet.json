@@ -1,0 +1,9 @@
+{
+  "workout_name": "Treino A - Peito e Tríceps",
+  "exercises": [
+    { "name": "Supino Reto Barra", "target_sets": 4, "target_reps": 10, "muscle_group": "CHEST" },
+    { "name": "Crucifixo Inclinado com Halteres", "target_sets": 3, "target_reps": 12, "muscle_group": "CHEST" },
+    { "name": "Tríceps Corda no Pulley", "target_sets": 4, "target_reps": 12, "muscle_group": "TRICEPS" },
+    { "name": "Tríceps Francês Unilateral", "target_sets": 3, "target_reps": 15, "muscle_group": "TRICEPS" }
+  ]
+}

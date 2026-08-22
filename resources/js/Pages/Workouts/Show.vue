@@ -10,6 +10,9 @@ const props = defineProps({
     },
 });
 
+// Where the edit link should send the user back to after saving.
+const currentPath = window.location.pathname + window.location.search;
+
 // Drag & Drop state
 const exercises = ref([...props.workout.exercises].sort((a, b) => a.order - b.order));
 const draggingIndex = ref(null);
@@ -116,9 +119,20 @@ const persistOrder = () => {
                     Voltar aos treinos
                 </Link>
 
-                <h2 class="text-xl font-semibold leading-tight text-gray-800 dark:text-gray-200">
-                    {{ workout.name }}
-                </h2>
+                <div class="flex items-center gap-2">
+                    <h2 class="text-xl font-semibold leading-tight text-gray-800 dark:text-gray-200">
+                        {{ workout.name }}
+                    </h2>
+                    <Link
+                        :href="route('workouts.edit', { workout: workout.id, redirect_to: currentPath })"
+                        class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 transition hover:bg-violet-500/10 hover:text-violet-600 dark:hover:text-violet-400"
+                        title="Editar treino"
+                    >
+                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                    </Link>
+                </div>
             </div>
         </template>
 
