@@ -64,7 +64,7 @@ while (true) {
         file_put_contents($tempTaskFile, $promptContent);
 
         echo "🤖 Agente 1 (Implementador) aplicando alterações...\n";
-        passthru('claude -p "Leia o arquivo .spec/.active_task.tmp e implemente todas as tarefas e critérios descritos nele."');
+        passthru('claude -p "Leia o arquivo .spec/.active_task.tmp e implemente todas as tarefas e critérios descritos nele." --dangerously-skip-permissions');
 
         echo "\n⚙️  Executando Esteira Mecânica de Verificação...\n";
 
