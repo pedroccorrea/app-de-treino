@@ -6,7 +6,9 @@ use App\Enums\DayOfWeek;
 use App\Http\Requests\StoreWorkoutRequest;
 use App\Http\Requests\UpdateWorkoutRequest;
 use App\Models\Workout;
+use App\Services\ProgressiveOverloadService;
 use App\Services\WorkoutService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -92,6 +94,15 @@ class WorkoutController extends Controller
         }
 
         return route('workouts.show', $workout);
+    }
+
+    public function overloadSuggestions(Request $request, Workout $workout, ProgressiveOverloadService $progressiveOverloadService): JsonResponse
+    {
+        abort_if($workout->user_id !== $request->user()->id, 403);
+
+        return response()->json(
+            $progressiveOverloadService->analyzeWorkout($request->user(), $workout)
+        );
     }
 
     public function reorder(Request $request, Workout $workout, WorkoutService $workoutService): RedirectResponse
