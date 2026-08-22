@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\WorkoutController;
+use App\Http\Controllers\WorkoutScannerController;
 use App\Http\Controllers\WorkoutSessionController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
@@ -24,6 +25,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/workouts', [WorkoutController::class, 'index'])->name('workouts.index');
     Route::get('/workouts/create', [WorkoutController::class, 'create'])->name('workouts.create');
     Route::post('/workouts', [WorkoutController::class, 'store'])->name('workouts.store');
+    Route::post('/workouts/scan', [WorkoutScannerController::class, 'store'])->name('workouts.scan');
     Route::get('/workouts/{workout}', [WorkoutController::class, 'show'])->name('workouts.show');
     Route::get('/workouts/{workout}/edit', [WorkoutController::class, 'edit'])->name('workouts.edit');
     Route::put('/workouts/{workout}', [WorkoutController::class, 'update'])->name('workouts.update');

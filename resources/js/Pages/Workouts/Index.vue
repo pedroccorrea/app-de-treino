@@ -1,7 +1,9 @@
 <script setup>
+import ScanWorkoutModal from '@/Components/Workouts/ScanWorkoutModal.vue';
+import WorkoutsIndexHeader from '@/Components/Workouts/WorkoutsIndexHeader.vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, Link, router } from '@inertiajs/vue3';
-import { computed } from 'vue';
+import { Head, Link, router, useForm } from '@inertiajs/vue3';
+import { computed, ref } from 'vue';
 
 const props = defineProps({
     workouts: {
@@ -22,6 +24,31 @@ const hasWorkouts = computed(() => props.workouts.length > 0);
 
 // Where the edit link should send the user back to after saving.
 const currentPath = window.location.pathname + window.location.search;
+
+const showScanModal = ref(false);
+const scanModal = ref(null);
+
+const scanForm = useForm({
+    image: null,
+});
+
+const openScanModal = () => {
+    showScanModal.value = true;
+};
+
+const closeScanModal = () => {
+    scanForm.reset();
+    scanForm.clearErrors();
+    scanModal.value?.resetPreview();
+    showScanModal.value = false;
+};
+
+const submitScan = () => {
+    scanForm.post(route('workouts.scan'), {
+        forceFormData: true,
+        onSuccess: () => closeScanModal(),
+    });
+};
 </script>
 
 <template>
@@ -29,44 +56,19 @@ const currentPath = window.location.pathname + window.location.search;
 
     <AuthenticatedLayout>
         <template #header>
-            <div
-                class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
-            >
-                <div>
-                    <h2
-                        class="text-xl font-bold leading-tight text-gray-900 dark:text-gray-100"
-                    >
-                        Treinos
-                    </h2>
-                    <p
-                        v-if="todayDayOfWeekLabel"
-                        class="mt-0.5 text-sm text-gray-500 dark:text-gray-400"
-                    >
-                        Hoje é {{ todayDayOfWeekLabel }}
-                    </p>
-                </div>
-
-                <Link
-                    :href="route('workouts.create')"
-                    class="inline-flex items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-violet-500/20 transition hover:bg-violet-700 hover:shadow-violet-500/30 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800"
-                >
-                    <svg
-                        class="h-5 w-5"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                    >
-                        <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="2.5"
-                            d="M12 4v16m8-8H4"
-                        />
-                    </svg>
-                    Novo Treino
-                </Link>
-            </div>
+            <WorkoutsIndexHeader
+                :today-day-of-week-label="todayDayOfWeekLabel"
+                @scan="openScanModal"
+            />
         </template>
+
+        <ScanWorkoutModal
+            ref="scanModal"
+            :show="showScanModal"
+            :form="scanForm"
+            @close="closeScanModal"
+            @submit="submitScan"
+        />
 
         <div class="py-6 sm:py-8">
             <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">

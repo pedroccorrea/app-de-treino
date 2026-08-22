@@ -14,10 +14,6 @@ if (!file_exists($progressFile)) {
     file_put_contents($progressFile, 0);
 }
 
-// 1. Checagem de integridade do Git
-$gitStatus = [];
-exec('git status --porcelain', $gitStatus);
-
 $content = file_get_contents($phasesFile);
 $phases = preg_split('/^# Phase /m', $content, -1, PREG_SPLIT_NO_EMPTY);
 
@@ -87,15 +83,16 @@ while (true) {
         echo "⚖️  Agente 2 (Auditor Read-Only) inspecionando conformidade com a Spec...\n";
         $evalPrompt = "Você é o Auditor de Qualidade Read-Only. Inspecione os arquivos do projeto e valide se a fase abaixo foi integralmente cumprida de acordo com todos os seus Acceptance Criteria e as regras de .ai/rules/.\n\n"
                     . "FASE:\n# Phase " . $phaseText . "\n\n"
-                    . "INSTRUÇÃO OBRIGATÓRIA DE SAÍDA: Sua PRIMEIRA LINHA de resposta DEVE ser a palavra 'DONE' (se aprovada) ou 'FALTA - motivo' (se houver pendências).";
+                    . "INSTRUÇÃO CRÍTICA DE FORMATO: Se a fase estiver aprovada e sem pendências bloqueantes, sua PRIMEIRA PALAVRA de resposta DEVE ser 'DONE'. Se houver pendências, comece com 'FALTA - motivo'.";
 
         $verdict = shell_exec('claude -p ' . escapeshellarg($evalPrompt) . ' --allowedTools "Read,Glob,Grep"');
         $verdictTrimmed = trim((string) $verdict);
 
-        // Checagem robusta de aprovação
-        $isApproved = preg_match('/^DONE/im', $verdictTrimmed)
-                   || preg_match('/Fase \d+ está integralmente cumprida/i', $verdictTrimmed)
-                   || (preg_match('/Veredito/i', $verdictTrimmed) && preg_match('/integralmente cumprida/i', $verdictTrimmed) && !preg_match('/NÃO cumprida/i', $verdictTrimmed));
+        // Detector Robusto de Aprovação
+        $hasRejection = preg_match('/\b(FALTA|REPROVAD[AO]|NÃO cumprida|NÃO aprovad[ao]|PENDENTE)\b/i', $verdictTrimmed);
+        $hasApproval = preg_match('/\b(DONE|APROVAD[AO]|cumprida integralmente|integralmente cumprida)\b/i', $verdictTrimmed);
+
+        $isApproved = $hasApproval && !$hasRejection;
 
         if ($isApproved) {
             echo "🏆 Auditor aprovou a fase com louvor (DONE)!\n";

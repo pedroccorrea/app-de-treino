@@ -1,0 +1,1 @@
+2026-08-22 18:51:03 | Phase 1 | 89fabab | 1: Menu Lateral e Layout Mobile-First
