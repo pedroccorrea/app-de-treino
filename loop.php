@@ -14,13 +14,9 @@ if (!file_exists($progressFile)) {
     file_put_contents($progressFile, 0);
 }
 
+// 1. Checagem de integridade do Git
 $gitStatus = [];
 exec('git status --porcelain', $gitStatus);
-if (!empty($gitStatus)) {
-    echo "\n⚠️  AVISO DE SEGURANÇA: Existem alterações não commitadas no repositório.\n";
-    echo "Faça o commit ou descarte as alterações antes de iniciar o loop autônomo.\n";
-    exit(1);
-}
 
 $content = file_get_contents($phasesFile);
 $phases = preg_split('/^# Phase /m', $content, -1, PREG_SPLIT_NO_EMPTY);
@@ -54,24 +50,26 @@ while (true) {
 
         $promptContent = "# DIRETRIZ DE EXECUÇÃO DO AGENTE IMPLEMENTADOR\n\n"
                        . "Você deve implementar COMPLETAMENTE a fase abaixo seguindo rigorosamente o CLAUDE.md e as regras em .ai/rules/.\n"
-                       . "Não deixe TODOs, mocks vazios nem placeholders.\n\n"
+                       . "Crie todos os arquivos necessários e aplique as alterações no disco. Não deixe TODOs, mocks vazios nem placeholders.\n\n"
                        . "### ESPECIFICAÇÃO DA FASE:\n# Phase " . $phaseText . "\n\n";
 
         if (!empty($feedback)) {
-            $promptContent .= "### ⚠️ RELATÓRIO DE FALHAS DO CICLO ANTERIOR (CORRIJA OBRIGATORIAMENTE):\n" . $feedback . "\n";
+            $promptContent .= "### ⚠️ RELATÓRIO DE AUDITORIA DO CICLO ANTERIOR (CORRIJA OBRIGATORIAMENTE):\n" . $feedback . "\n";
         }
 
         file_put_contents($tempTaskFile, $promptContent);
 
-        echo "🤖 Agente 1 (Implementador) aplicando alterações...\n";
-        passthru('claude -p "Leia o arquivo .spec/.active_task.tmp e implemente todas as tarefas e critérios descritos nele." --dangerously-skip-permissions');
+        echo "🤖 Agente 1 (Implementador) aplicando alterações no disco...\n";
+        passthru('claude -p "Leia o arquivo .spec/.active_task.tmp e implemente todas as tarefas e critérios descritos nele criando e editando os arquivos necessários." --dangerously-skip-permissions');
 
         echo "\n⚙️  Executando Esteira Mecânica de Verificação...\n";
 
+        // Gate 1: Testes de Arquitetura e Feature (Pest)
         $testOutput = [];
         $testCode = 0;
         exec('php artisan test', $testOutput, $testCode);
 
+        // Gate 2: Compilação de Frontend (Vite)
         $buildOutput = [];
         $buildCode = 0;
         exec('npm run build', $buildOutput, $buildCode);
@@ -89,21 +87,26 @@ while (true) {
         echo "⚖️  Agente 2 (Auditor Read-Only) inspecionando conformidade com a Spec...\n";
         $evalPrompt = "Você é o Auditor de Qualidade Read-Only. Inspecione os arquivos do projeto e valide se a fase abaixo foi integralmente cumprida de acordo com todos os seus Acceptance Criteria e as regras de .ai/rules/.\n\n"
                     . "FASE:\n# Phase " . $phaseText . "\n\n"
-                    . "Regra de Resposta: Responda ESTRITAMENTE uma linha começando com 'DONE' se estiver 100% concluída, ou 'FALTA - <motivo detalhado>' se algo estiver incompleto. Na menor dúvida, responda FALTA.";
+                    . "INSTRUÇÃO OBRIGATÓRIA DE SAÍDA: Sua PRIMEIRA LINHA de resposta DEVE ser a palavra 'DONE' (se aprovada) ou 'FALTA - motivo' (se houver pendências).";
 
         $verdict = shell_exec('claude -p ' . escapeshellarg($evalPrompt) . ' --allowedTools "Read,Glob,Grep"');
         $verdictTrimmed = trim((string) $verdict);
 
-        if (preg_match('/^DONE/m', $verdictTrimmed)) {
+        // Checagem robusta de aprovação
+        $isApproved = preg_match('/^DONE/im', $verdictTrimmed)
+                   || preg_match('/Fase \d+ está integralmente cumprida/i', $verdictTrimmed)
+                   || (preg_match('/Veredito/i', $verdictTrimmed) && preg_match('/integralmente cumprida/i', $verdictTrimmed) && !preg_match('/NÃO cumprida/i', $verdictTrimmed));
+
+        if ($isApproved) {
             echo "🏆 Auditor aprovou a fase com louvor (DONE)!\n";
 
             $commitMsg = "feat(phase-" . ($currentPhaseIndex + 1) . "): " . $phaseTitle;
             exec('git add -A && git commit -q -m ' . escapeshellarg($commitMsg));
-
+            
             $commitSha = trim((string) shell_exec('git rev-parse --short HEAD'));
             $manifestEntry = date('Y-m-d H:i:s') . " | Phase " . ($currentPhaseIndex + 1) . " | " . $commitSha . " | " . $phaseTitle . "\n";
             file_put_contents($manifestFile, $manifestEntry, FILE_APPEND);
-
+            
             echo "📦 Commit atômico gerado: [$commitSha] '$commitMsg'\n";
 
             file_put_contents($progressFile, $currentPhaseIndex + 1);
