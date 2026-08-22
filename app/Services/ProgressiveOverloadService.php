@@ -6,11 +6,12 @@ use App\Models\SetLog;
 use App\Models\User;
 use App\Models\Workout;
 use App\Models\WorkoutSession;
-use Illuminate\Support\Facades\Http;
-use RuntimeException;
+use App\Services\AI\GeminiClient;
 
 class ProgressiveOverloadService
 {
+    public function __construct(private readonly GeminiClient $gemini) {}
+
     /**
      * Analyzes the user's 3 most recent completed sessions of this workout and
      * asks Gemini for progressive-overload advice. Read-only: nothing is
@@ -58,40 +59,7 @@ class ProgressiveOverloadService
      */
     private function generateAdviceWithGemini(array $history): array
     {
-        $apiKey = config('services.gemini.key');
-        $model = config('services.gemini.model');
-
-        $response = Http::post(
-            "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$apiKey}",
-            [
-                'contents' => [
-                    [
-                        'parts' => [
-                            ['text' => $this->buildPrompt($history)],
-                        ],
-                    ],
-                ],
-            ]
-        );
-
-        if ($response->failed()) {
-            throw new RuntimeException('Falha ao comunicar com a API de IA para gerar sugestões de progressão.');
-        }
-
-        $rawText = data_get($response->json(), 'candidates.0.content.parts.0.text');
-
-        if (! is_string($rawText) || trim($rawText) === '') {
-            throw new RuntimeException('A IA não retornou nenhuma sugestão de progressão de carga.');
-        }
-
-        $sanitized = preg_replace('/^```(?:json)?\s+|\s+```$/m', '', trim($rawText));
-        $parsed = json_decode($sanitized, true);
-
-        if (json_last_error() !== JSON_ERROR_NONE || ! is_array($parsed)) {
-            throw new RuntimeException('Não foi possível interpretar as sugestões de progressão geradas pela IA.');
-        }
-
-        return $parsed;
+        return $this->gemini->generate($this->buildPrompt($history));
     }
 
     /**

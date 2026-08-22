@@ -6,14 +6,15 @@ use App\Enums\MuscleGroup;
 use App\Models\Exercise;
 use App\Models\User;
 use App\Models\Workout;
+use App\Services\AI\GeminiClient;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
-use RuntimeException;
 
 class WorkoutScannerService
 {
+    public function __construct(private readonly GeminiClient $gemini) {}
+
     /**
      * Reads a photo of a paper workout sheet, asks Gemini to transcribe it,
      * and imports the result as a new Workout for the user. Exercises the AI
@@ -52,46 +53,13 @@ class WorkoutScannerService
      */
     private function transcribeWithGemini(UploadedFile $image, Collection $catalog): array
     {
-        $apiKey = config('services.gemini.key');
-        $model = config('services.gemini.model');
-
-        $response = Http::post(
-            "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$apiKey}",
+        return $this->gemini->generate(
+            $this->buildPrompt($catalog),
             [
-                'contents' => [
-                    [
-                        'parts' => [
-                            ['text' => $this->buildPrompt($catalog)],
-                            [
-                                'inline_data' => [
-                                    'mime_type' => $image->getMimeType(),
-                                    'data' => base64_encode(file_get_contents($image->getRealPath())),
-                                ],
-                            ],
-                        ],
-                    ],
-                ],
+                'mimeType' => $image->getMimeType() ?: 'image/jpeg',
+                'data' => base64_encode(file_get_contents($image->getRealPath())),
             ]
         );
-
-        if ($response->failed()) {
-            throw new RuntimeException('Falha ao comunicar com a API de IA para escanear a ficha.');
-        }
-
-        $rawText = data_get($response->json(), 'candidates.0.content.parts.0.text');
-
-        if (! is_string($rawText) || trim($rawText) === '') {
-            throw new RuntimeException('A IA não retornou nenhum conteúdo ao escanear a ficha.');
-        }
-
-        $sanitized = preg_replace('/^```(?:json)?\s+|\s+```$/m', '', trim($rawText));
-        $parsed = json_decode($sanitized, true);
-
-        if (json_last_error() !== JSON_ERROR_NONE || ! is_array($parsed)) {
-            throw new RuntimeException('Não foi possível interpretar os exercícios identificados pela IA.');
-        }
-
-        return $parsed;
     }
 
     /**

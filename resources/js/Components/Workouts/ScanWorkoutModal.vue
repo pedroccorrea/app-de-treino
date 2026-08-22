@@ -20,8 +20,16 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'submit']);
 
-const fileInput = ref(null);
+// Max width (px) and JPEG quality used to downscale photos taken on a phone
+// camera before upload, so a 10+ MP photo doesn't blow past the 10MB backend
+// limit or spike PHP memory usage while it's base64-encoded for Gemini.
+const MAX_WIDTH = 1920;
+const JPEG_QUALITY = 0.8;
+
+const cameraInput = ref(null);
+const galleryInput = ref(null);
 const previewUrl = ref(null);
+const isCompressing = ref(false);
 const hasImage = computed(() => props.form.image !== null);
 
 const resetPreview = () => {
@@ -30,20 +38,98 @@ const resetPreview = () => {
         previewUrl.value = null;
     }
 
-    if (fileInput.value) {
-        fileInput.value.value = '';
-    }
+    if (cameraInput.value) cameraInput.value.value = '';
+    if (galleryInput.value) galleryInput.value.value = '';
 };
 
-const handleFileChange = (event) => {
-    const file = event.target.files[0] ?? null;
-    props.form.image = file;
+/**
+ * Redraws the image onto an off-screen canvas capped at MAX_WIDTH and
+ * re-encodes it as JPEG at JPEG_QUALITY, so large phone-camera photos are
+ * resized client-side instead of hitting the backend at full resolution.
+ */
+const compressImage = (file) =>
+    new Promise((resolve, reject) => {
+        const objectUrl = URL.createObjectURL(file);
+        const img = new Image();
 
+        img.onload = () => {
+            URL.revokeObjectURL(objectUrl);
+
+            let { width, height } = img;
+            if (width > MAX_WIDTH) {
+                height = Math.round((height * MAX_WIDTH) / width);
+                width = MAX_WIDTH;
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+
+            const context = canvas.getContext('2d');
+            if (!context) {
+                reject(new Error('Canvas indisponível.'));
+                return;
+            }
+            context.drawImage(img, 0, 0, width, height);
+
+            canvas.toBlob(
+                (blob) => {
+                    if (!blob) {
+                        reject(new Error('Falha ao comprimir a imagem.'));
+                        return;
+                    }
+
+                    resolve(
+                        new File(
+                            [blob],
+                            file.name.replace(/\.\w+$/, '.jpg'),
+                            { type: 'image/jpeg' },
+                        ),
+                    );
+                },
+                'image/jpeg',
+                JPEG_QUALITY,
+            );
+        };
+
+        img.onerror = () => {
+            URL.revokeObjectURL(objectUrl);
+            reject(new Error('Não foi possível carregar a imagem selecionada.'));
+        };
+
+        img.src = objectUrl;
+    });
+
+const setImage = (file) => {
     if (previewUrl.value) {
         URL.revokeObjectURL(previewUrl.value);
     }
 
+    props.form.image = file;
     previewUrl.value = file ? URL.createObjectURL(file) : null;
+};
+
+const handleFileChange = async (event) => {
+    const file = event.target.files[0] ?? null;
+
+    if (!file) {
+        setImage(null);
+        return;
+    }
+
+    isCompressing.value = true;
+
+    try {
+        const compressed = await compressImage(file);
+        setImage(compressed);
+    } catch {
+        // If compression fails for any reason (unsupported format, no
+        // canvas support, corrupt file) fall back to the original file
+        // rather than blocking the user from submitting.
+        setImage(file);
+    } finally {
+        isCompressing.value = false;
+    }
 };
 
 const closeModal = () => {
@@ -66,16 +152,47 @@ defineExpose({ resetPreview });
                 automaticamente.
             </p>
 
-            <div class="mt-4">
+            <div class="mt-4 grid grid-cols-2 gap-3">
                 <input
-                    ref="fileInput"
+                    ref="cameraInput"
                     type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    class="block w-full cursor-pointer text-sm text-gray-600 file:mr-4 file:cursor-pointer file:rounded-lg file:border-0 file:bg-violet-50 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-violet-700 hover:file:bg-violet-100 dark:text-gray-400 dark:file:bg-violet-500/10 dark:file:text-violet-400"
+                    accept="image/*"
+                    capture="environment"
+                    class="hidden"
                     @change="handleFileChange"
                 />
-                <InputError :message="form.errors.image" class="mt-2" />
+                <input
+                    ref="galleryInput"
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    class="hidden"
+                    @change="handleFileChange"
+                />
+
+                <button
+                    type="button"
+                    class="flex flex-col items-center justify-center gap-1 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm font-semibold text-violet-700 transition hover:bg-violet-100 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-400 dark:hover:bg-violet-500/20"
+                    @click="cameraInput?.click()"
+                >
+                    <span class="text-xl">📸</span>
+                    Tirar Foto
+                </button>
+
+                <button
+                    type="button"
+                    class="flex flex-col items-center justify-center gap-1 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-semibold text-gray-700 transition hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-700/40 dark:text-gray-300 dark:hover:bg-gray-700"
+                    @click="galleryInput?.click()"
+                >
+                    <span class="text-xl">📁</span>
+                    Escolher da Galeria
+                </button>
+
+                <InputError :message="form.errors.image" class="col-span-2 mt-1" />
             </div>
+
+            <p v-if="isCompressing" class="mt-3 text-sm text-gray-500 dark:text-gray-400">
+                Otimizando imagem...
+            </p>
 
             <div v-if="previewUrl" class="mt-4">
                 <img
@@ -90,8 +207,8 @@ defineExpose({ resetPreview });
                     Cancelar
                 </SecondaryButton>
                 <PrimaryButton
-                    :disabled="!hasImage || form.processing"
-                    :class="{ 'opacity-50': !hasImage || form.processing }"
+                    :disabled="!hasImage || isCompressing || form.processing"
+                    :class="{ 'opacity-50': !hasImage || isCompressing || form.processing }"
                     @click="emit('submit')"
                 >
                     {{

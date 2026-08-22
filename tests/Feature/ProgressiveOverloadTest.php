@@ -119,13 +119,15 @@ test('authenticated user receives AI progressive overload advice without persist
     Http::assertSent(fn ($request) => str_contains($request->url(), 'generativelanguage.googleapis.com'));
 });
 
-test('overload suggestions fail with an error when the AI response is not valid json', function () {
+test('overload suggestions fail gracefully with a friendly message when the AI response is not valid json', function () {
     fakeGeminiOverloadResponse('isso não é um JSON válido.');
 
     $user = User::factory()->create();
     $workout = Workout::factory()->for($user)->create();
 
-    $this->actingAs($user)
-        ->get(route('workouts.overload-suggestions', $workout))
-        ->assertStatus(500);
+    $response = $this->actingAs($user)
+        ->get(route('workouts.overload-suggestions', $workout));
+
+    $response->assertStatus(422);
+    $response->assertJsonStructure(['message']);
 });

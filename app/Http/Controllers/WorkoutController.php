@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\DayOfWeek;
+use App\Exceptions\GeminiException;
 use App\Http\Requests\StoreWorkoutRequest;
 use App\Http\Requests\UpdateWorkoutRequest;
 use App\Models\Workout;
@@ -100,9 +101,15 @@ class WorkoutController extends Controller
     {
         abort_if($workout->user_id !== $request->user()->id, 403);
 
-        return response()->json(
-            $progressiveOverloadService->analyzeWorkout($request->user(), $workout)
-        );
+        try {
+            return response()->json(
+                $progressiveOverloadService->analyzeWorkout($request->user(), $workout)
+            );
+        } catch (GeminiException $e) {
+            return response()->json([
+                'message' => 'Não foi possível gerar as sugestões de progressão agora: '.$e->getMessage(),
+            ], 422);
+        }
     }
 
     public function reorder(Request $request, Workout $workout, WorkoutService $workoutService): RedirectResponse

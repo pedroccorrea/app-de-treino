@@ -1,2 +1,3 @@
 2026-08-22 18:51:03 | Phase 1 | 89fabab | 1: Menu Lateral e Layout Mobile-First
 2026-08-22 19:18:16 | Phase 2 | 638b53a | 2: Módulo IA Vision (Scanner de Fichas com Entity Resolution)
+2026-08-22 19:27:32 | Phase 3 | 1d87019 | 3: Motor IA de Sobrecarga Progressiva (Personal Trainer Digital)

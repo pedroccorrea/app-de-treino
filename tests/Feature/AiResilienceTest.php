@@ -1,0 +1,162 @@
+<?php
+
+use App\Models\User;
+use App\Models\Workout;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Http;
+
+/**
+ * Chaos-style resilience tests for every Gemini-backed endpoint: none of
+ * them may ever bubble up a fatal 500, regardless of how badly the AI (or
+ * the network) misbehaves.
+ */
+function fakeGeminiNetworkTimeout(): void
+{
+    Http::fake(function () {
+        throw new ConnectionException('cURL error 28: Operation timed out after 60000 milliseconds with 0 bytes received');
+    });
+}
+
+function fakeGeminiBrokenMarkdown(): void
+{
+    Http::fake([
+        'generativelanguage.googleapis.com/*' => Http::response([
+            'candidates' => [
+                [
+                    'content' => [
+                        'parts' => [
+                            ['text' => "```json\n{ isso nao é json válido, apenas lixo solto ```"],
+                        ],
+                    ],
+                ],
+            ],
+        ], 200),
+    ]);
+}
+
+function fakeGeminiValidOcrResponse(): void
+{
+    $fixture = file_get_contents(base_path('tests/Fixtures/ocr-workout-sheet.json'));
+
+    Http::fake([
+        'generativelanguage.googleapis.com/*' => Http::response([
+            'candidates' => [
+                [
+                    'content' => [
+                        'parts' => [
+                            ['text' => "```json\n{$fixture}\n```"],
+                        ],
+                    ],
+                ],
+            ],
+        ], 200),
+    ]);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Teste 1: Falha de rede / timeout
+// ─────────────────────────────────────────────────────────────────────────
+
+test('scanning a workout sheet never returns a fatal 500 when Gemini times out', function () {
+    fakeGeminiNetworkTimeout();
+    $user = User::factory()->create();
+
+    $response = $this->actingAs($user)->post(route('workouts.scan'), [
+        'image' => UploadedFile::fake()->create('ficha.jpg', 500, 'image/jpeg'),
+    ]);
+
+    $response->assertStatus(302);
+    $response->assertRedirect(route('workouts.index'));
+    $response->assertSessionHas('error');
+    expect($user->workouts()->count())->toBe(0);
+});
+
+test('overload suggestions never return a fatal 500 when Gemini times out', function () {
+    fakeGeminiNetworkTimeout();
+    $user = User::factory()->create();
+    $workout = Workout::factory()->for($user)->create();
+
+    $response = $this->actingAs($user)->get(route('workouts.overload-suggestions', $workout));
+
+    $response->assertStatus(422);
+    $response->assertJsonStructure(['message']);
+});
+
+test('dashboard never returns a fatal 500 when Gemini times out', function () {
+    fakeGeminiNetworkTimeout();
+    $user = User::factory()->create();
+
+    $response = $this->actingAs($user)->get(route('dashboard'));
+
+    $response->assertOk();
+    $response->assertInertia(
+        fn ($page) => $page
+            ->component('Dashboard')
+            ->where('muscleBalanceAlert', null)
+    );
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Teste 2: IA devolve lixo / markdown quebrado
+// ─────────────────────────────────────────────────────────────────────────
+
+test('scanning a workout sheet handles broken markdown from the AI gracefully', function () {
+    fakeGeminiBrokenMarkdown();
+    $user = User::factory()->create();
+
+    $response = $this->actingAs($user)->post(route('workouts.scan'), [
+        'image' => UploadedFile::fake()->create('ficha.jpg', 500, 'image/jpeg'),
+    ]);
+
+    $response->assertStatus(302);
+    $response->assertRedirect(route('workouts.index'));
+    $response->assertSessionHas('error');
+    expect($user->workouts()->count())->toBe(0);
+});
+
+test('overload suggestions handle broken markdown from the AI gracefully', function () {
+    fakeGeminiBrokenMarkdown();
+    $user = User::factory()->create();
+    $workout = Workout::factory()->for($user)->create();
+
+    $response = $this->actingAs($user)->get(route('workouts.overload-suggestions', $workout));
+
+    $response->assertStatus(422);
+    $response->assertJsonStructure(['message']);
+});
+
+test('dashboard falls back to no alert when the AI returns broken markdown', function () {
+    fakeGeminiBrokenMarkdown();
+    $user = User::factory()->create();
+
+    $response = $this->actingAs($user)->get(route('dashboard'));
+
+    $response->assertOk();
+    $response->assertInertia(
+        fn ($page) => $page
+            ->component('Dashboard')
+            ->where('muscleBalanceAlert', null)
+    );
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Teste 3: Upload de imagem pesada
+// ─────────────────────────────────────────────────────────────────────────
+
+test('scanning tolerates an 8MB workout sheet photo without exhausting memory', function () {
+    fakeGeminiValidOcrResponse();
+    $user = User::factory()->create();
+
+    $response = $this->actingAs($user)->post(route('workouts.scan'), [
+        // 8MB, comfortably inside the 10MB ScanWorkoutRequest limit but
+        // large enough to stress base64-encoding it in memory.
+        'image' => UploadedFile::fake()->create('ficha-grande.jpg', 8 * 1024, 'image/jpeg'),
+    ]);
+
+    $workout = $user->workouts()->firstOrFail();
+
+    $response->assertRedirect(route('workouts.show', $workout));
+    $response->assertSessionHas('success');
+    expect($workout->exercises()->count())->toBe(4);
+});

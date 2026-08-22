@@ -109,16 +109,18 @@ test('authenticated user can scan a paper workout sheet and import it without du
     Http::assertSent(fn ($request) => str_contains($request->url(), 'generativelanguage.googleapis.com'));
 });
 
-test('scanning fails with an error when the AI response is not valid json', function () {
+test('scanning fails gracefully with a flash error when the AI response is not valid json', function () {
     fakeGeminiResponse('isso não é um JSON válido.');
 
     $user = User::factory()->create();
 
-    $this->actingAs($user)
+    $response = $this->actingAs($user)
         ->post(route('workouts.scan'), [
             'image' => UploadedFile::fake()->create('ficha.jpg', 100, 'image/jpeg'),
-        ])
-        ->assertStatus(500);
+        ]);
+
+    $response->assertRedirect(route('workouts.index'));
+    $response->assertSessionHas('error');
 
     expect($user->workouts()->count())->toBe(0);
 });

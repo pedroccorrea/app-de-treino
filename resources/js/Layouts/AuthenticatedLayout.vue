@@ -10,24 +10,35 @@ const logout = () => {
     router.post(route('logout'));
 };
 
-// ─── Success toast ──────────────────────────────────────────────────────────
-// Whenever a redirect carries a `flash.success` message, show it as a
-// self-dismissing toast on top of whatever page the redirect landed on.
+// ─── Success / error toasts ─────────────────────────────────────────────────
+// Whenever a redirect carries a `flash.success` or `flash.error` message,
+// show it as a self-dismissing toast on top of whatever page the redirect
+// landed on.
 const page = usePage();
 const toastMessage = ref(null);
+const toastVariant = ref('success');
 let toastTimeout = null;
+
+const showToast = (message, variant) => {
+    if (!message) return;
+
+    toastMessage.value = message;
+    toastVariant.value = variant;
+    clearTimeout(toastTimeout);
+    toastTimeout = setTimeout(() => {
+        toastMessage.value = null;
+    }, 4000);
+};
 
 watch(
     () => page.props.flash?.success,
-    (message) => {
-        if (!message) return;
+    (message) => showToast(message, 'success'),
+    { immediate: true },
+);
 
-        toastMessage.value = message;
-        clearTimeout(toastTimeout);
-        toastTimeout = setTimeout(() => {
-            toastMessage.value = null;
-        }, 3000);
-    },
+watch(
+    () => page.props.flash?.error,
+    (message) => showToast(message, 'error'),
     { immediate: true },
 );
 </script>
@@ -81,7 +92,7 @@ watch(
             </main>
         </div>
 
-        <!-- Success Toast -->
+        <!-- Success / Error Toast -->
         <Teleport to="body">
             <Transition
                 enter-active-class="transition duration-300 ease-out"
@@ -96,12 +107,25 @@ watch(
                     class="fixed inset-x-4 top-4 z-[100] flex justify-center sm:inset-x-auto sm:right-6 sm:justify-end"
                 >
                     <div
-                        class="flex w-full max-w-sm items-center gap-3 rounded-2xl border border-violet-500/30 bg-white/95 px-4 py-3.5 shadow-xl shadow-violet-500/10 backdrop-blur dark:border-violet-500/30 dark:bg-gray-800/95"
+                        :class="[
+                            'flex w-full max-w-sm items-center gap-3 rounded-2xl border bg-white/95 px-4 py-3.5 shadow-xl backdrop-blur dark:bg-gray-800/95',
+                            toastVariant === 'error'
+                                ? 'border-red-500/30 shadow-red-500/10'
+                                : 'border-violet-500/30 shadow-violet-500/10',
+                        ]"
                     >
                         <span
-                            class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-violet-500/15 text-violet-600 dark:text-violet-400"
+                            :class="[
+                                'flex h-8 w-8 shrink-0 items-center justify-center rounded-full',
+                                toastVariant === 'error'
+                                    ? 'bg-red-500/15 text-red-600 dark:text-red-400'
+                                    : 'bg-violet-500/15 text-violet-600 dark:text-violet-400',
+                            ]"
                         >
-                            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg v-if="toastVariant === 'error'" class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 9v3.75m0 3.75h.008v.008H12v-.008zM21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <svg v-else class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
                             </svg>
                         </span>
