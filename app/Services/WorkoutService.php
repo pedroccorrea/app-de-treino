@@ -12,6 +12,8 @@ use Illuminate\Support\Facades\DB;
 
 class WorkoutService
 {
+    public function __construct(private readonly WorkoutProgramService $workoutProgramService) {}
+
     /**
      * Fetches the user's workouts ordered by their scheduled weekday
      * (Monday → Sunday). Workouts without a scheduled day are listed last.
@@ -20,7 +22,7 @@ class WorkoutService
      */
     public function getUserWorkouts(User $user, bool $onlyActive = false): Collection
     {
-        $query = $user->workouts()->with('exercises');
+        $query = $user->workouts()->with(['exercises', 'workoutProgram']);
 
         if ($onlyActive) {
             $query->active();
@@ -79,6 +81,8 @@ class WorkoutService
                 'name' => $data['name'],
                 'description' => $data['description'] ?? null,
                 'days_of_week' => $data['days_of_week'] ?? null,
+                'workout_program_id' => $data['workout_program_id']
+                    ?? $this->workoutProgramService->getActiveProgram($user)?->id,
             ]);
 
             foreach ($data['exercises'] ?? [] as $index => $exercise) {

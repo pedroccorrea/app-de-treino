@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['user_id', 'name', 'description', 'program_name', 'days_of_week', 'is_active'])]
+#[Fillable(['user_id', 'workout_program_id', 'name', 'description', 'program_name', 'days_of_week', 'is_active'])]
 class Workout extends Model
 {
     use HasFactory;
@@ -42,6 +42,11 @@ class Workout extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function workoutProgram(): BelongsTo
+    {
+        return $this->belongsTo(WorkoutProgram::class);
     }
 
     public function exercises(): BelongsToMany

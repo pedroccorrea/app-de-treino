@@ -3,6 +3,7 @@
 use App\Enums\DayOfWeek;
 use App\Models\User;
 use App\Models\Workout;
+use App\Models\WorkoutProgram;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
 
@@ -102,6 +103,49 @@ test('dashboard reports no todayWorkout on a rest day', function () {
             fn ($page) => $page
                 ->component('Dashboard')
                 ->where('todayWorkout', null)
+        );
+
+    Carbon::setTestNow();
+});
+
+test('dashboard todayWorkout never leaks a ficha from an archived program', function () {
+    Carbon::setTestNow(Carbon::parse('2026-08-24 08:00:00')); // a Monday
+
+    $user = User::factory()->create();
+
+    $oldProgram = WorkoutProgram::factory()->for($user)->create([
+        'name' => 'Programa A',
+        'is_active' => false,
+        'archived_at' => now(),
+    ]);
+    $currentProgram = WorkoutProgram::factory()->for($user)->create([
+        'name' => 'Programa B',
+        'is_active' => true,
+    ]);
+
+    // Still `is_active = true` at the Workout level even though its program
+    // was archived — this is exactly what leaked before the program-scoped fix.
+    $user->workouts()->create([
+        'name' => 'Treino A',
+        'days_of_week' => [DayOfWeek::Monday->value],
+        'workout_program_id' => $oldProgram->id,
+    ]);
+
+    $todayWorkout = $user->workouts()->create([
+        'name' => 'Treino B',
+        'days_of_week' => [DayOfWeek::Monday->value],
+        'workout_program_id' => $currentProgram->id,
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('dashboard'))
+        ->assertOk()
+        ->assertInertia(
+            fn ($page) => $page
+                ->component('Dashboard')
+                ->where('todayWorkout.id', $todayWorkout->id)
+                ->where('todayWorkout.name', 'Treino B')
+                ->where('todayWorkout.program_name', 'Programa B')
         );
 
     Carbon::setTestNow();

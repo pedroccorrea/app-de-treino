@@ -2,3 +2,4 @@
 2026-08-22 19:18:16 | Phase 2 | 638b53a | 2: Módulo IA Vision (Scanner de Fichas com Entity Resolution)
 2026-08-22 19:27:32 | Phase 3 | 1d87019 | 3: Motor IA de Sobrecarga Progressiva (Personal Trainer Digital)
 2026-08-22 20:59:56 | Phase 4 | e9e02de | 4: Dashboard Premium & Analytics de Músculos Negligenciados
+2026-08-25 09:20:13 | Phase 5 | 0ce9e9d | 5: Dashboard Action-First, Fichas Ativas/Arquivadas e IA Contextual

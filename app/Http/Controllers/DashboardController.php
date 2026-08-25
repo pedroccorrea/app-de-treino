@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Enums\DayOfWeek;
 use App\Models\Workout;
 use App\Services\DashboardAnalyticsService;
+use App\Services\WorkoutProgramService;
 use App\Services\WorkoutService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -12,16 +13,21 @@ use Inertia\Response;
 
 class DashboardController extends Controller
 {
-    public function index(Request $request, WorkoutService $workoutService, DashboardAnalyticsService $dashboardAnalyticsService): Response
+    public function index(Request $request, WorkoutService $workoutService, WorkoutProgramService $workoutProgramService, DashboardAnalyticsService $dashboardAnalyticsService): Response
     {
         $user = $request->user();
         $today = $workoutService->todayDayOfWeek();
 
         $activeWorkouts = $workoutService->getUserWorkouts($user, onlyActive: true);
+        $activeProgram = $workoutProgramService->getActiveProgram($user);
 
-        $todayWorkout = $activeWorkouts->first(
-            fn (Workout $workout) => ($workout->days_of_week ?? collect())->contains($today)
-        );
+        // "Treino de Hoje" só pode vir do programa atualmente ativo: uma ficha
+        // arquivada junto de um programa antigo pode continuar com
+        // `is_active = true` no nível de Workout, então o cruzamento com o
+        // programa evita que ela "vaze" para o hero da Dashboard.
+        $todayWorkout = $activeWorkouts
+            ->filter(fn (Workout $workout) => $workout->workout_program_id === $activeProgram?->id)
+            ->first(fn (Workout $workout) => ($workout->days_of_week ?? collect())->contains($today));
 
         return Inertia::render('Dashboard', [
             'todayWorkout' => $todayWorkout ? $this->formatTodayWorkout($todayWorkout) : null,
@@ -49,6 +55,7 @@ class DashboardController extends Controller
             'name' => $workout->name,
             'muscle_groups' => $muscleGroups,
             'exercises_count' => $workout->exercises->count(),
+            'program_name' => $workout->workoutProgram?->name,
         ];
     }
 

@@ -79,3 +79,43 @@
 3. `php artisan test` passa em 100% da suíte de testes.
 4. `tests/Architecture/ArchitecturalRulesTest.php` passa sem violações.
 5. `npm run build` compila sem nenhum erro.
+
+# Phase 6: Hierarquia de Programas de Treino e Periodização
+## Tasks
+1. **Banco de Dados & Models:**
+   - Criar model e migration `app/Models/WorkoutProgram.php` (tabela `workout_programs`: `id`, `user_id`, `name`, `description` nullable, `is_active` boolean default false, `archived_at` timestamp nullable, `timestamps`).
+   - Adicionar coluna `workout_program_id` (foreign key nullable on delete cascade) na tabela `workouts`.
+   - Migration Backfill: Em um hook após a criação da tabela, se existirem `workouts` órfãos, criar um `WorkoutProgram` padrão ("Meu Programa Atual", `is_active = true`) e associar todos os treinos existentes do usuário a ele.
+   - Configurar relacionamentos Eloquent:
+     * `User` hasMany `WorkoutProgram`.
+     * `WorkoutProgram` belongsTo `User`, hasMany `Workout`.
+     * `Workout` belongsTo `WorkoutProgram`.
+
+2. **Backend Services & Controllers:**
+   - Criar `app/Services/WorkoutProgramService.php`:
+     * `getUserPrograms(User $user)`: retorna programas com contagem de treinos e status.
+     * `createProgram(User $user, array $data)`: cria novo programa.
+     * `activateProgram(WorkoutProgram $program)`: marca o programa como `is_active = true`, arquiva/desativa os outros programas do mesmo usuário em `DB::transaction`.
+     * `archiveProgram(WorkoutProgram $program)`: desativa e seta `archived_at = now()`.
+     * `deleteProgram(WorkoutProgram $program)`: deleta o programa e suas fichas associadas com segurança.
+   - Criar `app/Http/Controllers/WorkoutProgramController.php` e registrar as rotas em `routes/web.php`:
+     * `GET /programs` (name: `programs.index`)
+     * `POST /programs` (name: `programs.store`)
+     * `PATCH /programs/{program}/activate` (name: `programs.activate`)
+     * `PATCH /programs/{program}/archive` (name: `programs.archive`)
+     * `DELETE /programs/{program}` (name: `programs.destroy`)
+   - Atualizar `WorkoutScannerService` e `WorkoutService`: ao criar/escanear uma ficha sem programa explícito, vincular automaticamente ao programa ativo atual do usuário.
+
+3. **Frontend (Vue 3 + Inertia + Tailwind):**
+   - Atualizar `resources/js/Pages/Workouts/Index.vue`:
+     * Exibir o Cabeçalho do Programa Ativo (ex: "📋 Programa Ativo: Hipertrofia ABCD") com botão "+ Novo Programa" e modal de criação.
+     * Aba "Programa Ativo": exibe as fichas daquele programa com suas opções de edição/exclusão.
+     * Aba "Programas Arquivados": exibe os blocos de programas passados com data de arquivamento, lista de treinos que continham e botões "⚡ Reativar Programa" e "🗑️ Excluir".
+   - Atualizar `resources/js/Pages/Dashboard.vue`:
+     * Card Hero "Treino de Hoje" busca o treino agendado do programa ativo atual e exibe o badge do nome do programa.
+
+## Acceptance Criteria
+1. `tests/Feature/WorkoutProgramTest.php` passa 100% cobrindo criação, ativação exclusiva (ativar um desativa outros), arquivamento e exclusão em cascata.
+2. `php artisan test` passa em 100% de toda a suíte.
+3. `tests/Architecture/ArchitecturalRulesTest.php` passa sem nenhuma violação.
+4. `npm run build` compila com zero erros.

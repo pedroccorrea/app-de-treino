@@ -13,7 +13,10 @@ use Illuminate\Support\Facades\DB;
 
 class WorkoutScannerService
 {
-    public function __construct(private readonly GeminiClient $gemini) {}
+    public function __construct(
+        private readonly GeminiClient $gemini,
+        private readonly WorkoutProgramService $workoutProgramService,
+    ) {}
 
     /**
      * Reads a photo of a paper workout sheet, asks Gemini to transcribe it,
@@ -30,6 +33,7 @@ class WorkoutScannerService
         return DB::transaction(function () use ($parsed, $catalog, $user) {
             $workout = $user->workouts()->create([
                 'name' => $parsed['workout_name'] ?? 'Ficha Escaneada',
+                'workout_program_id' => $this->workoutProgramService->getActiveProgram($user)?->id,
             ]);
 
             foreach ($parsed['exercises'] ?? [] as $index => $exerciseData) {

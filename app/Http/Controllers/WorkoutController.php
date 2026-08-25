@@ -6,6 +6,8 @@ use App\Enums\DayOfWeek;
 use App\Http\Requests\StoreWorkoutRequest;
 use App\Http\Requests\UpdateWorkoutRequest;
 use App\Models\Workout;
+use App\Models\WorkoutProgram;
+use App\Services\WorkoutProgramService;
 use App\Services\WorkoutService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -14,18 +16,25 @@ use Inertia\Response;
 
 class WorkoutController extends Controller
 {
-    public function index(Request $request, WorkoutService $workoutService): Response
+    public function index(Request $request, WorkoutService $workoutService, WorkoutProgramService $workoutProgramService): Response
     {
+        $user = $request->user();
         $today = $workoutService->todayDayOfWeek();
 
-        $workouts = $workoutService->getUserWorkouts($request->user())
+        $workouts = $workoutService->getUserWorkouts($user)
             ->map(fn (Workout $workout) => $this->formatWorkout($workout, $today));
+
+        $programs = $workoutProgramService->getUserPrograms($user);
+        $activeProgram = $programs->firstWhere('is_active', true);
+        $archivedPrograms = $programs->where('is_active', false)->values();
 
         return Inertia::render('Workouts/Index', [
             'workouts' => $workouts,
             'exercisesCatalog' => $workoutService->getAvailableExercises(),
             'todayDayOfWeek' => $today->value,
             'todayDayOfWeekLabel' => $today->label(),
+            'activeProgram' => $activeProgram ? $this->formatActiveProgram($activeProgram) : null,
+            'archivedPrograms' => $archivedPrograms->map(fn (WorkoutProgram $program) => $this->formatArchivedProgram($program))->values()->all(),
         ]);
     }
 
@@ -153,6 +162,7 @@ class WorkoutController extends Controller
             'name' => $workout->name,
             'description' => $workout->description,
             'is_active' => $workout->is_active,
+            'workout_program_id' => $workout->workout_program_id,
             'exercises_count' => $workout->exercises->count(),
             'muscle_groups' => $muscleGroups->unique()->values()->all(),
             'days_of_week' => $daysOfWeek->map(fn (DayOfWeek $day) => $day->value)->values()->all(),
@@ -165,6 +175,33 @@ class WorkoutController extends Controller
                 'target_sets' => $exercise->pivot->target_sets,
                 'target_reps' => $exercise->pivot->target_reps,
                 'order' => $exercise->pivot->order,
+            ])->values()->all(),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function formatActiveProgram(WorkoutProgram $program): array
+    {
+        return [
+            'id' => $program->id,
+            'name' => $program->name,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function formatArchivedProgram(WorkoutProgram $program): array
+    {
+        return [
+            'id' => $program->id,
+            'name' => $program->name,
+            'archived_at' => $program->archived_at?->format('d/m/Y'),
+            'workouts' => $program->workouts->map(fn (Workout $workout) => [
+                'id' => $workout->id,
+                'name' => $workout->name,
             ])->values()->all(),
         ];
     }

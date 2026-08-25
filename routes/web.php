@@ -3,6 +3,7 @@
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\WorkoutController;
+use App\Http\Controllers\WorkoutProgramController;
 use App\Http\Controllers\WorkoutScannerController;
 use App\Http\Controllers\WorkoutSessionController;
 use Illuminate\Foundation\Application;
@@ -34,6 +35,12 @@ Route::middleware('auth')->group(function () {
     Route::patch('/workouts/{workout}/archive', [WorkoutController::class, 'toggleArchive'])->name('workouts.archive');
     Route::delete('/workouts/{workout}', [WorkoutController::class, 'destroy'])->name('workouts.destroy');
     Route::post('/workouts/{workout}/start', [WorkoutSessionController::class, 'start'])->name('workouts.start');
+
+    Route::get('/programs', [WorkoutProgramController::class, 'index'])->name('programs.index');
+    Route::post('/programs', [WorkoutProgramController::class, 'store'])->name('programs.store');
+    Route::patch('/programs/{program}/activate', [WorkoutProgramController::class, 'activate'])->name('programs.activate');
+    Route::patch('/programs/{program}/archive', [WorkoutProgramController::class, 'archive'])->name('programs.archive');
+    Route::delete('/programs/{program}', [WorkoutProgramController::class, 'destroy'])->name('programs.destroy');
 
     Route::get('/workout-sessions/{session}', [WorkoutSessionController::class, 'show'])->name('workout-sessions.show');
     Route::post('/workout-sessions/{session}/sets', [WorkoutSessionController::class, 'logSet'])->name('workout-sessions.sets.store');

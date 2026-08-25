@@ -13,9 +13,17 @@ defineProps({
     <div
         class="overflow-hidden rounded-2xl border border-orange-400/40 bg-gradient-to-br from-orange-500/10 via-red-500/5 to-transparent p-6 shadow-sm dark:border-orange-500/30"
     >
-        <p class="text-xs font-bold uppercase tracking-wide text-orange-500 dark:text-orange-400">
-            🔥 Treino de Hoje
-        </p>
+        <div class="flex flex-wrap items-center justify-between gap-2">
+            <p class="text-xs font-bold uppercase tracking-wide text-orange-500 dark:text-orange-400">
+                🔥 Treino de Hoje
+            </p>
+            <span
+                v-if="workout.program_name"
+                class="inline-flex items-center gap-1 rounded-full bg-white/70 px-2.5 py-1 text-xs font-semibold text-gray-700 dark:bg-gray-800/70 dark:text-gray-300"
+            >
+                📋 {{ workout.program_name }}
+            </span>
+        </div>
         <h3 class="mt-2 text-2xl font-bold text-gray-900 dark:text-gray-100">
             {{ workout.name }}
         </h3>
