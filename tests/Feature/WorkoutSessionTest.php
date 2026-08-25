@@ -3,9 +3,9 @@
 use App\Models\Exercise;
 use App\Models\SetLog;
 use App\Models\User;
-use App\Models\Workout;
 use App\Models\WorkoutSession;
 use Database\Seeders\ExerciseSeeder;
+use Illuminate\Support\Facades\Http;
 
 test('guests are redirected to login when accessing workout sessions', function () {
     $session = WorkoutSession::factory()->create();
@@ -72,7 +72,7 @@ test('authenticated user can view active workout session page', function () {
         ->get(route('workout-sessions.show', $session))
         ->assertOk()
         ->assertInertia(
-            fn($page) => $page
+            fn ($page) => $page
                 ->component('WorkoutSessions/Active')
                 ->has('session')
                 ->has('workout')
@@ -80,6 +80,81 @@ test('authenticated user can view active workout session page', function () {
                 ->has('setLogs')
                 ->has('lastLogs')
         );
+});
+
+test('opening a session with completed history automatically loads AI overload suggestions', function () {
+    $this->seed(ExerciseSeeder::class);
+    $user = User::factory()->create();
+    $exercise = Exercise::first();
+
+    $workout = $user->workouts()->create(['name' => 'Treino Peito']);
+    $workout->workoutExercises()->create([
+        'exercise_id' => $exercise->id,
+        'order' => 0,
+        'target_sets' => 4,
+        'target_reps' => '8-12',
+    ]);
+
+    $pastSession = $user->workoutSessions()->create([
+        'workout_id' => $workout->id,
+        'started_at' => now()->subDay()->subHour(),
+        'completed_at' => now()->subDay(),
+    ]);
+    $pastSession->setLogs()->create([
+        'exercise_id' => $exercise->id,
+        'set_number' => 1,
+        'weight' => 30,
+        'reps' => 12,
+        'rpe' => 7,
+    ]);
+
+    $fixture = file_get_contents(base_path('tests/Fixtures/progressive-overload-advice.json'));
+    Http::fake([
+        'generativelanguage.googleapis.com/*' => Http::response([
+            'candidates' => [
+                ['content' => ['parts' => [['text' => $fixture]]]],
+            ],
+        ], 200),
+    ]);
+
+    $session = $user->workoutSessions()->create([
+        'workout_id' => $workout->id,
+        'started_at' => now(),
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('workout-sessions.show', $session))
+        ->assertOk()
+        ->assertInertia(
+            fn ($page) => $page
+                ->component('WorkoutSessions/Active')
+                ->where('overloadSuggestions', json_decode($fixture, true)['recommendations'])
+        );
+});
+
+test('opening a session with no completed history skips the AI overload call', function () {
+    $this->seed(ExerciseSeeder::class);
+    $user = User::factory()->create();
+
+    $workout = $user->workouts()->create(['name' => 'Treino Peito']);
+
+    Http::fake();
+
+    $session = $user->workoutSessions()->create([
+        'workout_id' => $workout->id,
+        'started_at' => now(),
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('workout-sessions.show', $session))
+        ->assertOk()
+        ->assertInertia(
+            fn ($page) => $page
+                ->component('WorkoutSessions/Active')
+                ->where('overloadSuggestions', [])
+        );
+
+    Http::assertNothingSent();
 });
 
 test('authenticated user can log and update sets in a session', function () {

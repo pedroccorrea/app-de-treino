@@ -42,3 +42,40 @@
 1. O teste tests/Feature/DashboardAnalyticsTest.php passa 100% cobrindo Streak, PRs e a fixture tests/Fixtures/muscle-balance-alert.json.
 2. php artisan test passa em 100% de toda a suíte de testes.
 3. npm run build compila sem nenhum erro.
+
+# Phase 5: Dashboard Action-First, Fichas Ativas/Arquivadas e IA Contextual
+## Tasks
+1. **Banco de Dados & Gestão de Fichas (Ativas vs. Arquivadas e Exclusão):**
+   - Criar migration adicionando `is_active` (boolean, default true) e `program_name` (string, nullable) na tabela `workouts`.
+   - Adicionar scopes `scopeActive` e `scopeArchived` no Model `Workout`.
+   - No `WorkoutService` e `WorkoutController`:
+     * Implementar método `toggleArchive(Workout $workout)` para arquivar/reativar fichas.
+     * Implementar método `destroy(Workout $workout)` para deletar o treino com segurança (`DB::transaction`).
+     * Registrar as rotas `PATCH /workouts/{workout}/archive` e `DELETE /workouts/{workout}` em `routes/web.php`.
+   - No Frontend (`Workouts/Index.vue`):
+     * Adicionar abas/filtro para alternar entre "Fichas Ativas" e "Arquivadas".
+     * Adicionar botão de exclusão com modal de confirmação antes de deletar um treino.
+     * Permitir reativar fichas arquivadas.
+
+2. **Dashboard Otimizada e Instantânea (Action-First, <100ms):**
+   - No `DashboardController@index`: REMOVER a chamada síncrona de IA do Gemini. A tela deve carregar instantaneamente via SQL puro.
+   - Identificar o treino ativo agendado para o dia da semana atual (`todayWorkout`).
+   - Passar como props: `todayWorkout` (com contagem de exercícios e rota de início), `streak` (dias seguidos) e `activeWorkouts`.
+   - No Frontend (`Dashboard.vue`):
+     * REMOVER: Heatmap de atividade, lista de Recordes Pessoais (PRs), card de volume semanal e o card de alerta de equilíbrio muscular.
+     * Adicionar Card Hero em destaque: **"🔥 Treino de Hoje (Dia da Semana)"** exibindo o nome da ficha, grupo muscular, quantidade de exercícios e botão grande **"🔥 Iniciar Treino Agora"** (que inicia a sessão com 1 toque).
+     * Se for dia de descanso (sem treino agendado): exibir card amigável "Hoje é dia de descanso! Ou escolha um treino abaixo" com atalhos para os treinos ativos.
+     * Card de Ofensiva: "⚡ Sequência de Treinos" (X dias seguidos).
+     * Lista rápida dos treinos ativos.
+
+3. **IA de Sobrecarga Automática no Exercício Ativo (`Active.vue`):**
+   - REMOVER o widget manual "Personal Trainer Digital / Gerar Sugestões" da tela `Workouts/Show.vue`.
+   - No `WorkoutSessionController@show` / `WorkoutSessionService`: carregar as sugestões de sobrecarga automaticamente ao abrir a sessão e injetá-las nas props do `Active.vue`.
+   - No componente do exercício ativo (`Active.vue` / `ExerciseActiveCard.vue`): exibir automaticamente um badge sutil da IA abaixo do título do exercício com a sugestão de carga (ex: *"💡 Dica da IA: 15kg → 17kg (Meta: 8-10 reps)"*) sem exigir clique manual.
+
+## Acceptance Criteria
+1. O carregamento da Dashboard (`GET /dashboard`) NÃO realiza chamadas HTTP externas e responde com status 200 via testes no Pest.
+2. Testes de Feature em `tests/Feature/WorkoutManagementTest.php` cobrem arquivamento, reativação e exclusão com 100% de sucesso.
+3. `php artisan test` passa em 100% da suíte de testes.
+4. `tests/Architecture/ArchitecturalRulesTest.php` passa sem violações.
+5. `npm run build` compila sem nenhum erro.

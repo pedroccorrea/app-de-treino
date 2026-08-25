@@ -28,10 +28,11 @@ Route::middleware('auth')->group(function () {
     Route::post('/workouts', [WorkoutController::class, 'store'])->name('workouts.store');
     Route::post('/workouts/scan', [WorkoutScannerController::class, 'store'])->name('workouts.scan');
     Route::get('/workouts/{workout}', [WorkoutController::class, 'show'])->name('workouts.show');
-    Route::get('/workouts/{workout}/overload-suggestions', [WorkoutController::class, 'overloadSuggestions'])->name('workouts.overload-suggestions');
     Route::get('/workouts/{workout}/edit', [WorkoutController::class, 'edit'])->name('workouts.edit');
     Route::put('/workouts/{workout}', [WorkoutController::class, 'update'])->name('workouts.update');
     Route::patch('/workouts/{workout}/reorder', [WorkoutController::class, 'reorder'])->name('workouts.reorder');
+    Route::patch('/workouts/{workout}/archive', [WorkoutController::class, 'toggleArchive'])->name('workouts.archive');
+    Route::delete('/workouts/{workout}', [WorkoutController::class, 'destroy'])->name('workouts.destroy');
     Route::post('/workouts/{workout}/start', [WorkoutSessionController::class, 'start'])->name('workouts.start');
 
     Route::get('/workout-sessions/{session}', [WorkoutSessionController::class, 'show'])->name('workout-sessions.show');

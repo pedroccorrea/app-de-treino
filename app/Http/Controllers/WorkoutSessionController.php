@@ -2,10 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Exceptions\GeminiException;
 use App\Http\Requests\LogSetRequest;
 use App\Models\SetLog;
+use App\Models\User;
 use App\Models\Workout;
 use App\Models\WorkoutSession;
+use App\Services\ProgressiveOverloadService;
 use App\Services\WorkoutSessionService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -25,7 +28,7 @@ class WorkoutSessionController extends Controller
             ->with('success', 'Treino iniciado! Bom treino!');
     }
 
-    public function show(Request $request, WorkoutSession $session, WorkoutSessionService $service): Response
+    public function show(Request $request, WorkoutSession $session, WorkoutSessionService $service, ProgressiveOverloadService $overloadService): Response
     {
         abort_if($session->user_id !== $request->user()->id, 403);
 
@@ -48,7 +51,7 @@ class WorkoutSessionController extends Controller
         $exerciseIds = collect($exercises)->pluck('id')->all();
         $lastLogs = $service->getLastLogsForExercises($request->user(), $exerciseIds, $session->id);
 
-        $setLogs = $session->setLogs->map(fn(SetLog $log) => [
+        $setLogs = $session->setLogs->map(fn (SetLog $log) => [
             'id' => $log->id,
             'exercise_id' => $log->exercise_id,
             'set_number' => $log->set_number,
@@ -74,7 +77,37 @@ class WorkoutSessionController extends Controller
             'exercises' => $exercises,
             'setLogs' => $setLogs,
             'lastLogs' => (object) $lastLogs,
+            'overloadSuggestions' => $workout
+                ? $this->safeOverloadSuggestions($overloadService, $request->user(), $workout)
+                : [],
         ]);
+    }
+
+    /**
+     * The overload suggestions are the only AI-backed part of the active
+     * session screen; a Gemini failure shouldn't prevent the workout from
+     * being logged, so it degrades to "no suggestions" instead of a fatal
+     * error. Skipped entirely when there's no completed-session history yet,
+     * since the AI has nothing to base a suggestion on.
+     *
+     * @return array<int, array{exercise_name: string, current_load: string, suggested_load: string, suggested_reps: string, rationale: string}>
+     */
+    private function safeOverloadSuggestions(ProgressiveOverloadService $overloadService, User $user, Workout $workout): array
+    {
+        $hasHistory = $workout->workoutSessions()
+            ->where('user_id', $user->id)
+            ->whereNotNull('completed_at')
+            ->exists();
+
+        if (! $hasHistory) {
+            return [];
+        }
+
+        try {
+            return $overloadService->analyzeWorkout($user, $workout)['recommendations'] ?? [];
+        } catch (GeminiException) {
+            return [];
+        }
     }
 
     public function logSet(LogSetRequest $request, WorkoutSession $session, WorkoutSessionService $service): RedirectResponse

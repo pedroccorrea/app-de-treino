@@ -72,28 +72,31 @@ test('scanning a workout sheet never returns a fatal 500 when Gemini times out',
     expect($user->workouts()->count())->toBe(0);
 });
 
-test('overload suggestions never return a fatal 500 when Gemini times out', function () {
+test('starting a workout session never returns a fatal 500 when Gemini times out', function () {
     fakeGeminiNetworkTimeout();
     $user = User::factory()->create();
     $workout = Workout::factory()->for($user)->create();
 
-    $response = $this->actingAs($user)->get(route('workouts.overload-suggestions', $workout));
+    // A completed session in the past makes the active-session screen try to
+    // fetch automatic overload suggestions from Gemini.
+    $user->workoutSessions()->create([
+        'workout_id' => $workout->id,
+        'started_at' => now()->subDay()->subHour(),
+        'completed_at' => now()->subDay(),
+    ]);
 
-    $response->assertStatus(422);
-    $response->assertJsonStructure(['message']);
-});
+    $session = $user->workoutSessions()->create([
+        'workout_id' => $workout->id,
+        'started_at' => now(),
+    ]);
 
-test('dashboard never returns a fatal 500 when Gemini times out', function () {
-    fakeGeminiNetworkTimeout();
-    $user = User::factory()->create();
-
-    $response = $this->actingAs($user)->get(route('dashboard'));
+    $response = $this->actingAs($user)->get(route('workout-sessions.show', $session));
 
     $response->assertOk();
     $response->assertInertia(
         fn ($page) => $page
-            ->component('Dashboard')
-            ->where('muscleBalanceAlert', null)
+            ->component('WorkoutSessions/Active')
+            ->where('overloadSuggestions', [])
     );
 });
 
@@ -115,28 +118,29 @@ test('scanning a workout sheet handles broken markdown from the AI gracefully', 
     expect($user->workouts()->count())->toBe(0);
 });
 
-test('overload suggestions handle broken markdown from the AI gracefully', function () {
+test('starting a workout session falls back to no suggestions when the AI returns broken markdown', function () {
     fakeGeminiBrokenMarkdown();
     $user = User::factory()->create();
     $workout = Workout::factory()->for($user)->create();
 
-    $response = $this->actingAs($user)->get(route('workouts.overload-suggestions', $workout));
+    $user->workoutSessions()->create([
+        'workout_id' => $workout->id,
+        'started_at' => now()->subDay()->subHour(),
+        'completed_at' => now()->subDay(),
+    ]);
 
-    $response->assertStatus(422);
-    $response->assertJsonStructure(['message']);
-});
+    $session = $user->workoutSessions()->create([
+        'workout_id' => $workout->id,
+        'started_at' => now(),
+    ]);
 
-test('dashboard falls back to no alert when the AI returns broken markdown', function () {
-    fakeGeminiBrokenMarkdown();
-    $user = User::factory()->create();
-
-    $response = $this->actingAs($user)->get(route('dashboard'));
+    $response = $this->actingAs($user)->get(route('workout-sessions.show', $session));
 
     $response->assertOk();
     $response->assertInertia(
         fn ($page) => $page
-            ->component('Dashboard')
-            ->where('muscleBalanceAlert', null)
+            ->component('WorkoutSessions/Active')
+            ->where('overloadSuggestions', [])
     );
 });
 

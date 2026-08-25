@@ -1,8 +1,6 @@
 <script setup>
-import AIProgressiveAdvice from '@/Components/Workouts/AIProgressiveAdvice.vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, router } from '@inertiajs/vue3';
-import axios from 'axios';
 import { computed, ref } from 'vue';
 
 const props = defineProps({
@@ -104,28 +102,6 @@ const persistOrder = () => {
     );
 };
 
-// --- AI Progressive Overload Advice ---
-const overloadAdviceStatus = ref('idle'); // idle | loading | success | error
-const overloadRecommendations = ref([]);
-const overloadErrorMessage = ref('');
-
-const fetchOverloadAdvice = async () => {
-    overloadAdviceStatus.value = 'loading';
-    overloadErrorMessage.value = '';
-
-    try {
-        const { data } = await axios.get(
-            route('workouts.overload-suggestions', props.workout.id),
-        );
-        overloadRecommendations.value = data.recommendations ?? [];
-        overloadAdviceStatus.value = 'success';
-    } catch (error) {
-        overloadErrorMessage.value =
-            error.response?.data?.message ??
-            'Não foi possível gerar as sugestões agora. Tente novamente.';
-        overloadAdviceStatus.value = 'error';
-    }
-};
 </script>
 
 <template>
@@ -290,13 +266,6 @@ const fetchOverloadAdvice = async () => {
                     <div
                         class="border-t border-gray-100 bg-gray-50/80 p-6 dark:border-gray-700 dark:bg-gray-900/30"
                     >
-                        <AIProgressiveAdvice
-                            :status="overloadAdviceStatus"
-                            :recommendations="overloadRecommendations"
-                            :error-message="overloadErrorMessage"
-                            @generate="fetchOverloadAdvice"
-                        />
-
                         <Link
                             :href="route('workouts.start', workout.id)"
                             method="post"

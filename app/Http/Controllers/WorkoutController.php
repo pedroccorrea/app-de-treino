@@ -3,13 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Enums\DayOfWeek;
-use App\Exceptions\GeminiException;
 use App\Http\Requests\StoreWorkoutRequest;
 use App\Http\Requests\UpdateWorkoutRequest;
 use App\Models\Workout;
-use App\Services\ProgressiveOverloadService;
 use App\Services\WorkoutService;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -97,21 +94,6 @@ class WorkoutController extends Controller
         return route('workouts.show', $workout);
     }
 
-    public function overloadSuggestions(Request $request, Workout $workout, ProgressiveOverloadService $progressiveOverloadService): JsonResponse
-    {
-        abort_if($workout->user_id !== $request->user()->id, 403);
-
-        try {
-            return response()->json(
-                $progressiveOverloadService->analyzeWorkout($request->user(), $workout)
-            );
-        } catch (GeminiException $e) {
-            return response()->json([
-                'message' => 'Não foi possível gerar as sugestões de progressão agora: '.$e->getMessage(),
-            ], 422);
-        }
-    }
-
     public function reorder(Request $request, Workout $workout, WorkoutService $workoutService): RedirectResponse
     {
         abort_if($workout->user_id !== $request->user()->id, 403);
@@ -124,6 +106,29 @@ class WorkoutController extends Controller
         $workoutService->reorderExercises($workout, $validated['exercise_ids']);
 
         return redirect()->back();
+    }
+
+    public function toggleArchive(Request $request, Workout $workout, WorkoutService $workoutService): RedirectResponse
+    {
+        abort_if($workout->user_id !== $request->user()->id, 403);
+
+        $workoutService->toggleArchive($workout);
+
+        return redirect()->back()->with(
+            'success',
+            $workout->is_active ? 'Treino reativado com sucesso!' : 'Treino arquivado com sucesso!'
+        );
+    }
+
+    public function destroy(Request $request, Workout $workout, WorkoutService $workoutService): RedirectResponse
+    {
+        abort_if($workout->user_id !== $request->user()->id, 403);
+
+        $workoutService->destroy($workout);
+
+        return redirect()
+            ->route('workouts.index')
+            ->with('success', 'Treino excluído com sucesso!');
     }
 
     /**
@@ -147,6 +152,7 @@ class WorkoutController extends Controller
             'id' => $workout->id,
             'name' => $workout->name,
             'description' => $workout->description,
+            'is_active' => $workout->is_active,
             'exercises_count' => $workout->exercises->count(),
             'muscle_groups' => $muscleGroups->unique()->values()->all(),
             'days_of_week' => $daysOfWeek->map(fn (DayOfWeek $day) => $day->value)->values()->all(),

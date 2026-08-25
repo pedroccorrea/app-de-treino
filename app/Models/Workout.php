@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\DayOfWeek;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\AsEnumCollection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -11,16 +12,31 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['user_id', 'name', 'description', 'days_of_week'])]
+#[Fillable(['user_id', 'name', 'description', 'program_name', 'days_of_week', 'is_active'])]
 class Workout extends Model
 {
     use HasFactory;
+
+    protected $attributes = [
+        'is_active' => true,
+    ];
 
     protected function casts(): array
     {
         return [
             'days_of_week' => AsEnumCollection::of(DayOfWeek::class),
+            'is_active' => 'boolean',
         ];
+    }
+
+    public function scopeActive(Builder $query): Builder
+    {
+        return $query->where('is_active', true);
+    }
+
+    public function scopeArchived(Builder $query): Builder
+    {
+        return $query->where('is_active', false);
     }
 
     public function user(): BelongsTo

@@ -1,30 +1,23 @@
 <script setup>
-import ActivityHeatmap from '@/Components/Dashboard/ActivityHeatmap.vue';
-import MetricCards from '@/Components/Dashboard/MetricCards.vue';
-import MuscleBalanceAlert from '@/Components/Dashboard/MuscleBalanceAlert.vue';
+import ActiveWorkoutsList from '@/Components/Dashboard/ActiveWorkoutsList.vue';
+import RestDayCard from '@/Components/Dashboard/RestDayCard.vue';
+import StreakCard from '@/Components/Dashboard/StreakCard.vue';
+import TodayWorkoutHero from '@/Components/Dashboard/TodayWorkoutHero.vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head } from '@inertiajs/vue3';
 
 defineProps({
+    todayWorkout: {
+        type: Object,
+        default: null,
+    },
     streak: {
         type: Number,
         default: 0,
     },
-    personalRecords: {
+    activeWorkouts: {
         type: Array,
         default: () => [],
-    },
-    weeklyVolume: {
-        type: Array,
-        default: () => [],
-    },
-    activityHeatmap: {
-        type: Array,
-        default: () => [],
-    },
-    muscleBalanceAlert: {
-        type: Object,
-        default: null,
     },
 });
 </script>
@@ -40,16 +33,13 @@ defineProps({
         </template>
 
         <div class="py-6 sm:py-8">
-            <div class="mx-auto max-w-7xl space-y-4 px-4 sm:px-6 lg:px-8">
-                <MuscleBalanceAlert v-if="muscleBalanceAlert" :alert="muscleBalanceAlert" />
+            <div class="mx-auto max-w-3xl space-y-4 px-4 sm:px-6 lg:px-8">
+                <TodayWorkoutHero v-if="todayWorkout" :workout="todayWorkout" />
+                <RestDayCard v-else :active-workouts="activeWorkouts" />
 
-                <MetricCards
-                    :streak="streak"
-                    :personal-records="personalRecords"
-                    :weekly-volume="weeklyVolume"
-                />
+                <StreakCard :streak="streak" />
 
-                <ActivityHeatmap :activity="activityHeatmap" />
+                <ActiveWorkoutsList :workouts="activeWorkouts" />
             </div>
         </div>
     </AuthenticatedLayout>

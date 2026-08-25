@@ -18,10 +18,15 @@ class WorkoutService
      *
      * @return Collection<int, Workout>
      */
-    public function getUserWorkouts(User $user): Collection
+    public function getUserWorkouts(User $user, bool $onlyActive = false): Collection
     {
-        return $user->workouts()
-            ->with('exercises')
+        $query = $user->workouts()->with('exercises');
+
+        if ($onlyActive) {
+            $query->active();
+        }
+
+        return $query
             ->latest()
             ->get()
             ->sortBy(function (Workout $workout) {
@@ -137,6 +142,28 @@ class WorkoutService
                     ->where('exercise_id', $exerciseId)
                     ->update(['order' => $position]);
             }
+        });
+    }
+
+    /**
+     * Flips a workout between active and archived.
+     */
+    public function toggleArchive(Workout $workout): Workout
+    {
+        $workout->update(['is_active' => ! $workout->is_active]);
+
+        return $workout;
+    }
+
+    /**
+     * Deletes a workout and everything that only makes sense in its context
+     * (the `workout_exercises` pivot rows cascade at the DB level; workout
+     * sessions are preserved but orphaned via `nullOnDelete`).
+     */
+    public function destroy(Workout $workout): void
+    {
+        DB::transaction(function () use ($workout) {
+            $workout->delete();
         });
     }
 }
