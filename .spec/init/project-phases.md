@@ -119,3 +119,29 @@
 2. `php artisan test` passa em 100% de toda a suíte.
 3. `tests/Architecture/ArchitecturalRulesTest.php` passa sem nenhuma violação.
 4. `npm run build` compila com zero erros.
+
+
+# Phase 7: Navegação Fluida de Programas e Edição de Rotinas
+## Tasks
+1. **Tela de Detalhes e Edição de Programa (`resources/js/Pages/Programs/Show.vue`):**
+   - No `Programs/Index.vue`, tornar o card inteiro do programa clicável, navegando para `programs.show`.
+   - Na página `Programs/Show.vue`:
+     * Cabeçalho com nome e descrição do programa + botão de Lápis para alternar entre modo de visualização e edição inline (com botão Salvar via `form.put`).
+     * Listagem das fichas/treinos vinculadas a este programa.
+     * Cada ficha possui botão de exclusão com modal de confirmação.
+     * Clicar no card da ficha navega direto para a tela de edição daquela ficha (`workouts.edit`).
+     * Botão "+ Adicionar Ficha a este Programa" (abre o modal de criação já associando o `workout_program_id`).
+
+2. **Refatoração da Tela de Treinos (`Workouts/Index.vue`):**
+   - No banner do topo "PROGRAMA ATIVO", substituir o botão "+ Novo Programa" por um botão de destaque "🔄 Trocar Programa" com link para `route('programs.index')`.
+   - Remover as abas confusas de "Programas Arquivados" da tela de treinos, exibindo estritamente as fichas do programa ativo atual.
+
+3. **Backend (`WorkoutProgramController` & `WorkoutProgramService`):**
+   - Adicionar método `show(WorkoutProgram $program)` carregando os treinos ordenados (`with('workouts.exercises')`).
+   - Adicionar método `update(UpdateProgramRequest $request, WorkoutProgram $program)` para atualizar nome e descrição.
+   - Registrar as rotas correspondentes em `routes/web.php`.
+
+## Acceptance Criteria
+1. `tests/Feature/WorkoutProgramTest.php` cobre visualização de detalhes do programa e atualização de nome/descrição.
+2. `php artisan test` passa 100%.
+3. `npm run build` compila com zero erros.
