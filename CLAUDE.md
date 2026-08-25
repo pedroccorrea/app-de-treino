@@ -65,3 +65,10 @@ Per `.cursorrules` / `PROJECT_CONTEXT.md`, the developer (transitioning into ful
 3. **🧠 Ponto Chave de Aprendizado** — the single most important Laravel concept and the single most important Vue 3 reactivity concept applied in the change, and why each matters.
 
 Keep explanations of architectural decisions brief but present — don't skip the "why." Prefer small, incremental, versionable steps over large sweeping changes.
+
+## Git & Commits
+
+- Todas as mensagens de commit DEVEM ser escritas estritamente em português (Brasil), seguindo o padrão Conventional Commits:
+  - `feat(escopo): descrição da nova funcionalidade em português`
+  - `fix(escopo): descrição da correção de bug em português`
+  - `chore(escopo): tarefas de manutenção, specs ou configs em português`
