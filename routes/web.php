@@ -38,6 +38,8 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/programs', [WorkoutProgramController::class, 'index'])->name('programs.index');
     Route::post('/programs', [WorkoutProgramController::class, 'store'])->name('programs.store');
+    Route::get('/programs/{program}', [WorkoutProgramController::class, 'show'])->name('programs.show');
+    Route::put('/programs/{program}', [WorkoutProgramController::class, 'update'])->name('programs.update');
     Route::patch('/programs/{program}/activate', [WorkoutProgramController::class, 'activate'])->name('programs.activate');
     Route::patch('/programs/{program}/archive', [WorkoutProgramController::class, 'archive'])->name('programs.archive');
     Route::delete('/programs/{program}', [WorkoutProgramController::class, 'destroy'])->name('programs.destroy');

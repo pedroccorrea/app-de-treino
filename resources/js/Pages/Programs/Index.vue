@@ -95,11 +95,12 @@ const deleteProgram = (program) => {
                     <div
                         v-for="program in programs"
                         :key="program.id"
+                        @click="router.visit(route('programs.show', program.id))"
                         :class="[
-                            'rounded-2xl border bg-white p-5 shadow-sm dark:bg-gray-800',
+                            'cursor-pointer rounded-2xl border bg-white p-5 shadow-sm transition duration-150 hover:-translate-y-0.5 hover:shadow-md dark:bg-gray-800',
                             program.is_active
                                 ? 'border-violet-400/60 ring-1 ring-violet-400/40 dark:border-violet-500/50'
-                                : 'border-gray-200 dark:border-gray-700',
+                                : 'border-gray-200 hover:border-violet-500/40 dark:border-gray-700',
                         ]"
                     >
                         <div class="flex items-start justify-between gap-3">
@@ -132,7 +133,7 @@ const deleteProgram = (program) => {
                             <button
                                 v-if="!program.is_active"
                                 type="button"
-                                @click="activateProgram(program)"
+                                @click.stop="activateProgram(program)"
                                 class="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-violet-600 transition hover:bg-violet-50 dark:text-violet-400 dark:hover:bg-violet-500/10"
                             >
                                 ⚡ Reativar Programa
@@ -140,14 +141,14 @@ const deleteProgram = (program) => {
                             <button
                                 v-else
                                 type="button"
-                                @click="archiveProgram(program)"
+                                @click.stop="archiveProgram(program)"
                                 class="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-gray-500 transition hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200"
                             >
                                 📦 Arquivar
                             </button>
                             <button
                                 type="button"
-                                @click="deleteProgram(program)"
+                                @click.stop="deleteProgram(program)"
                                 class="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-red-500 transition hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-500/10"
                             >
                                 🗑️ Excluir

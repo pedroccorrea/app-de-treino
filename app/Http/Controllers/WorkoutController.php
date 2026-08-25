@@ -24,9 +24,7 @@ class WorkoutController extends Controller
         $workouts = $workoutService->getUserWorkouts($user)
             ->map(fn (Workout $workout) => $this->formatWorkout($workout, $today));
 
-        $programs = $workoutProgramService->getUserPrograms($user);
-        $activeProgram = $programs->firstWhere('is_active', true);
-        $archivedPrograms = $programs->where('is_active', false)->values();
+        $activeProgram = $workoutProgramService->getActiveProgram($user);
 
         return Inertia::render('Workouts/Index', [
             'workouts' => $workouts,
@@ -34,7 +32,6 @@ class WorkoutController extends Controller
             'todayDayOfWeek' => $today->value,
             'todayDayOfWeekLabel' => $today->label(),
             'activeProgram' => $activeProgram ? $this->formatActiveProgram($activeProgram) : null,
-            'archivedPrograms' => $archivedPrograms->map(fn (WorkoutProgram $program) => $this->formatArchivedProgram($program))->values()->all(),
         ]);
     }
 
@@ -187,22 +184,6 @@ class WorkoutController extends Controller
         return [
             'id' => $program->id,
             'name' => $program->name,
-        ];
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function formatArchivedProgram(WorkoutProgram $program): array
-    {
-        return [
-            'id' => $program->id,
-            'name' => $program->name,
-            'archived_at' => $program->archived_at?->format('d/m/Y'),
-            'workouts' => $program->workouts->map(fn (Workout $workout) => [
-                'id' => $workout->id,
-                'name' => $workout->name,
-            ])->values()->all(),
         ];
     }
 }

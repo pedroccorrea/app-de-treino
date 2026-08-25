@@ -22,6 +22,11 @@ class StoreWorkoutRequest extends FormRequest
         return [
             'name' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
+            'workout_program_id' => [
+                'nullable',
+                'integer',
+                Rule::exists('workout_programs', 'id')->where(fn ($query) => $query->where('user_id', $this->user()->id)),
+            ],
             'days_of_week' => ['nullable', 'array'],
             'days_of_week.*' => ['integer', Rule::enum(DayOfWeek::class)],
             'exercises' => ['nullable', 'array'],

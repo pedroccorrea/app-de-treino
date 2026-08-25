@@ -32,6 +32,27 @@ class WorkoutProgramService
     }
 
     /**
+     * Loads the program's workouts (each with its exercises) ordered by
+     * creation, for the program detail/edit screen.
+     */
+    public function getProgramWithWorkouts(WorkoutProgram $program): WorkoutProgram
+    {
+        return $program->load(['workouts' => function ($query) {
+            $query->with('exercises')->orderBy('created_at');
+        }]);
+    }
+
+    public function updateProgram(WorkoutProgram $program, array $data): WorkoutProgram
+    {
+        $program->update([
+            'name' => $data['name'],
+            'description' => $data['description'] ?? null,
+        ]);
+
+        return $program;
+    }
+
+    /**
      * The very first program a user creates becomes active automatically;
      * subsequent ones must be activated explicitly so exclusivity holds.
      */

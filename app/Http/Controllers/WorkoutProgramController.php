@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreWorkoutProgramRequest;
+use App\Http\Requests\UpdateProgramRequest;
+use App\Models\Workout;
 use App\Models\WorkoutProgram;
 use App\Services\WorkoutProgramService;
 use Illuminate\Http\RedirectResponse;
@@ -26,6 +28,26 @@ class WorkoutProgramController extends Controller
         $workoutProgramService->createProgram($request->user(), $request->validated());
 
         return redirect()->back()->with('success', 'Programa criado com sucesso!');
+    }
+
+    public function show(Request $request, WorkoutProgram $program, WorkoutProgramService $workoutProgramService): Response
+    {
+        abort_if($program->user_id !== $request->user()->id, 403);
+
+        $program = $workoutProgramService->getProgramWithWorkouts($program);
+
+        return Inertia::render('Programs/Show', [
+            'program' => $this->formatProgramDetail($program),
+        ]);
+    }
+
+    public function update(UpdateProgramRequest $request, WorkoutProgram $program, WorkoutProgramService $workoutProgramService): RedirectResponse
+    {
+        abort_if($program->user_id !== $request->user()->id, 403);
+
+        $workoutProgramService->updateProgram($program, $request->validated());
+
+        return redirect()->back()->with('success', 'Programa atualizado com sucesso!');
     }
 
     public function activate(Request $request, WorkoutProgram $program, WorkoutProgramService $workoutProgramService): RedirectResponse
@@ -70,6 +92,25 @@ class WorkoutProgramController extends Controller
             'workouts' => $program->workouts->map(fn ($workout) => [
                 'id' => $workout->id,
                 'name' => $workout->name,
+            ])->values()->all(),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function formatProgramDetail(WorkoutProgram $program): array
+    {
+        return [
+            'id' => $program->id,
+            'name' => $program->name,
+            'description' => $program->description,
+            'is_active' => $program->is_active,
+            'workouts' => $program->workouts->map(fn (Workout $workout) => [
+                'id' => $workout->id,
+                'name' => $workout->name,
+                'description' => $workout->description,
+                'exercises_count' => $workout->exercises->count(),
             ])->values()->all(),
         ];
     }
