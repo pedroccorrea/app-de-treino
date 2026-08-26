@@ -174,3 +174,35 @@
 3. `tests/Feature/WorkoutNavigationFlowTest.php` valida os fluxos de redirecionamento contextual de `store`, `update` e `destroy`.
 4. `php artisan test` passa 100%.
 5. `npm run build` compila sem erros.
+
+# Phase 9: Relação N:N Programas e Treinos, Seletor Múltiplo e Modal de Confirmação
+## Tasks
+1. **Banco de Dados & Models (Relação N:N):**
+   - Criar migration para a tabela pivô `program_workouts` (`id`, `workout_program_id`, `workout_id`, `order` default 0, `timestamps`).
+   - Adicionar índice único composto: `['workout_program_id', 'workout_id']`.
+   - Migration Backfill: transferir os vínculos existentes de `workouts.workout_program_id` para a tabela pivô `program_workouts`.
+   - Atualizar Model `WorkoutProgram`: relacionamento `workouts()` para `belongsToMany(Workout::class, 'program_workouts')->withPivot('order')->withTimestamps()`.
+   - Atualizar Model `Workout`: relacionamento `programs()` para `belongsToMany(WorkoutProgram::class, 'program_workouts')->withPivot('order')->withTimestamps()`.
+
+2. **Componente Reutilizável de Confirmação:**
+   - Criar o componente `resources/js/Components/ConfirmationModal.vue` (utilizando `Modal.vue`, título, descrição, botão de ação perigosa/primária e botão de cancelar).
+   - Substituir qualquer alerta nativo do navegador em `Programs/Index.vue`, `Programs/Show.vue` e `Workouts/Index.vue` pelo `ConfirmationModal.vue`.
+
+3. **Backend (`WorkoutProgramService` e `WorkoutProgramController`):**
+   - Implementar método `attachWorkouts(WorkoutProgram $program, array $workoutIds)` para vincular múltiplos treinos ao programa.
+   - Implementar método `detachWorkout(WorkoutProgram $program, Workout $workout)` para desvincular um treino do programa (sem deletar o treino do banco).
+   - Registrar as rotas:
+     * `POST /programs/{program}/workouts/attach` (name: `programs.workouts.attach`)
+     * `DELETE /programs/{program}/workouts/{workout}/detach` (name: `programs.workouts.detach`)
+
+4. **Frontend - Seletor de Treinos no Programa (`Programs/Show.vue`):**
+   - Ao clicar em "+ Adicionar Treino", abrir um modal com a lista de todos os treinos do usuário que ainda não estão vinculados ao programa, permitindo selecionar múltiplos via checkboxes.
+   - No modal, incluir botões de ação rápida: "+ Criar Novo Treino" e "📷 Escanear Ficha" (já associando ao programa atual).
+   - Na listagem de treinos do programa, o botão de lixeira deve desvincular o treino do programa (`detach`) com confirmação via `ConfirmationModal.vue`.
+
+## Acceptance Criteria
+1. Migration `program_workouts` criada e executada com sucesso.
+2. `tests/Feature/WorkoutProgramManyToManyTest.php` passa 100% cobrindo vínculo de múltiplos treinos, desvinculação sem exclusão do treino e suporte a um treino pertencer a múltiplos programas.
+3. `php artisan test` passa em 100% de toda a suíte.
+4. `tests/Architecture/ArchitecturalRulesTest.php` passa sem nenhuma violação.
+5. `npm run build` compila sem erros.
