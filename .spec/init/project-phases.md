@@ -145,3 +145,26 @@
 1. `tests/Feature/WorkoutProgramTest.php` cobre visualização de detalhes do programa e atualização de nome/descrição.
 2. `php artisan test` passa 100%.
 3. `npm run build` compila com zero erros.
+
+# Phase 8: Refatoração de Navegação Contextual e Fluxo Fluido de Treinos
+## Tasks
+1. **Preservação de Origem e Criação com Edição Imediata:**
+   - No WorkoutController@store:
+     * Ao criar uma nova ficha vinculada a um programa (passando workout_program_id), redirecionar IMEDIATAMENTE para a tela de edição dessa ficha: route('workouts.edit', ['workout' => $workout->id, 'return_to' => $returnTo]).
+     * Assim, o usuário cria a ficha e já cai direto na tela para adicionar os exercícios com o botão de voltar apontando para o programa correto.
+   - No WorkoutController@update:
+     * Ao salvar a edição do treino, respeitar o parâmetro return_to (se veio de /programs/4, volta para /programs/4; se veio de /workouts, volta para /workouts).
+
+2. **Ajuste dos Botões "Voltar" no Frontend:**
+   - Em Workouts/Edit.vue, Workouts/Show.vue e Workouts/Create.vue:
+     * Receber o parâmetro return_to via props/query.
+     * Fazer o botão "← Voltar" navegar para a rota de origem (return_to), garantindo que o usuário que veio de programs.show volte para programs.show em 1 clique.
+
+3. **Correção de Associação no Modal de Adicionar Ficha:**
+   - Em Programs/Show.vue, ao clicar em "+ Adicionar Ficha a este Programa", o formulário do modal DEVE enviar o workout_program_id e o return_to = route('programs.show', program.id).
+
+## Acceptance Criteria
+1. tests/Feature/WorkoutNavigationFlowTest.php valida que criar um treino com workout_program_id redireciona para workouts.edit com o parâmetro return_to preenchido.
+2. Atualizar um treino com return_to=/programs/1 redireciona exatamente para /programs/1.
+3. php artisan test passa 100%.
+4. npm run build compila com zero erros.
