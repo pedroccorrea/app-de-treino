@@ -7,3 +7,4 @@
 2026-08-25 21:49:40 | Phase 7 | 7b2a470 | 7: Navegação Fluida de Programas e Edição de Rotinas
 2026-08-26 09:00:55 | Phase 8 | 6d3a1c5 | 8: Refatoração de Navegação Contextual e Fluxo Fluido de Treinos
 2026-08-26 09:35:05 | Phase 8 | 7c7ee07 | 8: Refatoração de Navegação Contextual, Separação de Ver/Editar e Textos de Interface
+2026-08-26 21:33:09 | Phase 9 | c8b9c86 | 9: Relação N:N Programas e Treinos, Seletor Múltiplo e Modal de Confirmação

@@ -206,3 +206,18 @@
 3. `php artisan test` passa em 100% de toda a suíte.
 4. `tests/Architecture/ArchitecturalRulesTest.php` passa sem nenhuma violação.
 5. `npm run build` compila sem erros.
+
+# Phase 10: Otimização de Performance e Timeout do Scanner de Fichas
+## Tasks
+1. **Ajuste de Timeout e Memória no Backend:**
+   - Em `app/Services/WorkoutScannerService.php`: adicionar `set_time_limit(120)` e `ini_set('memory_limit', '512M')` no início do método `scanAndImport` para evitar o erro fatal de 30 segundos do PHP.
+   - Garantir timeout de 90s na requisição HTTP do Gemini (`timeout(90)`).
+
+2. **Compressão Otimizada no Frontend (1200px / 75%):**
+   - Em `resources/js/Components/Workouts/ScanWorkoutModal.vue`: implementar compressão via Canvas redimensionando a imagem para no máximo 1200px na maior dimensão e qualidade JPEG de 75%.
+   - Isso reduz o arquivo para ~120KB antes do upload, garantindo máxima velocidade de envio e resposta da IA em menos de 3 segundos sem perder nitidez no texto térmico.
+
+## Acceptance Criteria
+1. `tests/Feature/WorkoutScannerTest.php` passa em 100%.
+2. `php artisan test` passa em 100% de toda a suíte.
+3. `npm run build` compila com zero erros.
