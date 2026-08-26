@@ -55,13 +55,16 @@ const cancelDelete = () => {
 
 const deleteWorkout = () => {
     deleting.value = true;
-    router.delete(route('workouts.destroy', workoutPendingDeletion.value.id), {
-        preserveScroll: true,
-        onFinish: () => {
-            deleting.value = false;
-            workoutPendingDeletion.value = null;
+    router.delete(
+        route('workouts.destroy', { workout: workoutPendingDeletion.value.id, return_to: route('workouts.index') }),
+        {
+            preserveScroll: true,
+            onFinish: () => {
+                deleting.value = false;
+                workoutPendingDeletion.value = null;
+            },
         },
-    });
+    );
 };
 
 // Where the edit link should send the user back to after saving.
@@ -175,7 +178,7 @@ const submitScan = () => {
                         :key="workout.id"
                         :workout="workout"
                         :current-path="currentPath"
-                        @open="(w) => router.visit(route('workouts.show', w.id))"
+                        @open="(w) => router.visit(route('workouts.show', { workout: w.id, return_to: route('workouts.index') }))"
                         @toggle-archive="toggleArchive"
                         @delete="confirmDelete"
                     />

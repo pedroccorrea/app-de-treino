@@ -442,7 +442,7 @@ const moveDown = (index) => {
                             d="M12 4v16m8-8H4"
                         />
                     </svg>
-                    <span>+ Adicionar Mais Exercícios</span>
+                    <span>+ Adicionar Exercício</span>
                 </button>
             </div>
 

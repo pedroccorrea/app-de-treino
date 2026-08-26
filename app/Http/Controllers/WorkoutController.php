@@ -58,14 +58,12 @@ class WorkoutController extends Controller
         $workout = $workoutService->createWorkout($request->user(), $request->validated());
 
         if ($request->filled('workout_program_id')) {
-            $returnTo = $this->safeRedirectTarget(
-                $request->input('return_to'),
-                route('programs.show', $workout->workout_program_id)
-            );
-
             return redirect()
-                ->route('workouts.edit', ['workout' => $workout->id, 'return_to' => $returnTo])
-                ->with('success', 'Ficha criada! Agora adicione os exercícios.');
+                ->to($this->safeRedirectTarget(
+                    $request->input('return_to'),
+                    route('programs.show', $workout->workout_program_id)
+                ))
+                ->with('success', 'Ficha criada com sucesso!');
         }
 
         return redirect()
@@ -153,7 +151,7 @@ class WorkoutController extends Controller
         $workoutService->destroy($workout);
 
         return redirect()
-            ->route('workouts.index')
+            ->to($this->safeRedirectTarget($request->query('return_to'), route('workouts.index')))
             ->with('success', 'Treino excluído com sucesso!');
     }
 

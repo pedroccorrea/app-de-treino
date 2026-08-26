@@ -47,6 +47,9 @@ const saveProgram = () => {
     });
 };
 
+// ─── Navegar para visualização da ficha (card) ou edição (ícone de lápis) ───
+const returnToProgram = route('programs.show', props.program.id);
+
 // ─── Modal de criação de ficha, já associada a este programa ───────────────
 const showCreateWorkoutModal = ref(false);
 
@@ -55,7 +58,7 @@ const workoutForm = useForm({
     description: '',
     days_of_week: [],
     workout_program_id: props.program.id,
-    return_to: route('programs.show', props.program.id),
+    return_to: returnToProgram,
 });
 
 const openCreateWorkoutModal = () => {
@@ -75,11 +78,8 @@ const submitCreateWorkout = () => {
     });
 };
 
-// ─── Navegar para edição da ficha ────────────────────────────────────────────
-const currentPath = window.location.pathname + window.location.search;
-
 const openWorkout = (workout) => {
-    router.visit(route('workouts.edit', { workout: workout.id, return_to: currentPath }));
+    router.visit(route('workouts.show', { workout: workout.id, return_to: returnToProgram }));
 };
 
 // ─── Exclusão de ficha com confirmação ──────────────────────────────────────
@@ -96,13 +96,16 @@ const cancelDelete = () => {
 
 const deleteWorkout = () => {
     deleting.value = true;
-    router.delete(route('workouts.destroy', workoutPendingDeletion.value.id), {
-        preserveScroll: true,
-        onFinish: () => {
-            deleting.value = false;
-            workoutPendingDeletion.value = null;
+    router.delete(
+        route('workouts.destroy', { workout: workoutPendingDeletion.value.id, return_to: returnToProgram }),
+        {
+            preserveScroll: true,
+            onFinish: () => {
+                deleting.value = false;
+                workoutPendingDeletion.value = null;
+            },
         },
-    });
+    );
 };
 </script>
 
@@ -222,7 +225,7 @@ const deleteWorkout = () => {
                             @click="openCreateWorkoutModal"
                             class="inline-flex items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-violet-500/20 transition hover:bg-violet-700"
                         >
-                            + Adicionar Ficha a este Programa
+                            + Adicionar Treino
                         </button>
                     </div>
 
@@ -240,6 +243,7 @@ const deleteWorkout = () => {
                             v-for="workout in program.workouts"
                             :key="workout.id"
                             :workout="workout"
+                            :return-to="returnToProgram"
                             @open="openWorkout"
                             @delete="confirmDelete"
                         />

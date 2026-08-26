@@ -3,7 +3,7 @@
 use App\Models\User;
 use App\Models\WorkoutProgram;
 
-test('creating a workout linked to a program redirects straight to its edit screen with a return_to back to the program', function () {
+test('creating a workout linked to a program redirects back to the program page', function () {
     $user = User::factory()->create();
     $program = WorkoutProgram::factory()->for($user)->create();
 
@@ -12,12 +12,7 @@ test('creating a workout linked to a program redirects straight to its edit scre
         'workout_program_id' => $program->id,
     ]);
 
-    $workout = $user->workouts()->where('name', 'Treino A')->firstOrFail();
-
-    $response->assertRedirect(route('workouts.edit', [
-        'workout' => $workout->id,
-        'return_to' => route('programs.show', $program->id),
-    ]));
+    $response->assertRedirect(route('programs.show', $program->id));
 });
 
 test('creating a workout linked to a program honors an explicit return_to', function () {
@@ -29,12 +24,7 @@ test('creating a workout linked to a program honors an explicit return_to', func
         'workout_program_id' => $program->id,
     ]);
 
-    $workout = $user->workouts()->where('name', 'Treino A')->firstOrFail();
-
-    $response->assertRedirect(route('workouts.edit', [
-        'workout' => $workout->id,
-        'return_to' => '/programs/'.$program->id,
-    ]));
+    $response->assertRedirect('/programs/'.$program->id);
 });
 
 test('creating a workout without a program still redirects to the workouts list', function () {
@@ -67,4 +57,40 @@ test('updating a workout with return_to=/programs/1 redirects exactly to /progra
     ]);
 
     $response->assertRedirect('/programs/1');
+});
+
+test('updating a workout without return_to redirects to the workout show page', function () {
+    $user = User::factory()->create();
+    $workout = $user->workouts()->create(['name' => 'Treino Original']);
+
+    $response = $this->actingAs($user)->put(route('workouts.update', $workout), [
+        'name' => 'Treino Atualizado',
+    ]);
+
+    $response->assertRedirect(route('workouts.show', $workout));
+});
+
+test('deleting a workout with return_to redirects exactly there', function () {
+    $user = User::factory()->create();
+    $program = WorkoutProgram::factory()->for($user)->create();
+    $workout = $user->workouts()->create([
+        'name' => 'Treino a Excluir',
+        'workout_program_id' => $program->id,
+    ]);
+
+    $response = $this->actingAs($user)->delete(route('workouts.destroy', [
+        'workout' => $workout,
+        'return_to' => route('programs.show', $program->id),
+    ]));
+
+    $response->assertRedirect(route('programs.show', $program->id));
+});
+
+test('deleting a workout without return_to redirects to the workouts list', function () {
+    $user = User::factory()->create();
+    $workout = $user->workouts()->create(['name' => 'Treino a Excluir']);
+
+    $response = $this->actingAs($user)->delete(route('workouts.destroy', $workout));
+
+    $response->assertRedirect(route('workouts.index'));
 });
