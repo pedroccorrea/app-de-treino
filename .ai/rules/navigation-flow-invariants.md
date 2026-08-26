@@ -2,20 +2,17 @@
 
 ## 1. Regra do return_to (Preservação de Contexto)
 Nenhum controller ou botão de interface pode usar redirecionamentos fixos quando uma ação puder ser iniciada de mais de um lugar.
+- Toda rota de criação, edição ou exclusão deve aceitar e propagar o parâmetro `return_to`.
+- Ao concluir a ação no Controller, redirecione para `request('return_to')` se fornecido.
 
-BAD Pattern (Redirecionamento Cego):
-- O usuário estava em /programs/4, criou um treino e o controller fez return redirect()->route('workouts.index'). O usuário perdeu o contexto de onde estava.
+## 2. Separação de Visualização vs. Edição
+- Clicar no card de um treino SEMPRE abre a tela de visualização pronta para iniciar (`Workouts/Show.vue`).
+- A tela de edição (`Workouts/Edit.vue`) só deve ser aberta se o usuário clicar intencionalmente no ícone de Lápis.
+- Ao salvar a edição em `Workouts/Edit.vue`, o usuário deve ser mantido na mesma página de edição (ou redirecionado para o `return_to` fornecido) com os dados atualizados.
 
-GOOD Pattern (Preservação de Origem):
-- No Controller:
-  $redirectTo = $request->input('return_to', route('workouts.index'));
-  return redirect($redirectTo)->with('success', '...');
+## 3. Criação de Treino dentro de Programa
+- Ao criar um treino dentro de um programa (`Programs/Show.vue`), o modal fecha e o usuário permanece na mesma página do programa (`Programs/Show.vue`), exibindo a lista atualizada com o novo treino recém-criado.
 
-## 2. Fluxo de Criação Fluido (Criar ➔ Editar Exercícios Imediatamente)
-- Uma Ficha de Treino nasce com 0 exercícios. Redirecionar o usuário para a listagem com a ficha vazia é uma péssima UX.
-- Ao criar uma Ficha dentro de um Programa (/programs/{id}), o sistema DEVE redirecionar imediatamente para a tela de edição daquela ficha (/workouts/{id}/edit?return_to=/programs/{id}), permitindo ao usuário adicionar os exercícios na hora.
-
-## 3. Botões "Voltar" Contextuais
+## 4. Botões "Voltar" Contextuais
 - Botões de "Voltar" no Vue NUNCA devem ter links fixos hardcoded se a tela tiver múltiplos pontos de entrada.
-- Devem ler a prop/query return_to ou usar navegação contextual inteligente:
-  <Link :href="returnUrl || route('workouts.index')">← Voltar</Link>
+- Devem ler a prop/query `return_to` para devolver o usuário exatamente para a tela de onde ele veio, no mesmo estado.

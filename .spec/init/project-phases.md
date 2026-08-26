@@ -146,25 +146,31 @@
 2. `php artisan test` passa 100%.
 3. `npm run build` compila com zero erros.
 
-# Phase 8: Refatoração de Navegação Contextual e Fluxo Fluido de Treinos
+# Phase 8: Refatoração de Navegação Contextual, Separação de Ver/Editar e Textos de Interface
 ## Tasks
-1. **Preservação de Origem e Criação com Edição Imediata:**
-   - No WorkoutController@store:
-     * Ao criar uma nova ficha vinculada a um programa (passando workout_program_id), redirecionar IMEDIATAMENTE para a tela de edição dessa ficha: route('workouts.edit', ['workout' => $workout->id, 'return_to' => $returnTo]).
-     * Assim, o usuário cria a ficha e já cai direto na tela para adicionar os exercícios com o botão de voltar apontando para o programa correto.
-   - No WorkoutController@update:
-     * Ao salvar a edição do treino, respeitar o parâmetro return_to (se veio de /programs/4, volta para /programs/4; se veio de /workouts, volta para /workouts).
+1. **Ajustes de Textos de Interface:**
+   - Em `Programs/Show.vue`: alterar o botão de criação para "+ Adicionar Treino".
+   - Em `Workouts/Edit.vue`: alterar o botão do catálogo para "+ Adicionar Exercício".
 
-2. **Ajuste dos Botões "Voltar" no Frontend:**
-   - Em Workouts/Edit.vue, Workouts/Show.vue e Workouts/Create.vue:
-     * Receber o parâmetro return_to via props/query.
-     * Fazer o botão "← Voltar" navegar para a rota de origem (return_to), garantindo que o usuário que veio de programs.show volte para programs.show em 1 clique.
+2. **Fluxo de Criação dentro do Programa:**
+   - No modal de "+ Adicionar Treino" em `Programs/Show.vue`: ao submeter o formulário, manter o usuário na mesma página (`Programs/Show.vue`), fechando o modal e atualizando a listagem de treinos do programa.
 
-3. **Correção de Associação no Modal de Adicionar Ficha:**
-   - Em Programs/Show.vue, ao clicar em "+ Adicionar Ficha a este Programa", o formulário do modal DEVE enviar o workout_program_id e o return_to = route('programs.show', program.id).
+3. **Separação de Visualização vs. Edição:**
+   - Em `Programs/Show.vue`:
+     * Clicar no card do treino abre a visualização (`Workouts/Show.vue`) com botão "Iniciar Treino", passando `return_to = route('programs.show', program.id)`.
+     * Clicar no ícone de Lápis abre a edição (`Workouts/Edit.vue`), passando `return_to = route('programs.show', program.id)`.
+   - Em `Workouts/Index.vue`:
+     * Clicar no card do treino abre a visualização (`Workouts/Show.vue`), passando `return_to = route('workouts.index')`.
+     * Clicar no ícone de Lápis abre a edição (`Workouts/Edit.vue`), passando `return_to = route('workouts.index')`.
+
+4. **Navegação Contextual do Botão Voltar e Salvamento:**
+   - Em `Workouts/Show.vue` e `Workouts/Edit.vue`:
+     * O botão "Voltar" deve navegar estritamente para a URL fornecida em `return_to`.
+     * Ao salvar a edição em `Workouts/Edit.vue`, redirecionar para o `return_to` fornecido com mensagem de sucesso.
 
 ## Acceptance Criteria
-1. tests/Feature/WorkoutNavigationFlowTest.php valida que criar um treino com workout_program_id redireciona para workouts.edit com o parâmetro return_to preenchido.
-2. Atualizar um treino com return_to=/programs/1 redireciona exatamente para /programs/1.
-3. php artisan test passa 100%.
-4. npm run build compila com zero erros.
+1. Criar um treino a partir de `programs.show` redireciona/permanece em `programs.show`.
+2. Clicar no card do treino a partir de `programs.show` abre `workouts.show` com botão Voltar apontando para `programs.show`.
+3. `tests/Feature/WorkoutNavigationFlowTest.php` valida os fluxos de redirecionamento contextual de `store`, `update` e `destroy`.
+4. `php artisan test` passa 100%.
+5. `npm run build` compila sem erros.
