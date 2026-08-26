@@ -34,7 +34,7 @@ defineEmits(['open', 'toggle-archive', 'delete']);
                         {{ workout.name }}
                     </h3>
                     <Link
-                        :href="route('workouts.edit', { workout: workout.id, redirect_to: currentPath })"
+                        :href="route('workouts.edit', { workout: workout.id, return_to: currentPath })"
                         @click.stop
                         class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-gray-400 transition hover:bg-violet-500/10 hover:text-violet-600 dark:hover:text-violet-400"
                         title="Editar treino"

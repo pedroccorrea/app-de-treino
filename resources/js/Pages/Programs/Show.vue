@@ -55,6 +55,7 @@ const workoutForm = useForm({
     description: '',
     days_of_week: [],
     workout_program_id: props.program.id,
+    return_to: route('programs.show', props.program.id),
 });
 
 const openCreateWorkoutModal = () => {
@@ -78,7 +79,7 @@ const submitCreateWorkout = () => {
 const currentPath = window.location.pathname + window.location.search;
 
 const openWorkout = (workout) => {
-    router.visit(route('workouts.edit', { workout: workout.id, redirect_to: currentPath }));
+    router.visit(route('workouts.edit', { workout: workout.id, return_to: currentPath }));
 };
 
 // ─── Exclusão de ficha com confirmação ──────────────────────────────────────

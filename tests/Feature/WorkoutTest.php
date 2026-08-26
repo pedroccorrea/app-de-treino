@@ -117,7 +117,7 @@ test('authenticated user can update their workout data and exercises', function 
         ],
     ]);
 
-    // With no `redirect_to`, the user lands on the workout's own page.
+    // With no `return_to`, the user lands on the workout's own page.
     $response->assertRedirect(route('workouts.show', $workout));
     $response->assertSessionHas('success');
 
@@ -142,22 +142,22 @@ test('authenticated user can update their workout data and exercises', function 
     ]);
 });
 
-test('updating a workout redirects to the given redirect_to path', function () {
+test('updating a workout redirects to the given return_to path', function () {
     $user = User::factory()->create();
     $workout = $user->workouts()->create(['name' => 'Treino Original']);
 
-    $response = $this->actingAs($user)->put(route('workouts.update', ['workout' => $workout, 'redirect_to' => '/workouts']), [
+    $response = $this->actingAs($user)->put(route('workouts.update', ['workout' => $workout, 'return_to' => '/workouts']), [
         'name' => 'Treino Atualizado',
     ]);
 
     $response->assertRedirect('/workouts');
 });
 
-test('updating a workout ignores an unsafe redirect_to and falls back to the show page', function () {
+test('updating a workout ignores an unsafe return_to and falls back to the show page', function () {
     $user = User::factory()->create();
     $workout = $user->workouts()->create(['name' => 'Treino Original']);
 
-    $response = $this->actingAs($user)->put(route('workouts.update', ['workout' => $workout, 'redirect_to' => 'https://evil.example.com']), [
+    $response = $this->actingAs($user)->put(route('workouts.update', ['workout' => $workout, 'return_to' => 'https://evil.example.com']), [
         'name' => 'Treino Atualizado',
     ]);
 

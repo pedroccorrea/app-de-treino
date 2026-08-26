@@ -30,15 +30,16 @@ const form = useForm({
         })),
 });
 
-// The page that opened this edit form (e.g. the workouts list) can pass
-// ?redirect_to=... so the backend sends the user back there after saving,
-// instead of always landing on the workout's own show page.
-const redirectTo = new URLSearchParams(window.location.search).get('redirect_to');
+// The page that opened this edit form (e.g. the workouts list, or a
+// program's page) can pass ?return_to=... so the back button and the
+// backend redirect after saving send the user back there, instead of
+// always landing on the workout's own show page.
+const returnTo = new URLSearchParams(window.location.search).get('return_to');
 
 const submit = () => {
     form.put(
-        redirectTo
-            ? route('workouts.update', { workout: props.workout.id, redirect_to: redirectTo })
+        returnTo
+            ? route('workouts.update', { workout: props.workout.id, return_to: returnTo })
             : route('workouts.update', props.workout.id),
         { preserveScroll: true },
     );
@@ -52,7 +53,7 @@ const submit = () => {
         <template #header>
             <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
                 <Link
-                    :href="route('workouts.show', workout.id)"
+                    :href="returnTo || route('workouts.show', workout.id)"
                     class="inline-flex items-center gap-1.5 text-sm font-medium text-gray-500 transition hover:text-violet-600 dark:text-gray-400 dark:hover:text-violet-400"
                 >
                     <svg
@@ -68,7 +69,7 @@ const submit = () => {
                             d="M15 19l-7-7 7-7"
                         />
                     </svg>
-                    Voltar ao treino
+                    Voltar
                 </Link>
 
                 <h2
@@ -84,7 +85,7 @@ const submit = () => {
                 <WorkoutForm
                     :form="form"
                     :exercises-catalog="exercisesCatalog"
-                    :cancel-href="route('workouts.show', workout.id)"
+                    :cancel-href="returnTo || route('workouts.show', workout.id)"
                     submit-label="Salvar Alterações"
                     processing-label="Salvando Alterações..."
                     @submit="submit"

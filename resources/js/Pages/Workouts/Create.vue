@@ -17,10 +17,16 @@ const form = useForm({
     exercises: [],
 });
 
+// The page that opened this create form (e.g. a program's page) can pass
+// ?return_to=... so the back button, and the redirect after saving, send
+// the user back there instead of always landing on the workouts list.
+const returnTo = new URLSearchParams(window.location.search).get('return_to');
+
 const submit = () => {
-    form.post(route('workouts.store'), {
-        preserveScroll: true,
-    });
+    form.post(
+        returnTo ? route('workouts.store', { return_to: returnTo }) : route('workouts.store'),
+        { preserveScroll: true },
+    );
 };
 </script>
 
@@ -31,7 +37,7 @@ const submit = () => {
         <template #header>
             <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
                 <Link
-                    :href="route('workouts.index')"
+                    :href="returnTo || route('workouts.index')"
                     class="inline-flex items-center gap-1.5 text-sm font-medium text-gray-500 transition hover:text-violet-600 dark:text-gray-400 dark:hover:text-violet-400"
                 >
                     <svg
@@ -47,7 +53,7 @@ const submit = () => {
                             d="M15 19l-7-7 7-7"
                         />
                     </svg>
-                    Voltar aos treinos
+                    Voltar
                 </Link>
 
                 <h2
@@ -63,7 +69,7 @@ const submit = () => {
                 <WorkoutForm
                     :form="form"
                     :exercises-catalog="exercisesCatalog"
-                    :cancel-href="route('workouts.index')"
+                    :cancel-href="returnTo || route('workouts.index')"
                     submit-label="Salvar Treino"
                     processing-label="Salvando Treino..."
                     @submit="submit"

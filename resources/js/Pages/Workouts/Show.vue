@@ -10,7 +10,10 @@ const props = defineProps({
     },
 });
 
-// Where the edit link should send the user back to after saving.
+// If this page was itself opened from another page (e.g. a program's page)
+// via ?return_to=..., the back button and the edit link (which carries
+// this page's own URL forward) both honor that origin.
+const returnTo = new URLSearchParams(window.location.search).get('return_to');
 const currentPath = window.location.pathname + window.location.search;
 
 // Drag & Drop state
@@ -111,13 +114,13 @@ const persistOrder = () => {
         <template #header>
             <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
                 <Link
-                    :href="route('workouts.index')"
+                    :href="returnTo || route('workouts.index')"
                     class="inline-flex items-center gap-1 text-sm font-medium text-gray-500 transition hover:text-violet-500 dark:text-gray-400 dark:hover:text-violet-400"
                 >
                     <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
                     </svg>
-                    Voltar aos treinos
+                    Voltar
                 </Link>
 
                 <div class="flex items-center gap-2">
@@ -125,7 +128,7 @@ const persistOrder = () => {
                         {{ workout.name }}
                     </h2>
                     <Link
-                        :href="route('workouts.edit', { workout: workout.id, redirect_to: currentPath })"
+                        :href="route('workouts.edit', { workout: workout.id, return_to: currentPath })"
                         class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 transition hover:bg-violet-500/10 hover:text-violet-600 dark:hover:text-violet-400"
                         title="Editar treino"
                     >

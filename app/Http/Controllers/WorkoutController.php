@@ -55,7 +55,18 @@ class WorkoutController extends Controller
 
     public function store(StoreWorkoutRequest $request, WorkoutService $workoutService): RedirectResponse
     {
-        $workoutService->createWorkout($request->user(), $request->validated());
+        $workout = $workoutService->createWorkout($request->user(), $request->validated());
+
+        if ($request->filled('workout_program_id')) {
+            $returnTo = $this->safeRedirectTarget(
+                $request->input('return_to'),
+                route('programs.show', $workout->workout_program_id)
+            );
+
+            return redirect()
+                ->route('workouts.edit', ['workout' => $workout->id, 'return_to' => $returnTo])
+                ->with('success', 'Ficha criada! Agora adicione os exercícios.');
+        }
 
         return redirect()
             ->route('workouts.index')
@@ -81,23 +92,32 @@ class WorkoutController extends Controller
         $workoutService->updateWorkout($workout, $request->validated());
 
         return redirect()
-            ->to($this->safeRedirectTarget($request->query('redirect_to'), $workout))
+            ->to($this->safeRedirectTarget($request->query('return_to'), route('workouts.show', $workout)))
             ->with('success', 'Treino atualizado com sucesso!');
     }
 
     /**
-     * The edit screen may be opened from different pages (the workouts list,
-     * the workout's own page). It passes back a `redirect_to` path so the
-     * user lands where they came from instead of always on the show page.
-     * Only same-app relative paths are honored to avoid an open redirect.
+     * Several screens (the workouts list, a workout's own page, a program's
+     * page) can open the create/edit flow, and pass back a `return_to`
+     * path/URL so the user lands where they came from instead of always on
+     * a fixed page. Only same-app targets (relative paths or URLs under the
+     * app's own domain) are honored to avoid an open redirect.
      */
-    private function safeRedirectTarget(?string $redirectTo, Workout $workout): string
+    private function safeRedirectTarget(?string $returnTo, string $fallback): string
     {
-        if ($redirectTo && str_starts_with($redirectTo, '/') && ! str_starts_with($redirectTo, '//')) {
-            return $redirectTo;
+        if (! $returnTo) {
+            return $fallback;
         }
 
-        return route('workouts.show', $workout);
+        if (str_starts_with($returnTo, '/') && ! str_starts_with($returnTo, '//')) {
+            return $returnTo;
+        }
+
+        if (str_starts_with($returnTo, config('app.url'))) {
+            return $returnTo;
+        }
+
+        return $fallback;
     }
 
     public function reorder(Request $request, Workout $workout, WorkoutService $workoutService): RedirectResponse
