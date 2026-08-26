@@ -24,17 +24,21 @@ class WorkoutScannerService
      * recognizes as synonyms of an existing catalog entry are reused instead
      * of duplicated; genuinely new exercises are created for the user.
      */
-    public function scanAndImport(UploadedFile $image, User $user): Workout
+    public function scanAndImport(UploadedFile $image, User $user, ?int $workoutProgramId = null): Workout
     {
         $catalog = Exercise::query()->forUser($user)->pluck('name', 'id');
 
         $parsed = $this->transcribeWithGemini($image, $catalog);
 
-        return DB::transaction(function () use ($parsed, $catalog, $user) {
+        return DB::transaction(function () use ($parsed, $catalog, $user, $workoutProgramId) {
             $workout = $user->workouts()->create([
                 'name' => $parsed['workout_name'] ?? 'Ficha Escaneada',
-                'workout_program_id' => $this->workoutProgramService->getActiveProgram($user)?->id,
+                'workout_program_id' => $workoutProgramId ?? $this->workoutProgramService->getActiveProgram($user)?->id,
             ]);
+
+            if ($workout->workout_program_id) {
+                $workout->programs()->syncWithoutDetaching([$workout->workout_program_id]);
+            }
 
             foreach ($parsed['exercises'] ?? [] as $index => $exerciseData) {
                 $exercise = $this->resolveExercise($exerciseData, $catalog, $user);

@@ -49,6 +49,11 @@ class Workout extends Model
         return $this->belongsTo(WorkoutProgram::class);
     }
 
+    public function programs(): BelongsToMany
+    {
+        return $this->belongsToMany(WorkoutProgram::class, 'program_workouts')->withPivot('order')->withTimestamps();
+    }
+
     public function exercises(): BelongsToMany
     {
         return $this->belongsToMany(Exercise::class, 'workout_exercises')

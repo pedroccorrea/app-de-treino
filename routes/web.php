@@ -43,6 +43,8 @@ Route::middleware('auth')->group(function () {
     Route::patch('/programs/{program}/activate', [WorkoutProgramController::class, 'activate'])->name('programs.activate');
     Route::patch('/programs/{program}/archive', [WorkoutProgramController::class, 'archive'])->name('programs.archive');
     Route::delete('/programs/{program}', [WorkoutProgramController::class, 'destroy'])->name('programs.destroy');
+    Route::post('/programs/{program}/workouts/attach', [WorkoutProgramController::class, 'attachWorkouts'])->name('programs.workouts.attach');
+    Route::delete('/programs/{program}/workouts/{workout}/detach', [WorkoutProgramController::class, 'detachWorkout'])->name('programs.workouts.detach');
 
     Route::get('/workout-sessions/{session}', [WorkoutSessionController::class, 'show'])->name('workout-sessions.show');
     Route::post('/workout-sessions/{session}/sets', [WorkoutSessionController::class, 'logSet'])->name('workout-sessions.sets.store');

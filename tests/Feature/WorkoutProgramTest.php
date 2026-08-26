@@ -179,6 +179,7 @@ test('authenticated user can view a programs details with its workouts', functio
         'workout_program_id' => $program->id,
         'name' => 'Treino A',
     ]);
+    $program->workouts()->attach($workout->id);
 
     $exercise = Exercise::query()->create([
         'user_id' => null,

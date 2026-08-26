@@ -12,7 +12,11 @@ class WorkoutScannerController extends Controller
     public function store(ScanWorkoutRequest $request, WorkoutScannerService $workoutScannerService): RedirectResponse
     {
         try {
-            $workout = $workoutScannerService->scanAndImport($request->file('image'), $request->user());
+            $workout = $workoutScannerService->scanAndImport(
+                $request->file('image'),
+                $request->user(),
+                $request->validated('workout_program_id'),
+            );
         } catch (GeminiException $e) {
             return redirect()
                 ->route('workouts.index')

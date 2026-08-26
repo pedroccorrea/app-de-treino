@@ -49,9 +49,9 @@ defineEmits(['open', 'delete']);
             type="button"
             @click.stop="$emit('delete', workout)"
             class="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-red-500 transition hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-500/10"
-            title="Excluir ficha"
+            title="Desvincular do programa"
         >
-            🗑️ Excluir
+            🗑️ Desvincular
         </button>
     </div>
 </template>

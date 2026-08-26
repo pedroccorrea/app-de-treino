@@ -1,6 +1,6 @@
 <script setup>
 import ProgramHeader from '@/Components/Programs/ProgramHeader.vue';
-import DeleteWorkoutModal from '@/Components/Workouts/DeleteWorkoutModal.vue';
+import ConfirmationModal from '@/Components/ConfirmationModal.vue';
 import ScanWorkoutModal from '@/Components/Workouts/ScanWorkoutModal.vue';
 import WorkoutCard from '@/Components/Workouts/WorkoutCard.vue';
 import WorkoutsIndexHeader from '@/Components/Workouts/WorkoutsIndexHeader.vue';
@@ -30,8 +30,8 @@ const props = defineProps({
 // ─── Fichas do programa ativo ────────────────────────────────────────────────
 const activeProgramWorkouts = computed(() =>
     props.activeProgram
-        ? props.workouts.filter((w) => w.workout_program_id === props.activeProgram.id)
-        : props.workouts.filter((w) => !w.workout_program_id),
+        ? props.workouts.filter((w) => w.program_ids.includes(props.activeProgram.id))
+        : props.workouts.filter((w) => w.program_ids.length === 0),
 );
 
 const hasWorkouts = computed(() => activeProgramWorkouts.value.length > 0);
@@ -115,8 +115,11 @@ const submitScan = () => {
             @submit="submitScan"
         />
 
-        <DeleteWorkoutModal
-            :workout="workoutPendingDeletion"
+        <ConfirmationModal
+            :show="!!workoutPendingDeletion"
+            title="Excluir treino?"
+            :description="`Tem certeza que deseja excluir '${workoutPendingDeletion?.name}'? Essa ação não pode ser desfeita.`"
+            confirm-text="Excluir"
             :processing="deleting"
             @cancel="cancelDelete"
             @confirm="deleteWorkout"

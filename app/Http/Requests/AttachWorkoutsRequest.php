@@ -6,7 +6,7 @@ use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
-class ScanWorkoutRequest extends FormRequest
+class AttachWorkoutsRequest extends FormRequest
 {
     public function authorize(): bool
     {
@@ -19,11 +19,10 @@ class ScanWorkoutRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'image' => ['required', 'file', 'mimes:jpg,jpeg,png,webp', 'max:10240'],
-            'workout_program_id' => [
-                'nullable',
+            'workout_ids' => ['required', 'array', 'min:1'],
+            'workout_ids.*' => [
                 'integer',
-                Rule::exists('workout_programs', 'id')->where(fn ($query) => $query->where('user_id', $this->user()->id)),
+                Rule::exists('workouts', 'id')->where(fn ($query) => $query->where('user_id', $this->user()->id)),
             ],
         ];
     }

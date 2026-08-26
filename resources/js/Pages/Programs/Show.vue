@@ -1,7 +1,9 @@
 <script setup>
-import CreateWorkoutModal from '@/Components/Workouts/CreateWorkoutModal.vue';
-import DeleteWorkoutModal from '@/Components/Workouts/DeleteWorkoutModal.vue';
+import AttachWorkoutsModal from '@/Components/Programs/AttachWorkoutsModal.vue';
 import ProgramWorkoutCard from '@/Components/Programs/ProgramWorkoutCard.vue';
+import ConfirmationModal from '@/Components/ConfirmationModal.vue';
+import CreateWorkoutModal from '@/Components/Workouts/CreateWorkoutModal.vue';
+import ScanWorkoutModal from '@/Components/Workouts/ScanWorkoutModal.vue';
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
@@ -15,6 +17,10 @@ const props = defineProps({
     program: {
         type: Object,
         required: true,
+    },
+    availableWorkouts: {
+        type: Array,
+        default: () => [],
     },
 });
 
@@ -50,6 +56,33 @@ const saveProgram = () => {
 // ─── Navegar para visualização da ficha (card) ou edição (ícone de lápis) ───
 const returnToProgram = route('programs.show', props.program.id);
 
+// ─── Seletor de treinos existentes (múltiplos, via checkboxes) ──────────────
+const showAttachWorkoutsModal = ref(false);
+const attaching = ref(false);
+
+const openAttachWorkoutsModal = () => {
+    showAttachWorkoutsModal.value = true;
+};
+
+const closeAttachWorkoutsModal = () => {
+    showAttachWorkoutsModal.value = false;
+};
+
+const attachWorkouts = (workoutIds) => {
+    attaching.value = true;
+    router.post(
+        route('programs.workouts.attach', props.program.id),
+        { workout_ids: workoutIds },
+        {
+            preserveScroll: true,
+            onFinish: () => {
+                attaching.value = false;
+                showAttachWorkoutsModal.value = false;
+            },
+        },
+    );
+};
+
 // ─── Modal de criação de ficha, já associada a este programa ───────────────
 const showCreateWorkoutModal = ref(false);
 
@@ -62,6 +95,7 @@ const workoutForm = useForm({
 });
 
 const openCreateWorkoutModal = () => {
+    showAttachWorkoutsModal.value = false;
     showCreateWorkoutModal.value = true;
 };
 
@@ -78,31 +112,59 @@ const submitCreateWorkout = () => {
     });
 };
 
+// ─── Modal de escaneamento de ficha, já associada a este programa ──────────
+const showScanModal = ref(false);
+const scanModal = ref(null);
+
+const scanForm = useForm({
+    image: null,
+    workout_program_id: props.program.id,
+});
+
+const openScanModal = () => {
+    showAttachWorkoutsModal.value = false;
+    showScanModal.value = true;
+};
+
+const closeScanModal = () => {
+    scanForm.reset();
+    scanForm.clearErrors();
+    scanModal.value?.resetPreview();
+    showScanModal.value = false;
+};
+
+const submitScan = () => {
+    scanForm.post(route('workouts.scan'), {
+        forceFormData: true,
+        onSuccess: () => closeScanModal(),
+    });
+};
+
 const openWorkout = (workout) => {
     router.visit(route('workouts.show', { workout: workout.id, return_to: returnToProgram }));
 };
 
-// ─── Exclusão de ficha com confirmação ──────────────────────────────────────
-const workoutPendingDeletion = ref(null);
-const deleting = ref(false);
+// ─── Desvincular ficha do programa (não exclui a ficha) com confirmação ────
+const workoutPendingDetach = ref(null);
+const detaching = ref(false);
 
-const confirmDelete = (workout) => {
-    workoutPendingDeletion.value = workout;
+const confirmDetach = (workout) => {
+    workoutPendingDetach.value = workout;
 };
 
-const cancelDelete = () => {
-    workoutPendingDeletion.value = null;
+const cancelDetach = () => {
+    workoutPendingDetach.value = null;
 };
 
-const deleteWorkout = () => {
-    deleting.value = true;
+const detachWorkout = () => {
+    detaching.value = true;
     router.delete(
-        route('workouts.destroy', { workout: workoutPendingDeletion.value.id, return_to: returnToProgram }),
+        route('programs.workouts.detach', { program: props.program.id, workout: workoutPendingDetach.value.id }),
         {
             preserveScroll: true,
             onFinish: () => {
-                deleting.value = false;
-                workoutPendingDeletion.value = null;
+                detaching.value = false;
+                workoutPendingDetach.value = null;
             },
         },
     );
@@ -127,6 +189,16 @@ const deleteWorkout = () => {
             </div>
         </template>
 
+        <AttachWorkoutsModal
+            :show="showAttachWorkoutsModal"
+            :available-workouts="availableWorkouts"
+            :processing="attaching"
+            @close="closeAttachWorkoutsModal"
+            @submit="attachWorkouts"
+            @create-new="openCreateWorkoutModal"
+            @scan="openScanModal"
+        />
+
         <CreateWorkoutModal
             :show="showCreateWorkoutModal"
             :form="workoutForm"
@@ -134,11 +206,22 @@ const deleteWorkout = () => {
             @submit="submitCreateWorkout"
         />
 
-        <DeleteWorkoutModal
-            :workout="workoutPendingDeletion"
-            :processing="deleting"
-            @cancel="cancelDelete"
-            @confirm="deleteWorkout"
+        <ScanWorkoutModal
+            ref="scanModal"
+            :show="showScanModal"
+            :form="scanForm"
+            @close="closeScanModal"
+            @submit="submitScan"
+        />
+
+        <ConfirmationModal
+            :show="!!workoutPendingDetach"
+            title="Desvincular treino?"
+            :description="`Tem certeza que deseja desvincular '${workoutPendingDetach?.name}' deste programa? A ficha não será excluída e continua disponível para ser vinculada novamente.`"
+            confirm-text="Desvincular"
+            :processing="detaching"
+            @cancel="cancelDetach"
+            @confirm="detachWorkout"
         />
 
         <div class="py-6 sm:py-8">
@@ -222,7 +305,7 @@ const deleteWorkout = () => {
                         </h3>
                         <button
                             type="button"
-                            @click="openCreateWorkoutModal"
+                            @click="openAttachWorkoutsModal"
                             class="inline-flex items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-violet-500/20 transition hover:bg-violet-700"
                         >
                             + Adicionar Treino
@@ -245,7 +328,7 @@ const deleteWorkout = () => {
                             :workout="workout"
                             :return-to="returnToProgram"
                             @open="openWorkout"
-                            @delete="confirmDelete"
+                            @delete="confirmDetach"
                         />
                     </div>
                 </div>

@@ -1,5 +1,6 @@
 <script setup>
 import CreateProgramModal from '@/Components/Programs/CreateProgramModal.vue';
+import ConfirmationModal from '@/Components/ConfirmationModal.vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, router, useForm } from '@inertiajs/vue3';
 import { ref } from 'vue';
@@ -43,12 +44,26 @@ const archiveProgram = (program) => {
     router.patch(route('programs.archive', program.id), {}, { preserveScroll: true });
 };
 
-const deleteProgram = (program) => {
-    if (!confirm(`Tem certeza que deseja excluir o programa "${program.name}" e todas as suas fichas? Essa ação não pode ser desfeita.`)) {
-        return;
-    }
+const programPendingDeletion = ref(null);
+const deleting = ref(false);
 
-    router.delete(route('programs.destroy', program.id), { preserveScroll: true });
+const confirmDeleteProgram = (program) => {
+    programPendingDeletion.value = program;
+};
+
+const cancelDeleteProgram = () => {
+    programPendingDeletion.value = null;
+};
+
+const deleteProgram = () => {
+    deleting.value = true;
+    router.delete(route('programs.destroy', programPendingDeletion.value.id), {
+        preserveScroll: true,
+        onFinish: () => {
+            deleting.value = false;
+            programPendingDeletion.value = null;
+        },
+    });
 };
 </script>
 
@@ -77,6 +92,16 @@ const deleteProgram = (program) => {
             :form="programForm"
             @close="closeCreateProgramModal"
             @submit="submitCreateProgram"
+        />
+
+        <ConfirmationModal
+            :show="!!programPendingDeletion"
+            title="Excluir programa?"
+            :description="`Tem certeza que deseja excluir o programa '${programPendingDeletion?.name}' e todas as suas fichas? Essa ação não pode ser desfeita.`"
+            confirm-text="Excluir"
+            :processing="deleting"
+            @cancel="cancelDeleteProgram"
+            @confirm="deleteProgram"
         />
 
         <div class="py-6 sm:py-8">
@@ -148,7 +173,7 @@ const deleteProgram = (program) => {
                             </button>
                             <button
                                 type="button"
-                                @click.stop="deleteProgram(program)"
+                                @click.stop="confirmDeleteProgram(program)"
                                 class="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-red-500 transition hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-500/10"
                             >
                                 🗑️ Excluir

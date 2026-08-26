@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\AttachWorkoutsRequest;
 use App\Http\Requests\StoreWorkoutProgramRequest;
 use App\Http\Requests\UpdateProgramRequest;
 use App\Models\Workout;
@@ -35,9 +36,15 @@ class WorkoutProgramController extends Controller
         abort_if($program->user_id !== $request->user()->id, 403);
 
         $program = $workoutProgramService->getProgramWithWorkouts($program);
+        $availableWorkouts = $workoutProgramService->getUnlinkedWorkouts($program);
 
         return Inertia::render('Programs/Show', [
             'program' => $this->formatProgramDetail($program),
+            'availableWorkouts' => $availableWorkouts->map(fn (Workout $workout) => [
+                'id' => $workout->id,
+                'name' => $workout->name,
+                'exercises_count' => $workout->exercises_count,
+            ])->values()->all(),
         ]);
     }
 
@@ -75,6 +82,25 @@ class WorkoutProgramController extends Controller
         $workoutProgramService->deleteProgram($program);
 
         return redirect()->back()->with('success', 'Programa excluído com sucesso!');
+    }
+
+    public function attachWorkouts(AttachWorkoutsRequest $request, WorkoutProgram $program, WorkoutProgramService $workoutProgramService): RedirectResponse
+    {
+        abort_if($program->user_id !== $request->user()->id, 403);
+
+        $workoutProgramService->attachWorkouts($program, $request->validated('workout_ids'));
+
+        return redirect()->back()->with('success', 'Treinos vinculados ao programa com sucesso!');
+    }
+
+    public function detachWorkout(Request $request, WorkoutProgram $program, Workout $workout, WorkoutProgramService $workoutProgramService): RedirectResponse
+    {
+        abort_if($program->user_id !== $request->user()->id, 403);
+        abort_if($workout->user_id !== $request->user()->id, 403);
+
+        $workoutProgramService->detachWorkout($program, $workout);
+
+        return redirect()->back()->with('success', 'Treino desvinculado do programa com sucesso!');
     }
 
     /**

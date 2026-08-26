@@ -22,7 +22,7 @@ class WorkoutService
      */
     public function getUserWorkouts(User $user, bool $onlyActive = false): Collection
     {
-        $query = $user->workouts()->with(['exercises', 'workoutProgram']);
+        $query = $user->workouts()->with(['exercises', 'programs']);
 
         if ($onlyActive) {
             $query->active();
@@ -84,6 +84,10 @@ class WorkoutService
                 'workout_program_id' => $data['workout_program_id']
                     ?? $this->workoutProgramService->getActiveProgram($user)?->id,
             ]);
+
+            if ($workout->workout_program_id) {
+                $workout->programs()->syncWithoutDetaching([$workout->workout_program_id]);
+            }
 
             foreach ($data['exercises'] ?? [] as $index => $exercise) {
                 $workout->workoutExercises()->create([

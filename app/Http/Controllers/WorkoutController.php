@@ -178,6 +178,7 @@ class WorkoutController extends Controller
             'description' => $workout->description,
             'is_active' => $workout->is_active,
             'workout_program_id' => $workout->workout_program_id,
+            'program_ids' => $workout->programs->pluck('id')->all(),
             'exercises_count' => $workout->exercises->count(),
             'muscle_groups' => $muscleGroups->unique()->values()->all(),
             'days_of_week' => $daysOfWeek->map(fn (DayOfWeek $day) => $day->value)->values()->all(),

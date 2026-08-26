@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\User;
+use App\Models\Workout;
 use App\Models\WorkoutProgram;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
@@ -38,8 +39,44 @@ class WorkoutProgramService
     public function getProgramWithWorkouts(WorkoutProgram $program): WorkoutProgram
     {
         return $program->load(['workouts' => function ($query) {
-            $query->with('exercises')->orderBy('created_at');
+            $query->with('exercises')->orderBy('workouts.created_at');
         }]);
+    }
+
+    /**
+     * Workouts owned by the program's user that aren't linked to this
+     * program yet, for the "add existing workout" picker.
+     *
+     * @return Collection<int, Workout>
+     */
+    public function getUnlinkedWorkouts(WorkoutProgram $program): Collection
+    {
+        return Workout::query()
+            ->where('user_id', $program->user_id)
+            ->whereDoesntHave('programs', fn ($query) => $query->where('workout_programs.id', $program->id))
+            ->withCount('exercises')
+            ->orderBy('name')
+            ->get();
+    }
+
+    /**
+     * Links multiple existing workouts to the program at once, ignoring
+     * ones that are already linked.
+     *
+     * @param  array<int>  $workoutIds
+     */
+    public function attachWorkouts(WorkoutProgram $program, array $workoutIds): void
+    {
+        $program->workouts()->syncWithoutDetaching($workoutIds);
+    }
+
+    /**
+     * Unlinks a workout from the program without deleting the workout
+     * itself.
+     */
+    public function detachWorkout(WorkoutProgram $program, Workout $workout): void
+    {
+        $program->workouts()->detach($workout->id);
     }
 
     public function updateProgram(WorkoutProgram $program, array $data): WorkoutProgram
