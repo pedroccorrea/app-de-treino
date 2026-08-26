@@ -21,10 +21,10 @@ const props = defineProps({
 const emit = defineEmits(['close', 'submit']);
 
 // Max width (px) and JPEG quality used to downscale photos taken on a phone
-// camera before upload, so a 10+ MP photo doesn't blow past the 10MB backend
-// limit or spike PHP memory usage while it's base64-encoded for Gemini.
-const MAX_WIDTH = 1920;
-const JPEG_QUALITY = 0.8;
+// camera before upload. Capped at 1200px/75% (~120KB) so the round trip to
+// Gemini stays fast without losing legibility of thermal-printer text.
+const MAX_WIDTH = 1200;
+const JPEG_QUALITY = 0.75;
 
 const cameraInput = ref(null);
 const galleryInput = ref(null);

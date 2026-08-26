@@ -26,6 +26,11 @@ class WorkoutScannerService
      */
     public function scanAndImport(UploadedFile $image, User $user, ?int $workoutProgramId = null): Workout
     {
+        // Reading, base64-encoding and transcribing a workout-sheet photo can
+        // exceed the default 30s/128M PHP limits on shared hosting.
+        set_time_limit(120);
+        ini_set('memory_limit', '512M');
+
         $catalog = Exercise::query()->forUser($user)->pluck('name', 'id');
 
         $parsed = $this->transcribeWithGemini($image, $catalog);
