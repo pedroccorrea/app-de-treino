@@ -222,7 +222,7 @@
 2. `php artisan test` passa em 100% de toda a suíte.
 3. `npm run build` compila com zero erros.
 
-# Phase 10: PWA Completo e Instalável no Celular
+# Phase 11: PWA Completo e Instalável no Celular
 ## Tasks
 1. **Manifest e Metadados Mobile:**
    - Criar `public/manifest.json` com nome "IA-LIFT - Meu App de Treino", short_name "IA-LIFT", display `standalone`, background `#0B0F17`, theme_color `#8B5CF6`, orientação `portrait-primary` e declaração de ícones (192x192 e 512x512).

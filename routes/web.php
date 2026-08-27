@@ -10,6 +10,18 @@ use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
+Route::get('/manifest.json', function () {
+    return response(file_get_contents(resource_path('pwa/manifest.json')), 200, [
+        'Content-Type' => 'application/manifest+json',
+    ]);
+})->name('pwa.manifest');
+
+Route::get('/sw.js', function () {
+    return response(file_get_contents(resource_path('pwa/sw.js')), 200, [
+        'Content-Type' => 'application/javascript',
+    ]);
+})->name('pwa.service-worker');
+
 Route::get('/', function () {
     return Inertia::render('Welcome', [
         'canLogin' => Route::has('login'),
