@@ -337,6 +337,17 @@ const adjustReps = (exercise, setNumber, delta) => {
     setInputs.value[exId][setNumber].reps = Math.max(1, current + delta);
 };
 
+// ─── Direct weight/reps entry (tap-to-edit on the load/reps hero) ───────────
+const setWeight = (exercise, setNumber, value) => {
+    const exId = exercise.id;
+    setInputs.value[exId][setNumber].weight = Math.max(0, value);
+};
+
+const setReps = (exercise, setNumber, value) => {
+    const exId = exercise.id;
+    setInputs.value[exId][setNumber].reps = Math.max(1, value);
+};
+
 // ─── Add extra set ────────────────────────────────────────────────────────────
 const addExtraSet = (exercise) => {
     const exId = exercise.id;
@@ -515,6 +526,8 @@ watch(
                 :can-add-extra-set="canAddExtraSet"
                 @adjust-weight="(n, delta) => adjustWeight(currentExercise, n, delta)"
                 @adjust-reps="(n, delta) => adjustReps(currentExercise, n, delta)"
+                @set-weight="(n, value) => setWeight(currentExercise, n, value)"
+                @set-reps="(n, value) => setReps(currentExercise, n, value)"
                 @complete-set="(n) => completeSet(currentExercise, n)"
                 @next-exercise="tryNavigateTo(currentIndex + 1)"
                 @finish-workout="showFinishModal = true"

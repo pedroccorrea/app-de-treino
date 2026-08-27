@@ -60,6 +60,8 @@ const props = defineProps({
 defineEmits([
     'adjust-weight',
     'adjust-reps',
+    'set-weight',
+    'set-reps',
     'complete-set',
     'next-exercise',
     'finish-workout',
@@ -194,6 +196,8 @@ const restDisplay = computed(() => {
                         :reps="setInputs[set.number]?.reps || 0"
                         :last-text="lastSetText"
                         :delta-text="deltaText"
+                        @update:load="$emit('set-weight', set.number, $event)"
+                        @update:reps="$emit('set-reps', set.number, $event)"
                     />
 
                     <div class="flex gap-2.5">

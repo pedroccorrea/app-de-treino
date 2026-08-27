@@ -1,5 +1,7 @@
 <script setup>
-defineProps({
+import { nextTick, ref } from 'vue';
+
+const props = defineProps({
     load: {
         type: [Number, String],
         default: '',
@@ -17,6 +19,49 @@ defineProps({
         default: null,
     },
 });
+
+const emit = defineEmits(['update:load', 'update:reps']);
+
+const numberClass = 'text-[82px] font-medium leading-[0.86] tracking-[-0.045em] text-white [font-variant-numeric:tabular-nums]';
+const inputClass = `${numberClass} border-b border-[#8B5CF6] bg-transparent focus:outline-none`;
+
+// ─── Carga: tap to edit ─────────────────────────────────────────────────────
+const editingLoad = ref(false);
+const loadDraft = ref('');
+const loadInput = ref(null);
+
+const startEditingLoad = async () => {
+    loadDraft.value = props.load;
+    editingLoad.value = true;
+    await nextTick();
+    loadInput.value?.focus();
+    loadInput.value?.select();
+};
+
+const commitLoad = () => {
+    editingLoad.value = false;
+    const parsed = parseFloat(String(loadDraft.value).replace(',', '.'));
+    if (!Number.isNaN(parsed)) emit('update:load', Math.max(0, parsed));
+};
+
+// ─── Reps: tap to edit ──────────────────────────────────────────────────────
+const editingReps = ref(false);
+const repsDraft = ref('');
+const repsInput = ref(null);
+
+const startEditingReps = async () => {
+    repsDraft.value = props.reps;
+    editingReps.value = true;
+    await nextTick();
+    repsInput.value?.focus();
+    repsInput.value?.select();
+};
+
+const commitReps = () => {
+    editingReps.value = false;
+    const parsed = parseInt(repsDraft.value, 10);
+    if (!Number.isNaN(parsed)) emit('update:reps', Math.max(1, parsed));
+};
 </script>
 
 <template>
@@ -25,8 +70,26 @@ defineProps({
             <div class="flex flex-1 flex-col gap-1.5">
                 <span class="text-[11px] uppercase tracking-[0.2em] text-[#8A8A99]">Carga</span>
                 <div class="flex items-baseline gap-1.5">
+                    <input
+                        v-if="editingLoad"
+                        ref="loadInput"
+                        v-model="loadDraft"
+                        type="number"
+                        inputmode="decimal"
+                        step="0.5"
+                        min="0"
+                        :class="inputClass"
+                        class="w-[4ch]"
+                        @blur="commitLoad"
+                        @keyup.enter="commitLoad"
+                    />
                     <span
-                        class="text-[82px] font-medium leading-[0.86] tracking-[-0.045em] text-white [font-variant-numeric:tabular-nums]"
+                        v-else
+                        role="button"
+                        tabindex="0"
+                        :class="numberClass"
+                        @click="startEditingLoad"
+                        @keydown.enter="startEditingLoad"
                     >{{ load }}</span>
                     <span class="text-xl text-[#8A8A99]">kg</span>
                 </div>
@@ -35,8 +98,26 @@ defineProps({
             <div class="flex w-28 flex-col gap-1.5">
                 <span class="text-[11px] uppercase tracking-[0.2em] text-[#8A8A99]">Reps</span>
                 <div class="flex items-baseline gap-1.5">
+                    <input
+                        v-if="editingReps"
+                        ref="repsInput"
+                        v-model="repsDraft"
+                        type="number"
+                        inputmode="decimal"
+                        step="1"
+                        min="1"
+                        :class="inputClass"
+                        class="w-[2.5ch]"
+                        @blur="commitReps"
+                        @keyup.enter="commitReps"
+                    />
                     <span
-                        class="text-[82px] font-medium leading-[0.86] tracking-[-0.045em] text-white [font-variant-numeric:tabular-nums]"
+                        v-else
+                        role="button"
+                        tabindex="0"
+                        :class="numberClass"
+                        @click="startEditingReps"
+                        @keydown.enter="startEditingReps"
                     >{{ reps }}</span>
                 </div>
             </div>
