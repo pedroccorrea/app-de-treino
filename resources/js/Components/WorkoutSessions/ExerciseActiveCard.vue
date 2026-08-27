@@ -1,5 +1,12 @@
 <script setup>
-defineProps({
+import { computed } from 'vue';
+import CompleteSetButton from '@/Components/WorkoutSessions/CompleteSetButton.vue';
+import LoadRepsHero from '@/Components/WorkoutSessions/LoadRepsHero.vue';
+import LoadRepsStepper from '@/Components/WorkoutSessions/LoadRepsStepper.vue';
+import OverloadSuggestionCard from '@/Components/WorkoutSessions/OverloadSuggestionCard.vue';
+import SetWaveProgress from '@/Components/WorkoutSessions/SetWaveProgress.vue';
+
+const props = defineProps({
     exercise: {
         type: Object,
         required: true,
@@ -12,9 +19,9 @@ defineProps({
         type: Object,
         default: null,
     },
-    // setInputs[setNumber] = { weight, reps }. Mutated directly by this
-    // component's inputs, the same way a v-model target owned by the
-    // parent page would be (see ScanWorkoutModal's `form` prop).
+    // setInputs[setNumber] = { weight, reps }. Read here for display; only the
+    // parent page mutates it, in response to the adjust-weight/adjust-reps
+    // events this component emits.
     setInputs: {
         type: Object,
         required: true,
@@ -57,7 +64,37 @@ defineEmits([
     'next-exercise',
     'finish-workout',
     'add-extra-set',
+    'apply-overload-suggestion',
+    'dismiss-overload-suggestion',
 ]);
+
+const fmt = (n) => Number(n).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+
+const runningSetNumber = computed(() => props.sets.find((s) => s.state === 'running')?.number ?? null);
+
+const lastSetText = computed(() =>
+    props.lastLog ? `${fmt(props.lastLog.weight)}kg × ${props.lastLog.reps}` : null,
+);
+
+const deltaText = computed(() => {
+    if (!props.lastLog || runningSetNumber.value === null) return null;
+
+    const currentWeight = parseFloat(props.setInputs[runningSetNumber.value]?.weight);
+    const lastWeight = parseFloat(props.lastLog.weight);
+    if (Number.isNaN(currentWeight) || Number.isNaN(lastWeight)) return null;
+
+    const diff = currentWeight - lastWeight;
+    if (diff === 0) return null;
+
+    return `${diff > 0 ? '+' : '-'}${fmt(Math.abs(diff))} kg`;
+});
+
+const restDisplay = computed(() => {
+    const total = props.exercise.rest_seconds ?? 60;
+    const m = Math.floor(total / 60);
+    const s = total % 60;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+});
 </script>
 
 <template>
@@ -68,14 +105,6 @@ defineEmits([
                 <div class="min-w-0 flex-1">
                     <h2 class="text-xl font-bold text-white truncate">{{ exercise.name }}</h2>
                     <p class="mt-0.5 text-sm text-gray-400">{{ exercise.primary_muscle }}</p>
-                    <p
-                        v-if="overloadSuggestion"
-                        class="mt-1.5 text-xs font-medium text-violet-400"
-                    >
-                        💡 Dica da IA: {{ overloadSuggestion.current_load }} →
-                        {{ overloadSuggestion.suggested_load }}
-                        (Meta: {{ overloadSuggestion.suggested_reps }})
-                    </p>
                 </div>
             </div>
 
@@ -105,6 +134,19 @@ defineEmits([
             </div>
         </div>
 
+        <!-- AI-backed load suggestion, before/while executing this exercise -->
+        <OverloadSuggestionCard
+            v-if="overloadSuggestion && !isExerciseDone"
+            class="mb-4"
+            :suggested-load="overloadSuggestion.suggested_load"
+            :suggested-reps="overloadSuggestion.suggested_reps"
+            :previous-load="lastLog?.weight ?? null"
+            :previous-reps="lastLog?.reps ?? null"
+            :rationale="overloadSuggestion.rationale"
+            @apply="$emit('apply-overload-suggestion', $event)"
+            @dismiss="$emit('dismiss-overload-suggestion')"
+        />
+
         <!-- ─── Sets ─────────────────────────────────────────────── -->
         <div class="space-y-3">
             <template v-for="set in sets" :key="set.number">
@@ -129,20 +171,12 @@ defineEmits([
                     </svg>
                 </div>
 
-                <!-- ── RUNNING: Active set with inputs ── -->
-                <div
-                    v-else-if="set.state === 'running'"
-                    class="rounded-2xl border border-violet-500/60 bg-gray-900 p-4 ring-1 ring-violet-500/20"
-                >
-                    <div class="flex items-center justify-between mb-4">
-                        <div class="flex items-center gap-2">
-                            <span class="flex h-8 w-8 items-center justify-center rounded-full bg-violet-600 text-sm font-bold text-white">
-                                {{ set.number }}
-                            </span>
-                            <p class="text-sm font-semibold text-violet-300">
-                                Série {{ set.number }}/{{ sets.length }} — Executando
-                            </p>
-                        </div>
+                <!-- ── RUNNING: Active set — load/reps hero, steppers, complete ── -->
+                <div v-else-if="set.state === 'running'" class="flex flex-col gap-6 pt-2">
+                    <div class="flex items-center justify-between">
+                        <span class="flex h-8 w-8 items-center justify-center rounded-full bg-violet-600 text-sm font-bold text-white">
+                            {{ set.number }}
+                        </span>
                         <Transition name="fade">
                             <span
                                 v-if="exerciseTimerActive"
@@ -153,72 +187,47 @@ defineEmits([
                         </Transition>
                     </div>
 
-                    <div class="mb-3">
-                        <label class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-500">
-                            Peso (kg)
-                        </label>
-                        <div class="flex items-center gap-2">
-                            <button
-                                type="button"
-                                @click="$emit('adjust-weight', set.number, -2.5)"
-                                class="flex h-12 w-12 items-center justify-center rounded-xl bg-gray-800 text-xl font-bold text-gray-300 transition hover:bg-gray-700 hover:text-white active:scale-95"
-                            >−</button>
-                            <input
-                                v-model="setInputs[set.number].weight"
-                                type="number"
-                                min="0"
-                                step="0.5"
-                                placeholder="0"
-                                class="flex-1 rounded-xl border-gray-700 bg-gray-800 py-3 text-center text-2xl font-bold text-white focus:border-violet-500 focus:ring-violet-500"
-                            />
-                            <button
-                                type="button"
-                                @click="$emit('adjust-weight', set.number, 2.5)"
-                                class="flex h-12 w-12 items-center justify-center rounded-xl bg-gray-800 text-xl font-bold text-gray-300 transition hover:bg-gray-700 hover:text-white active:scale-95"
-                            >+</button>
-                        </div>
+                    <SetWaveProgress :set-number="set.number" :total-sets="sets.length" />
+
+                    <LoadRepsHero
+                        :load="setInputs[set.number]?.weight || 0"
+                        :reps="setInputs[set.number]?.reps || 0"
+                        :last-text="lastSetText"
+                        :delta-text="deltaText"
+                    />
+
+                    <div class="flex gap-2.5">
+                        <LoadRepsStepper
+                            label="Carga · 2,5"
+                            @decrement="$emit('adjust-weight', set.number, -2.5)"
+                            @increment="$emit('adjust-weight', set.number, 2.5)"
+                        />
+                        <LoadRepsStepper
+                            label="Reps · 1"
+                            @decrement="$emit('adjust-reps', set.number, -1)"
+                            @increment="$emit('adjust-reps', set.number, 1)"
+                        />
                     </div>
 
-                    <div class="mb-4">
-                        <label class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-500">
-                            Repetições
-                        </label>
-                        <div class="flex items-center gap-2">
-                            <button
-                                type="button"
-                                @click="$emit('adjust-reps', set.number, -1)"
-                                class="flex h-12 w-12 items-center justify-center rounded-xl bg-gray-800 text-xl font-bold text-gray-300 transition hover:bg-gray-700 hover:text-white active:scale-95"
-                            >−</button>
-                            <input
-                                v-model="setInputs[set.number].reps"
-                                type="number"
-                                min="1"
-                                placeholder="0"
-                                class="flex-1 rounded-xl border-gray-700 bg-gray-800 py-3 text-center text-2xl font-bold text-white focus:border-violet-500 focus:ring-violet-500"
-                            />
-                            <button
-                                type="button"
-                                @click="$emit('adjust-reps', set.number, 1)"
-                                class="flex h-12 w-12 items-center justify-center rounded-xl bg-gray-800 text-xl font-bold text-gray-300 transition hover:bg-gray-700 hover:text-white active:scale-95"
-                            >+</button>
-                        </div>
-                    </div>
-
-                    <button
-                        type="button"
+                    <CompleteSetButton
+                        :saving="savingSet === `${exercise.id}-${set.number}`"
+                        :label="`Concluir Série ${set.number}`"
                         @click="$emit('complete-set', set.number)"
-                        :disabled="savingSet === `${exercise.id}-${set.number}`"
-                        class="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-600 to-violet-500 py-4 text-base font-bold text-white shadow-lg shadow-violet-500/30 transition hover:from-violet-700 hover:to-violet-600 active:scale-[0.98] disabled:opacity-60"
-                    >
-                        <span v-if="savingSet === `${exercise.id}-${set.number}`" class="flex items-center gap-2">
-                            <svg class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-                            </svg>
-                            Salvando...
+                    />
+
+                    <div class="flex items-center justify-between px-1.5">
+                        <span class="text-[13px] text-[#6E6E7E]">
+                            Descanso <span class="text-[#C9C9D4] [font-variant-numeric:tabular-nums]">{{ restDisplay }}</span>
                         </span>
-                        <span v-else>✓ Concluir Série {{ set.number }}</span>
-                    </button>
+                        <button
+                            v-if="!isLastExercise"
+                            type="button"
+                            @click="$emit('next-exercise')"
+                            class="text-[13px] text-[#6E6E7E] transition hover:text-[#C4B5FD]"
+                        >
+                            Pular exercício
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Sets in "waiting" state are intentionally not rendered: the next

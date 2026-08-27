@@ -30,9 +30,28 @@ const currentExercise = computed(() => sortedExercises.value[currentIndex.value]
 const totalExercises = computed(() => sortedExercises.value.length);
 
 // ─── AI overload suggestion for the exercise in focus ──────────────────────────
-const currentOverloadSuggestion = computed(() =>
-    props.overloadSuggestions.find((s) => s.exercise_name === currentExercise.value?.name) ?? null,
-);
+// dismissedSuggestions[exerciseId] = true once the user closes the card for it.
+const dismissedSuggestions = ref({});
+
+const currentOverloadSuggestion = computed(() => {
+    if (dismissedSuggestions.value[currentExercise.value?.id]) return null;
+    return props.overloadSuggestions.find((s) => s.exercise_name === currentExercise.value?.name) ?? null;
+});
+
+const dismissOverloadSuggestion = () => {
+    if (currentExercise.value) dismissedSuggestions.value[currentExercise.value.id] = true;
+};
+
+// Applies a suggestion straight to the set currently "running" (if any).
+const applyOverloadSuggestion = ({ load, reps }) => {
+    const exercise = currentExercise.value;
+    if (!exercise) return;
+
+    const runningSet = currentSets.value.find((s) => s.state === 'running');
+    if (!runningSet) return;
+
+    setInputs.value[exercise.id][runningSet.number] = { weight: load, reps };
+};
 
 // ─── Drawer (exercise overview) ───────────────────────────────────────────────
 const showDrawer = ref(false);
@@ -500,6 +519,8 @@ watch(
                 @next-exercise="tryNavigateTo(currentIndex + 1)"
                 @finish-workout="showFinishModal = true"
                 @add-extra-set="addExtraSet(currentExercise)"
+                @apply-overload-suggestion="applyOverloadSuggestion"
+                @dismiss-overload-suggestion="dismissOverloadSuggestion"
             />
         </main>
 

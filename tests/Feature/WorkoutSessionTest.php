@@ -128,7 +128,22 @@ test('opening a session with completed history automatically loads AI overload s
         ->assertInertia(
             fn ($page) => $page
                 ->component('WorkoutSessions/Active')
-                ->where('overloadSuggestions', json_decode($fixture, true)['recommendations'])
+                ->where('overloadSuggestions', [
+                    [
+                        'exercise_name' => 'Supino Reto Barra',
+                        'suggested_load' => 32,
+                        'suggested_reps' => 8,
+                        'current_load' => 30,
+                        'rationale' => 'Você completou 3 séries de 12 repetições com facilidade no último treino. Hora de progredir a carga.',
+                    ],
+                    [
+                        'exercise_name' => 'Tríceps Corda no Pulley',
+                        'suggested_load' => 20,
+                        'suggested_reps' => 12,
+                        'current_load' => 20,
+                        'rationale' => 'Mantenha a carga e foque na cadência e controle na fase excêntrica antes de subir o peso.',
+                    ],
+                ])
         );
 });
 
