@@ -221,3 +221,22 @@
 1. `tests/Feature/WorkoutScannerTest.php` passa em 100%.
 2. `php artisan test` passa em 100% de toda a suíte.
 3. `npm run build` compila com zero erros.
+
+# Phase 10: PWA Completo e Instalável no Celular
+## Tasks
+1. **Manifest e Metadados Mobile:**
+   - Criar `public/manifest.json` com nome "IA-LIFT - Meu App de Treino", short_name "IA-LIFT", display `standalone`, background `#0B0F17`, theme_color `#8B5CF6`, orientação `portrait-primary` e declaração de ícones (192x192 e 512x512).
+   - Atualizar `resources/views/app.blade.php` com as meta tags PWA (`theme-color`, `mobile-web-app-capable`, `apple-mobile-web-app-capable`, `apple-mobile-web-app-status-bar-style`, link do manifest e apple-touch-icon).
+
+2. **Ícones PWA:**
+   - Garantir que os arquivos de ícone `public/icons/icon-192x192.png` e `public/icons/icon-512x512.png` (ou SVGs correspondentes) existam com a identidade visual do app (fundo escuro e símbolo roxo).
+
+3. **Service Worker e Registro:**
+   - Criar `public/sw.js` com estratégia de cache para o App Shell (manifest, favicon e assets essenciais).
+   - Injetar o script de registro do Service Worker no `app.blade.php`.
+
+## Acceptance Criteria
+1. `tests/Feature/PwaInfrastructureTest.php` passa 100% validando que `/manifest.json` e `/sw.js` são acessíveis via HTTP com status 200 e content-type correto.
+2. `php artisan test` passa em 100% de toda a suíte.
+3. `tests/Architecture/ArchitecturalRulesTest.php` passa sem nenhuma violação.
+4. `npm run build` compila com zero erros.
