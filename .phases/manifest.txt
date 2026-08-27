@@ -9,3 +9,4 @@
 2026-08-26 09:35:05 | Phase 8 | 7c7ee07 | 8: Refatoração de Navegação Contextual, Separação de Ver/Editar e Textos de Interface
 2026-08-26 21:33:09 | Phase 9 | c8b9c86 | 9: Relação N:N Programas e Treinos, Seletor Múltiplo e Modal de Confirmação
 2026-08-26 22:01:55 | Phase 10 | fc2bf31 | 10: Otimização de Performance e Timeout do Scanner de Fichas
+2026-08-27 22:05:31 | Phase 11 | 960f5d3 | 10: PWA Completo e Instalável no Celular
