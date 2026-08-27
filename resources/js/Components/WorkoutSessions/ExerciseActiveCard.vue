@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue';
+import BaseCard from '@/Components/UI/BaseCard.vue';
 import CompleteSetButton from '@/Components/WorkoutSessions/CompleteSetButton.vue';
 import LoadRepsHero from '@/Components/WorkoutSessions/LoadRepsHero.vue';
 import LoadRepsStepper from '@/Components/WorkoutSessions/LoadRepsStepper.vue';
@@ -102,7 +103,7 @@ const restDisplay = computed(() => {
 <template>
     <div>
         <!-- Exercise meta card -->
-        <div class="rounded-2xl bg-gray-900 border border-gray-800 p-4 mb-4">
+        <BaseCard class="mb-4">
             <div class="flex items-start justify-between gap-3">
                 <div class="min-w-0 flex-1">
                     <h2 class="text-xl font-bold text-white truncate">{{ exercise.name }}</h2>
@@ -134,7 +135,7 @@ const restDisplay = computed(() => {
                     </span>
                 </p>
             </div>
-        </div>
+        </BaseCard>
 
         <!-- AI-backed load suggestion, before/while executing this exercise -->
         <OverloadSuggestionCard
@@ -220,14 +221,14 @@ const restDisplay = computed(() => {
                     />
 
                     <div class="flex items-center justify-between px-1.5">
-                        <span class="text-[13px] text-[#6E6E7E]">
-                            Descanso <span class="text-[#C9C9D4] [font-variant-numeric:tabular-nums]">{{ restDisplay }}</span>
+                        <span class="text-[13px] text-text-tertiary">
+                            Descanso <span class="text-text-numeric [font-variant-numeric:tabular-nums]">{{ restDisplay }}</span>
                         </span>
                         <button
                             v-if="!isLastExercise"
                             type="button"
                             @click="$emit('next-exercise')"
-                            class="text-[13px] text-[#6E6E7E] transition hover:text-[#C4B5FD]"
+                            class="text-[13px] text-text-tertiary transition hover:text-accent-text-soft"
                         >
                             Pular exercício
                         </button>

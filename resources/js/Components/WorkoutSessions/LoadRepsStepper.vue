@@ -16,21 +16,21 @@ defineEmits(['decrement', 'increment']);
                 type="button"
                 aria-label="Diminuir"
                 @click="$emit('decrement')"
-                class="flex h-14 flex-1 items-center justify-center rounded-2xl border border-white/[.07] bg-[#171720] transition hover:border-[#8B5CF6]/[.35] hover:bg-[#1D1D28] active:bg-[#221E33]"
+                class="flex h-14 flex-1 items-center justify-center rounded-radius-md border border-white/[.07] bg-surface-raised transition hover:border-accent/[.35] hover:bg-surface-overlay active:bg-surface-overlay"
             >
-                <span class="h-[1.8px] w-4 rounded-sm bg-[#C9C9D4]"></span>
+                <span class="h-[1.8px] w-4 rounded-sm bg-text-numeric"></span>
             </button>
             <button
                 type="button"
                 aria-label="Aumentar"
                 @click="$emit('increment')"
-                class="relative flex h-14 flex-1 items-center justify-center rounded-2xl border border-white/[.07] bg-[#171720] transition hover:border-[#8B5CF6]/[.35] hover:bg-[#1D1D28] active:bg-[#221E33]"
+                class="relative flex h-14 flex-1 items-center justify-center rounded-radius-md border border-white/[.07] bg-surface-raised transition hover:border-accent/[.35] hover:bg-surface-overlay active:bg-surface-overlay"
             >
-                <span class="relative h-[1.8px] w-4 rounded-sm bg-[#C9C9D4]">
-                    <span class="absolute left-[7.1px] top-[-7.1px] h-4 w-[1.8px] rounded-sm bg-[#C9C9D4]"></span>
+                <span class="relative h-[1.8px] w-4 rounded-sm bg-text-numeric">
+                    <span class="absolute left-[7.1px] top-[-7.1px] h-4 w-[1.8px] rounded-sm bg-text-numeric"></span>
                 </span>
             </button>
         </div>
-        <span class="text-center text-[10px] uppercase tracking-[0.18em] text-[#5A5A68]">{{ label }}</span>
+        <span class="text-center text-[10px] uppercase tracking-[0.18em] text-text-tertiary">{{ label }}</span>
     </div>
 </template>

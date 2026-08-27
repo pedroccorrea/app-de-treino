@@ -1,5 +1,7 @@
 <script setup>
 import { nextTick, ref } from 'vue';
+import BaseBadge from '@/Components/UI/BaseBadge.vue';
+import SectionLabel from '@/Components/UI/SectionLabel.vue';
 
 const props = defineProps({
     load: {
@@ -22,8 +24,8 @@ const props = defineProps({
 
 const emit = defineEmits(['update:load', 'update:reps']);
 
-const numberClass = 'text-[82px] font-medium leading-[0.86] tracking-[-0.045em] text-white [font-variant-numeric:tabular-nums]';
-const inputClass = `${numberClass} border-b border-[#8B5CF6] bg-transparent focus:outline-none`;
+const numberClass = 'text-[82px] font-medium leading-[0.86] tracking-[-0.045em] text-text-primary [font-variant-numeric:tabular-nums]';
+const inputClass = `${numberClass} border-b border-accent bg-transparent focus:outline-none`;
 
 // ─── Carga: tap to edit ─────────────────────────────────────────────────────
 const editingLoad = ref(false);
@@ -68,7 +70,7 @@ const commitReps = () => {
     <div class="flex flex-col">
         <div class="flex items-start">
             <div class="flex flex-1 flex-col gap-1.5">
-                <span class="text-[11px] uppercase tracking-[0.2em] text-[#8A8A99]">Carga</span>
+                <SectionLabel>Carga</SectionLabel>
                 <div class="flex items-baseline gap-1.5">
                     <input
                         v-if="editingLoad"
@@ -91,12 +93,12 @@ const commitReps = () => {
                         @click="startEditingLoad"
                         @keydown.enter="startEditingLoad"
                     >{{ load }}</span>
-                    <span class="text-xl text-[#8A8A99]">kg</span>
+                    <span class="text-xl text-text-secondary">kg</span>
                 </div>
             </div>
             <div class="mx-[18px] mt-1.5 w-px self-stretch bg-gradient-to-b from-transparent via-white/10 to-transparent"></div>
             <div class="flex w-28 flex-col gap-1.5">
-                <span class="text-[11px] uppercase tracking-[0.2em] text-[#8A8A99]">Reps</span>
+                <SectionLabel>Reps</SectionLabel>
                 <div class="flex items-baseline gap-1.5">
                     <input
                         v-if="editingReps"
@@ -124,11 +126,8 @@ const commitReps = () => {
         </div>
 
         <div v-if="lastText" class="mt-[22px] flex items-center gap-2.5">
-            <span class="text-xs tracking-[0.03em] text-[#6E6E7E]">Última: {{ lastText }}</span>
-            <span
-                v-if="deltaText"
-                class="rounded-full border border-[#8B5CF6]/[.28] bg-[#8B5CF6]/[.14] px-[9px] py-1 text-[11px] font-medium tracking-[0.08em] text-[#C4B5FD]"
-            >{{ deltaText }}</span>
+            <span class="text-xs tracking-[0.03em] text-text-tertiary">Última: {{ lastText }}</span>
+            <BaseBadge v-if="deltaText" tone="accent">{{ deltaText }}</BaseBadge>
         </div>
     </div>
 </template>

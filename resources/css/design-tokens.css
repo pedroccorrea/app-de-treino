@@ -1,0 +1,59 @@
+/**
+ * Design tokens — Setwave (Nocturne)
+ * Fonte única de verdade para cor, raio, altura de toque e espaçamento.
+ * Nunca declare um hex literal em um componente: use estes tokens.
+ * Papel de cada token de texto e valores de contraste verificados: .ai/rules/design-system.md
+ */
+:root {
+    /* Superfícies */
+    --surface-base: #0B0F17;
+    --surface-raised: #141824;
+    --surface-overlay: #1C2130;
+
+    /* Acentos */
+    --accent: #8B5CF6;
+    --accent-muted: rgba(139, 92, 246, 0.14);
+    --accent-glow: rgba(139, 92, 246, 0.45);
+    --accent-text-strong: #EDE9FE;
+    --accent-text-soft: #C4B5FD;
+    --accent-label: #A78BFA;
+
+    /* Estados */
+    --success: #34D399;
+    --danger: #F87171;
+    --warning: #FBBF24;
+    --text-on-accent: #FFFFFF;
+
+    /* Texto */
+    --text-primary: #F2F2F5;
+    --text-secondary: #8A8A99;
+    --text-body: #A9A9B8;
+    --text-tertiary: #8E8EA0;
+    --text-numeric: #C9C9D4;
+
+    /* Bordas */
+    --border-subtle: rgba(255, 255, 255, 0.08);
+    --border-accent: rgba(139, 92, 246, 0.60);
+
+    /* Raios de borda */
+    --radius-sm: 12px;
+    --radius-md: 16px;
+    --radius-lg: 22px;
+    --radius-full: 999px;
+
+    /* Alturas de toque */
+    --touch-min: 48px;
+    --touch-primary: 56px;
+
+    /* Escala de espaçamento (base 4px) */
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 20px;
+    --space-6: 24px;
+    --space-8: 32px;
+
+    /* Gradientes */
+    --gradient-suggestion: linear-gradient(165deg, #191428 0%, #141420 55%, #12121a 100%);
+}

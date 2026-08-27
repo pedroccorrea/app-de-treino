@@ -7,3 +7,4 @@ Consulte a regra específica de acordo com o arquivo a ser modificado:
 - tests/**/* ➔ .ai/rules/testing-harness.md
 - Chamadas de IA / LLM ➔ .ai/rules/ai-integration.md
 - Navegação, Redirecionamentos e Botões Voltar ➔ .ai/rules/navigation-flow-invariants.md
+- Cores, tipografia, componentes base (Components/UI) e tokens de design ➔ .ai/rules/design-system.md
