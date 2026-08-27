@@ -240,3 +240,139 @@
 2. `php artisan test` passa em 100% de toda a suíte.
 3. `tests/Architecture/ArchitecturalRulesTest.php` passa sem nenhuma violação.
 4. `npm run build` compila com zero erros.
+
+# Phase 12: Design System Setwave (Tokens Versionados e Componentes Base)
+## Tasks
+1. **Tokens Centralizados:**
+   - Criar `resources/css/design-tokens.css` com as CSS custom properties extraídas do design aprovado (Nocturne): superfícies (`--surface-base: #0B0F17`, `--surface-raised`, `--surface-overlay`), acentos (`--accent: #8B5CF6`, `--accent-muted`, `--accent-glow`), texto (`--text-primary`, `--text-secondary`, `--text-tertiary`), raios de borda, alturas de toque (mínimo 48px) e escala de espaçamento.
+   - Atualizar `tailwind.config.js` mapeando esses tokens para as classes utilitárias do projeto (`theme.extend.colors`, `borderRadius`, `spacing`), de modo que nenhum componente use hex literal.
+   - Importar `design-tokens.css` em `resources/css/app.css`.
+
+2. **Componentes Base Reutilizáveis:**
+   - Extrair para `resources/js/Components/UI/`: `BaseButton.vue` (variantes `primary`, `secondary`, `danger`, `ghost`), `BaseCard.vue`, `BaseBadge.vue` e `SectionLabel.vue` (o rótulo em caixa alta e tracking largo usado no design).
+   - `BaseButton.vue` deve suportar o estado de ripple/rastro de onda usado no botão principal do design.
+
+3. **Documentação para o Harness:**
+   - Criar `.ai/rules/design-system.md` documentando: paleta e quando usar cada token, escala tipográfica (incluindo os números-herói em 82px com `tabular-nums`), regra de zona do polegar (ações primárias nos 200px inferiores), alvos de toque mínimos (56px para ação primária, 48px para secundária), uso parcimonioso do roxo (acento, nunca preenchimento) e a lista de componentes base disponíveis com suas props.
+   - O arquivo deve instruir explicitamente: "nunca escrever cor em hexadecimal direto no componente; sempre usar o token."
+   - Adicionar referência ao novo arquivo em `.ai/rules/index.md`.
+
+4. **Teste de Arquitetura Visual:**
+   - Adicionar em `tests/Architecture/ArchitecturalRulesTest.php` uma regra que falhe se algum arquivo `.vue` em `resources/js/` contiver cor hexadecimal literal (regex `#[0-9a-fA-F]{6}`), com exceção explícita para `resources/css/design-tokens.css`.
+
+## Acceptance Criteria
+1. O arquivo `.ai/rules/design-system.md` existe e está referenciado em `.ai/rules/index.md`.
+2. Os componentes em `resources/js/Components/UI/` existem e são importados por pelo menos um componente de página.
+3. `tests/Architecture/ArchitecturalRulesTest.php` passa sem violações, incluindo a nova regra de ausência de hex literal.
+4. `php artisan test` passa em 100% de toda a suíte.
+5. `npm run build` compila com zero erros.
+
+# Phase 13: Rebrand Setwave (Identidade, Manifest e Ícones)
+## Tasks
+1. **Nome e Metadados:**
+   - Atualizar `public/manifest.json`: `name` para "Setwave — Treino e Progressão", `short_name` para "Setwave", mantendo `display: standalone`, `orientation: portrait-primary`, `background_color` e `theme_color` lidos dos tokens da Phase 12.
+   - Atualizar `resources/views/app.blade.php`: `<title>`, meta `application-name`, `apple-mobile-web-app-title` e `og:site_name` para Setwave.
+   - Atualizar `config/app.php` (`name`) e o `.env.example` (`APP_NAME=Setwave`).
+   - Substituir todas as ocorrências textuais de "IA-LIFT" no frontend e nos textos de interface.
+
+2. **Marca Visual:**
+   - Criar `public/icons/setwave-mark.svg` com o símbolo da onda em vetor, usando o token de acento.
+   - Gerar `public/icons/icon-192x192.png` e `public/icons/icon-512x512.png` a partir do SVG, com fundo na cor de superfície base.
+   - Criar `resources/js/Components/Brand/SetwaveLogo.vue` (props: `size`, `variant` entre `full` e `mark`) e usá-lo no cabeçalho da `Sidebar.vue`.
+   - Atualizar `public/favicon.ico` e o `apple-touch-icon`.
+
+3. **Splash e Estados Vazios:**
+   - Aplicar a marca na tela de login e nos estados vazios (sem treinos, sem histórico).
+
+## Acceptance Criteria
+1. `tests/Feature/PwaInfrastructureTest.php` continua passando e valida que o `manifest.json` retorna `short_name` igual a "Setwave".
+2. Nenhuma ocorrência da string "IA-LIFT" permanece em `resources/`, `config/` ou `public/manifest.json`.
+3. Os arquivos de ícone 192x192 e 512x512 existem em `public/icons/`.
+4. `php artisan test` passa em 100% de toda a suíte.
+5. `npm run build` compila com zero erros.
+
+# Phase 14: Propagação do Design System às Telas Existentes
+## Tasks
+1. **Dashboard (`resources/js/Pages/Dashboard.vue`):**
+   - Reconstruir o Card Hero "Treino de Hoje" usando `BaseCard.vue` e `BaseButton.vue`, com o botão "Iniciar Treino Agora" respeitando a zona do polegar e altura mínima de 56px.
+   - Aplicar a hierarquia tipográfica do design system ao Card de Ofensiva e à lista de treinos ativos.
+   - Substituir os emojis dos títulos por ícones vetoriais consistentes com a marca.
+
+2. **Treinos e Programas:**
+   - Aplicar `BaseCard.vue`, `BaseBadge.vue` e `SectionLabel.vue` em `Pages/Workouts/Index.vue`, `Pages/Workouts/Show.vue`, `Pages/Programs/Index.vue` e `Pages/Programs/Show.vue`.
+   - Padronizar o `ConfirmationModal.vue` com os tokens de superfície e a variante `danger` do `BaseButton.vue`.
+
+3. **Navegação (`Components/Navigation/Sidebar.vue`):**
+   - Atualizar o item ativo para usar o token de acento com o tratamento de brilho definido no design system.
+   - Garantir que a gaveta mobile respeite os alvos de toque mínimos.
+
+4. **Auditoria de Contraste:**
+   - Verificar e corrigir qualquer par texto/fundo abaixo de 4.5:1, documentando os ajustes em `.ai/rules/design-system.md`.
+
+## Acceptance Criteria
+1. Nenhum arquivo `.vue` em `resources/js/Pages/` contém cor hexadecimal literal (validado pela regra de arquitetura da Phase 12).
+2. `tests/Architecture/ArchitecturalRulesTest.php` passa sem violações.
+3. `php artisan test` passa em 100% de toda a suíte.
+4. `npm run build` compila com zero erros.
+
+# Phase 15: Contrato Estruturado do Motor de Sobrecarga Progressiva
+## Tasks
+1. **DTO de Sugestão:**
+   - Criar `app/DataTransferObjects/OverloadSuggestion.php` (readonly) com as propriedades: `exercise_id` (int), `suggested_load` (float), `suggested_reps` (int), `previous_load` (float nullable), `previous_reps` (int nullable), `rationale` (string) e `confidence` (enum ou string).
+   - Criar `app/Enums/OverloadConfidence.php` com os casos `High`, `Medium` e `Low`.
+
+2. **Refatoração do Service (`app/Services/ProgressiveOverloadService.php`):**
+   - Alterar `analyzeWorkout(User $user, Workout $workout)` para retornar uma `Collection<OverloadSuggestion>` em vez de strings de texto livre.
+   - Ajustar o prompt enviado à IA para exigir resposta em JSON estruturado contendo `exercise_id`, `suggested_load`, `suggested_reps` e `rationale`, enviando a lista de exercícios do treino com seus IDs.
+   - **Eliminar o casamento por nome:** a associação entre sugestão e exercício deve usar exclusivamente `exercise_id`. Sugestões cujo `exercise_id` não pertença ao treino devem ser descartadas silenciosamente e registradas via `Log::warning`.
+   - Implementar fallback: se a resposta da IA não for JSON válido ou vier incompleta, retornar coleção vazia sem lançar exceção — a tela deve degradar sem sugestão, nunca quebrar.
+
+3. **Ajuste no Consumo:**
+   - Atualizar `WorkoutSessionController` / `WorkoutSessionService` para injetar as sugestões já tipadas nas props do `Active.vue`, sem nenhum parse de string no controller ou no componente.
+   - Atualizar `OverloadSuggestionCard.vue` para receber números prontos (`currentLoad`, `currentReps`, `previousLoad`, `previousReps`, `rationale`), removendo qualquer lógica de extração de valor do texto.
+
+4. **Testes:**
+   - Atualizar `tests/Fixtures/progressive-overload-advice.json` para o novo formato JSON estruturado.
+   - Adicionar em `tests/Feature/ProgressiveOverloadTest.php` os casos: resposta válida retorna DTOs corretos; resposta com `exercise_id` inexistente é descartada; resposta malformada retorna coleção vazia sem exceção.
+
+## Acceptance Criteria
+1. `tests/Feature/ProgressiveOverloadTest.php` passa 100%, cobrindo os três casos acima.
+2. Nenhuma ocorrência de casamento de sugestão por nome de exercício permanece em `app/Services/ProgressiveOverloadService.php`.
+3. Nenhuma alteração é gravada no banco durante a requisição de análise.
+4. `tests/Architecture/ArchitecturalRulesTest.php` passa sem violações.
+5. `php artisan test` passa em 100% de toda a suíte.
+6. `npm run build` compila com zero erros.
+
+# Phase 16: Tela de Histórico e Progressão por Exercício
+## Tasks
+1. **Backend — Consulta de Histórico:**
+   - Criar `app/Services/ExerciseHistoryService.php` com os métodos:
+     * `getHistory(User $user, Exercise $exercise, HistoryRange $range)`: retorna as sessões com `set_logs` do exercício no período, ordenadas por data.
+     * `getVolumeSeries(User $user, Exercise $exercise, HistoryRange $range)`: volume total (carga × reps) por sessão, pronto para o gráfico.
+     * `getPersonalRecord(User $user, Exercise $exercise)`: maior carga registrada e a data.
+   - Criar `app/Enums/HistoryRange.php` com os casos `FourWeeks`, `TwelveWeeks` e `OneYear`.
+   - Toda a consulta deve ser SQL puro, sem nenhuma chamada HTTP externa.
+
+2. **Rota e Controller:**
+   - Criar `app/Http/Controllers/ExerciseHistoryController.php` com o método `show(Exercise $exercise, Request $request)`.
+   - Registrar `GET /exercises/{exercise}/history` (name: `exercises.history`) em `routes/web.php`, com autorização garantindo que o usuário só acesse o próprio histórico.
+   - O parâmetro de período vem via query string (`?range=4w`), com `FourWeeks` como padrão.
+
+3. **Frontend (`resources/js/Pages/Exercises/History.vue`):**
+   - Construir a página seguindo o bloco "02 — Histórico e progressão" do design aprovado, usando exclusivamente os tokens e componentes base da Phase 12.
+   - Criar `Components/Exercises/ExerciseHistoryChart.vue` (curva de progressão de carga, com a mesma linguagem visual da onda da marca).
+   - Criar `Components/Exercises/SessionHistoryList.vue` (lista de sessões passadas com carga, reps e data).
+   - Criar `Components/Exercises/RangeFilter.vue` (4S / 12S / 1A), navegando via `router.get` preservando o scroll.
+   - Exibir o recorde pessoal em destaque no topo.
+
+4. **Ponto de Entrada:**
+   - Em `ExerciseActiveCard.vue`, tornar o nome do exercício clicável, navegando para `exercises.history` com `return_to` apontando para a sessão ativa.
+   - Respeitar as regras de `.ai/rules/navigation-flow-invariants.md` para o botão Voltar.
+
+## Acceptance Criteria
+1. `tests/Feature/ExerciseHistoryTest.php` passa 100%, cobrindo: retorno da série de volume, cálculo do recorde pessoal, filtro por cada um dos três períodos e bloqueio de acesso ao histórico de outro usuário (403).
+2. `GET /exercises/{exercise}/history` não realiza nenhuma chamada HTTP externa.
+3. `tests/Feature/WorkoutNavigationFlowTest.php` valida o retorno contextual da tela de histórico para a sessão ativa.
+4. `tests/Architecture/ArchitecturalRulesTest.php` passa sem violações.
+5. `php artisan test` passa em 100% de toda a suíte.
+6. `npm run build` compila com zero erros.
