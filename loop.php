@@ -91,7 +91,6 @@ while (true) {
         $implText = implode("\n", $implOutput);
         echo $implText . "\n";
 
-        // CORREÇÃO: aborta em erro de infra sem gastar ciclo
         if (preg_match($infraErrorPattern, $implText)) {
             echo "\n🛑 [ABORT] Erro de infraestrutura, não de implementação:\n";
             echo trim($implText) . "\n";
@@ -99,7 +98,6 @@ while (true) {
             exit(2);
         }
 
-        // CORREÇÃO: se nada mudou no disco, gates verdes são falso positivo
         $dirtyOutput = [];
         exec('git status --porcelain', $dirtyOutput);
         if (empty($dirtyOutput)) {
@@ -111,7 +109,6 @@ while (true) {
         // ─── Gates mecânicos ──────────────────────────────────────────────
         echo "\n⚙️  Executando Esteira Mecânica de Verificação...\n";
 
-        // CORREÇÃO: 2>&1 captura stderr (Pest e Vite escrevem erros lá)
         $testOutput = [];
         $testCode = 0;
         exec('php artisan test 2>&1', $testOutput, $testCode);
@@ -135,31 +132,44 @@ while (true) {
 
         $evalPrompt = "Você é o Auditor de Qualidade Read-Only. Inspecione os arquivos do projeto e valide se a fase abaixo foi integralmente cumprida de acordo com todos os seus Acceptance Criteria e as regras de .ai/rules/.\n\n"
                     . "FASE:\n# Phase " . $phaseText . "\n\n"
-                    . "INSTRUÇÃO CRÍTICA DE FORMATO: Sua resposta DEVE começar com a palavra DONE ou FALTA. Texto puro, sem markdown, sem cabeçalho, sem ##, sem asteriscos, sem emoji antes dela. O primeiro caractere da sua resposta deve ser a letra D ou a letra F. Depois disso escreva o que quiser.";
+                    . "INSTRUÇÃO CRÍTICA DE FORMATO: Sua resposta DEVE começar com a palavra DONE (aprovada) ou FALTA (com pendências). "
+                    . "O PRIMEIRO CARACTERE da sua resposta deve ser a letra D ou a letra F. "
+                    . "Proibido qualquer coisa antes: sem markdown, sem ##, sem asteriscos, sem emoji, sem saudação, sem 'Aqui está'. "
+                    . "Depois dessa primeira palavra, escreva o relatório como quiser.";
 
         $verdict = shell_exec('claude -p ' . escapeshellarg($evalPrompt) . ' --allowedTools "Read,Glob,Grep" 2>&1');
         $verdictTrimmed = trim((string) $verdict);
 
-        // CORREÇÃO: erro de infra no auditor também aborta
         if ($verdictTrimmed === '' || preg_match($infraErrorPattern, $verdictTrimmed)) {
             echo "\n🛑 [ABORT] Auditor não respondeu ou retornou erro de infraestrutura:\n";
             echo ($verdictTrimmed === '' ? '(resposta vazia)' : $verdictTrimmed) . "\n";
             exit(2);
         }
 
-        // CORREÇÃO: veredito lido apenas na PRIMEIRA palavra (determinístico)
-        $firstWord = strtoupper(preg_split('/[\s,.\-:#*`>\n]+/', $verdictTrimmed, -1, PREG_SPLIT_NO_EMPTY)[0] ?? '');
-        $isApproved = ($firstWord === 'DONE');
+        // Detector de veredito — tolerante a markdown, emoji e preâmbulo.
+        $isApproved = false;
 
-        // Fallback: o auditor às vezes ignora o formato e responde em markdown.
-        if (!$isApproved && preg_match('/(cumprida integralmente|✅\s*\**\s*Fase cumprida)/iu', $verdictTrimmed)) {
+        // 1) Primeira palavra, ignorando markdown/emoji/pontuação inicial.
+        $cleanVerdict = preg_replace('/^[\s#*`>\-–—✅❌📋🏆⚖️🔍\x{1F300}-\x{1FAFF}]+/u', '', $verdictTrimmed);
+        $firstWord = strtoupper(preg_split('/[\s,.\-:]+/', $cleanVerdict, -1, PREG_SPLIT_NO_EMPTY)[0] ?? '');
+        if ($firstWord === 'DONE') {
             $isApproved = true;
         }
 
-        if ($isApproved) {
-            echo "🏆 Auditor aprovou a fase com louvor (DONE)!\n";
+        // 2) Fallback: frases de aprovação explícita em qualquer lugar do texto.
+        if (!$isApproved && preg_match('/(cumprida integralmente|integralmente cumprida|fase cumprida|aprovad[ao] integralmente|veredito:?\s*\**\s*(✅|DONE|APROVAD))/iu', $verdictTrimmed)) {
+            $isApproved = true;
+        }
 
-            // CORREÇÃO: commit verificado antes de avançar a fase
+        // 3) Rejeição explícita tem prioridade sobre os dois acima.
+        if (preg_match('/^\s*[#*`\s]*FALTA\b/iu', $verdictTrimmed)
+            || preg_match('/(reprovad[ao]|não cumprida|nao cumprida|pendência bloqueante|pendencia bloqueante)/iu', $verdictTrimmed)) {
+            $isApproved = false;
+        }
+
+        if ($isApproved) {
+            echo "🏆 Auditor aprovou a fase (DONE)!\n";
+
             $commitMsg = "feat(phase): " . $phaseTitle;
             $commitOutput = [];
             $commitCode = 0;
@@ -177,7 +187,12 @@ while (true) {
 
             echo "📦 Commit atômico gerado: [$commitSha] '$commitMsg'\n";
 
+            // O manifesto acabou de mudar: commita junto para a árvore ficar limpa.
+            exec('git add -A && git commit -q -m ' . escapeshellarg('chore: atualiza manifesto e progresso') . ' 2>&1');
+
             file_put_contents($progressFile, $currentPhaseIndex + 1);
+            exec('git add -A && git commit -q -m ' . escapeshellarg('chore: avanca progresso') . ' 2>&1');
+
             $phasePassed = true;
             break;
         } else {
