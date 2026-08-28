@@ -113,3 +113,14 @@ Slot padrão. Rótulo 11px uppercase, `tracking: 0.2em`.
 ## Auditoria de contraste (Phase 14)
 
 Qualquer par texto/fundo novo introduzido na propagação do design system às telas existentes deve ser medido (luminância relativa WCAG) e documentado nesta tabela antes de ser considerado aprovado — não basta "parecer legível". Ajustes feitos durante a Phase 14 devem ser registrados aqui como uma nova entrada, com o par, o valor antes/depois e o motivo.
+
+A propagação (Dashboard, Treinos, Programas, Sidebar, ConfirmationModal) reutilizou exclusivamente combinações de token já auditadas na tabela principal (texto sobre `--surface-base`/`--surface-raised`/`--surface-overlay` sólidos), com duas exceções onde o fundo real é um token sólido *tingido* por `--accent-muted` ou `--surface-overlay` em opacidade parcial — essas duas foram medidas especificamente porque o fundo efetivo (após a mistura alfa) não é nenhum dos três tons sólidos já tabulados:
+
+| Par | Onde aparece | Fundo efetivo (alfa composto) | Contraste | Resultado |
+|---|---|---|---|---|
+| `--text-primary` sobre `--accent-muted` | `ProgramHeader.vue` — nome do programa ativo, sobre o banner `bg-accent-muted` | `--accent-muted` (14%) composto sobre `--surface-base` ≈ `rgb(29,26,54)` | 14,99:1 | ✅ Aprovado (sem ajuste) |
+| `--accent-label` sobre `--accent-muted` | `ProgramHeader.vue` — `SectionLabel tone="accent"` ("Programa Ativo") no mesmo banner | mesmo fundo composto acima | 6,16:1 | ✅ Aprovado (sem ajuste) |
+| `--accent-text-strong` sobre `--accent-muted` | `ProgramHeader.vue` — texto do link "Trocar Programa" (borda `--accent`, sem preenchimento sólido) | mesmo fundo composto acima | 14,11:1 | ✅ Aprovado (sem ajuste) |
+| `--text-secondary` sobre `bg-surface-overlay/40` | `Pages/Workouts/Show.vue` — linha de exercício na lista arrastável (`bg-surface-overlay/40` por cima do `BaseCard` em `--surface-raised`) | `--surface-overlay` a 40% composto sobre `--surface-raised` ≈ `rgb(23,28,41)` | 5,00:1 | ✅ Aprovado (sem ajuste, mas é a margem mais apertada da Phase 14 — evitar escurecer ainda mais esse fundo) |
+
+Nenhum par ficou abaixo de 4,5:1; nenhum ajuste de token foi necessário nesta fase.

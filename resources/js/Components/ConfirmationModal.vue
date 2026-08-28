@@ -1,11 +1,8 @@
 <script setup>
-import DangerButton from '@/Components/DangerButton.vue';
+import BaseButton from '@/Components/UI/BaseButton.vue';
 import Modal from '@/Components/Modal.vue';
-import PrimaryButton from '@/Components/PrimaryButton.vue';
-import SecondaryButton from '@/Components/SecondaryButton.vue';
-import { computed } from 'vue';
 
-const props = defineProps({
+defineProps({
     show: {
         type: Boolean,
         default: false,
@@ -30,8 +27,8 @@ const props = defineProps({
         type: Boolean,
         default: false,
     },
-    // Danger actions (delete/detach) render with DangerButton; otherwise a
-    // regular PrimaryButton is used for the confirm action.
+    // Danger actions (delete/detach) render the confirm button with
+    // BaseButton variant="danger"; otherwise variant="primary" is used.
     danger: {
         type: Boolean,
         default: true,
@@ -39,34 +36,31 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['confirm', 'cancel']);
-
-const ConfirmButton = computed(() => (props.danger ? DangerButton : PrimaryButton));
 </script>
 
 <template>
     <Modal :show="show" @close="emit('cancel')">
-        <div class="p-6">
-            <h2 class="text-lg font-medium text-gray-900 dark:text-gray-100">
+        <div class="bg-surface-overlay p-6">
+            <h2 class="text-lg font-semibold text-text-primary">
                 {{ title }}
             </h2>
 
-            <p v-if="description" class="mt-2 text-sm text-gray-600 dark:text-gray-400">
+            <p v-if="description" class="mt-2 text-sm text-text-secondary">
                 {{ description }}
             </p>
 
             <div class="mt-6 flex justify-end gap-3">
-                <SecondaryButton :disabled="processing" @click="emit('cancel')">
+                <BaseButton variant="secondary" :disabled="processing" @click="emit('cancel')">
                     {{ cancelText }}
-                </SecondaryButton>
+                </BaseButton>
 
-                <component
-                    :is="ConfirmButton"
-                    :class="{ 'opacity-25': processing }"
+                <BaseButton
+                    :variant="danger ? 'danger' : 'primary'"
                     :disabled="processing"
                     @click="emit('confirm')"
                 >
                     {{ processing ? 'Processando...' : confirmText }}
-                </component>
+                </BaseButton>
             </div>
         </div>
     </Modal>

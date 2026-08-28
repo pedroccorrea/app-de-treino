@@ -53,17 +53,17 @@ const navigation = [
     >
         <div
             v-if="open"
-            class="fixed inset-0 z-40 bg-gray-900/60 lg:hidden"
+            class="fixed inset-0 z-40 bg-surface-base/70 lg:hidden"
             @click="$emit('close')"
         />
     </Transition>
 
     <!-- Sidebar / drawer -->
     <aside
-        class="fixed inset-y-0 left-0 z-50 flex w-64 -translate-x-full transform flex-col border-r border-gray-200 bg-white transition-transform duration-300 ease-in-out dark:border-gray-700 dark:bg-gray-800 lg:translate-x-0"
+        class="fixed inset-y-0 left-0 z-50 flex w-64 -translate-x-full transform flex-col border-r border-border-subtle bg-surface-raised transition-transform duration-300 ease-in-out lg:translate-x-0"
         :class="{ 'translate-x-0': open }"
     >
-        <div class="flex h-16 shrink-0 items-center gap-2 border-b border-gray-200 px-6 dark:border-gray-700">
+        <div class="flex h-16 shrink-0 items-center gap-2 border-b border-border-subtle px-6">
             <Link :href="route('dashboard')" class="flex items-center gap-2">
                 <SetwaveLogo :size="28" variant="full" />
             </Link>
@@ -74,11 +74,11 @@ const navigation = [
                 v-for="item in navigation"
                 :key="item.name"
                 :href="route(item.route)"
-                class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition duration-150 ease-in-out"
+                class="flex min-h-[48px] items-center gap-3 rounded-radius-md px-3 py-2.5 text-sm font-medium transition duration-150 ease-in-out"
                 :class="
                     route().current(item.pattern)
-                        ? 'bg-violet-500/10 text-violet-600 dark:bg-violet-500/15 dark:text-violet-400'
-                        : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700/50 dark:hover:text-gray-100'
+                        ? 'border border-border-accent bg-accent-muted text-accent-text-strong shadow-[0_0_24px_var(--accent-glow)]'
+                        : 'border border-transparent text-text-secondary hover:bg-surface-overlay hover:text-text-primary'
                 "
                 @click="$emit('close')"
             >
@@ -99,18 +99,18 @@ const navigation = [
             </Link>
         </nav>
 
-        <div class="border-t border-gray-200 p-3 dark:border-gray-700">
-            <div class="flex items-center gap-3 rounded-lg px-3 py-2.5">
-                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-violet-500/15 text-sm font-semibold text-violet-600 dark:text-violet-400">
+        <div class="border-t border-border-subtle p-3">
+            <div class="flex items-center gap-3 rounded-radius-md px-3 py-2.5">
+                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-radius-full bg-accent-muted text-sm font-semibold text-accent-text-soft">
                     {{ page.props.auth.user.name.charAt(0).toUpperCase() }}
                 </div>
                 <div class="min-w-0 flex-1">
-                    <p class="truncate text-sm font-medium text-gray-800 dark:text-gray-100">
+                    <p class="truncate text-sm font-medium text-text-primary">
                         {{ page.props.auth.user.name }}
                     </p>
                     <button
                         type="button"
-                        class="text-xs text-gray-500 hover:text-violet-600 dark:text-gray-400 dark:hover:text-violet-400"
+                        class="text-xs text-text-secondary hover:text-accent-text-soft"
                         @click="$emit('logout')"
                     >
                         Sair

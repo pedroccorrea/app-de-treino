@@ -1,12 +1,14 @@
 <script setup>
 import SetwaveLogo from '@/Components/Brand/SetwaveLogo.vue';
+import BaseButton from '@/Components/UI/BaseButton.vue';
+import BaseCard from '@/Components/UI/BaseCard.vue';
 import ProgramHeader from '@/Components/Programs/ProgramHeader.vue';
 import ConfirmationModal from '@/Components/ConfirmationModal.vue';
 import ScanWorkoutModal from '@/Components/Workouts/ScanWorkoutModal.vue';
 import WorkoutCard from '@/Components/Workouts/WorkoutCard.vue';
 import WorkoutsIndexHeader from '@/Components/Workouts/WorkoutsIndexHeader.vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, Link, router, useForm } from '@inertiajs/vue3';
+import { Head, router, useForm } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 
 const props = defineProps({
@@ -133,38 +135,26 @@ const submitScan = () => {
                     class="mb-5"
                 />
 
-                <div
+                <BaseCard
                     v-if="!hasWorkouts"
-                    class="rounded-2xl border border-dashed border-gray-300 bg-white px-6 py-16 text-center dark:border-gray-700 dark:bg-gray-800"
+                    class="border-dashed px-6 py-16 text-center"
                 >
                     <div
-                        class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-violet-500/10"
+                        class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-radius-lg bg-accent-muted"
                     >
                         <SetwaveLogo :size="32" variant="mark" />
                     </div>
 
-                    <h3
-                        class="text-lg font-bold text-gray-900 dark:text-gray-100"
-                    >
+                    <h3 class="text-lg font-semibold text-text-primary">
                         Você ainda não tem treinos cadastrados
                     </h3>
-                    <p
-                        class="mx-auto mt-2 max-w-md text-sm text-gray-600 dark:text-gray-400"
-                    >
+                    <p class="mx-auto mt-2 max-w-md text-sm text-text-secondary">
                         Crie sua primeira ficha de treino selecionando
                         exercícios do catálogo e organize sua rotina semanal.
                     </p>
 
-                    <Link
-                        :href="route('workouts.create')"
-                        class="mt-6 inline-flex items-center gap-2 rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-violet-500/20 transition hover:bg-violet-700"
-                    >
-                        <svg
-                            class="h-5 w-5"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                        >
+                    <BaseButton variant="primary" class="mx-auto mt-6" @click="router.visit(route('workouts.create'))">
+                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                             <path
                                 stroke-linecap="round"
                                 stroke-linejoin="round"
@@ -173,8 +163,8 @@ const submitScan = () => {
                             />
                         </svg>
                         Criar meu primeiro treino
-                    </Link>
-                </div>
+                    </BaseButton>
+                </BaseCard>
 
                 <div v-else class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                     <WorkoutCard

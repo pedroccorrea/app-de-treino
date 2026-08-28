@@ -1,4 +1,8 @@
 <script setup>
+import BaseBadge from '@/Components/UI/BaseBadge.vue';
+import BaseButton from '@/Components/UI/BaseButton.vue';
+import BaseCard from '@/Components/UI/BaseCard.vue';
+import SectionLabel from '@/Components/UI/SectionLabel.vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, router } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
@@ -105,6 +109,16 @@ const persistOrder = () => {
     );
 };
 
+const starting = ref(false);
+
+const startWorkout = () => {
+    starting.value = true;
+    router.post(
+        route('workouts.start', props.workout.id),
+        {},
+        { onFinish: () => { starting.value = false; } },
+    );
+};
 </script>
 
 <template>
@@ -115,24 +129,24 @@ const persistOrder = () => {
             <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
                 <Link
                     :href="returnTo || route('workouts.index')"
-                    class="inline-flex items-center gap-1 text-sm font-medium text-gray-500 transition hover:text-violet-500 dark:text-gray-400 dark:hover:text-violet-400"
+                    class="inline-flex items-center gap-1 text-sm font-medium text-text-secondary transition hover:text-accent-text-soft"
                 >
-                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
                     </svg>
                     Voltar
                 </Link>
 
                 <div class="flex items-center gap-2">
-                    <h2 class="text-xl font-semibold leading-tight text-gray-800 dark:text-gray-200">
+                    <h2 class="text-xl font-semibold leading-tight text-text-primary">
                         {{ workout.name }}
                     </h2>
                     <Link
                         :href="route('workouts.edit', { workout: workout.id, return_to: currentPath })"
-                        class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 transition hover:bg-violet-500/10 hover:text-violet-600 dark:hover:text-violet-400"
+                        class="inline-flex h-8 w-8 items-center justify-center rounded-radius-sm text-text-secondary transition hover:bg-accent-muted hover:text-accent-text-soft"
                         title="Editar treino"
                     >
-                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                         </svg>
                     </Link>
@@ -142,44 +156,30 @@ const persistOrder = () => {
 
         <div class="py-6 sm:py-8">
             <div class="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8">
-                <div
-                    class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800"
-                >
+                <BaseCard :padded="false">
                     <!-- Description & Muscle Groups -->
-                    <div class="border-b border-gray-100 p-6 dark:border-gray-700">
-                        <p
-                            v-if="workout.description"
-                            class="text-sm leading-relaxed text-gray-600 dark:text-gray-400"
-                        >
+                    <div class="border-b border-border-subtle p-6">
+                        <p v-if="workout.description" class="text-sm leading-relaxed text-text-body">
                             {{ workout.description }}
                         </p>
-                        <p v-else class="text-sm italic text-gray-500 dark:text-gray-400">
+                        <p v-else class="text-sm italic text-text-secondary">
                             Sem descrição para este treino.
                         </p>
 
                         <div v-if="workout.muscle_groups.length" class="mt-4 flex flex-wrap gap-2">
-                            <span
-                                v-for="muscle in workout.muscle_groups"
-                                :key="muscle"
-                                class="rounded-lg bg-violet-500/10 px-2.5 py-1 text-xs font-medium text-violet-600 dark:text-violet-400"
-                            >
+                            <BaseBadge v-for="muscle in workout.muscle_groups" :key="muscle" tone="neutral">
                                 {{ muscle }}
-                            </span>
+                            </BaseBadge>
                         </div>
                     </div>
 
                     <!-- Exercises List -->
                     <div class="p-6">
                         <div class="mb-4 flex items-center justify-between">
-                            <h3
-                                class="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
-                            >
+                            <SectionLabel tone="secondary">
                                 Exercícios ({{ exercises.length }})
-                            </h3>
-                            <p
-                                v-if="hasExercises"
-                                class="text-xs text-gray-400 dark:text-gray-500"
-                            >
+                            </SectionLabel>
+                            <p v-if="hasExercises" class="text-xs text-text-tertiary">
                                 Arraste para reordenar
                             </p>
                         </div>
@@ -187,9 +187,9 @@ const persistOrder = () => {
                         <!-- Empty state -->
                         <div
                             v-if="!hasExercises"
-                            class="rounded-xl border border-dashed border-gray-300 px-4 py-10 text-center dark:border-gray-600"
+                            class="rounded-radius-md border border-dashed border-border-subtle px-4 py-10 text-center"
                         >
-                            <p class="text-sm text-gray-500 dark:text-gray-400">
+                            <p class="text-sm text-text-secondary">
                                 Este treino ainda não possui exercícios cadastrados.
                             </p>
                         </div>
@@ -205,47 +205,43 @@ const persistOrder = () => {
                                 @drop="onDrop(index)"
                                 @dragend="onDragEnd"
                                 :class="[
-                                    'group flex items-center gap-3 rounded-xl border p-4 transition-all duration-200',
+                                    'group flex items-center gap-3 rounded-radius-md border p-4 transition-all duration-200',
                                     dragOverIndex === index && draggingIndex !== index
-                                        ? 'border-violet-500 bg-violet-500/5 dark:bg-violet-500/10 cursor-copy'
-                                        : 'border-gray-100 bg-gray-50/50 hover:border-violet-500/30 dark:border-gray-700 dark:bg-gray-900/40 cursor-grab active:cursor-grabbing',
+                                        ? 'border-accent bg-accent-muted cursor-copy'
+                                        : 'border-border-subtle bg-surface-overlay/40 hover:border-border-accent cursor-grab active:cursor-grabbing',
                                     draggingIndex === index ? 'opacity-40 scale-[0.98]' : 'opacity-100',
                                 ]"
                             >
                                 <!-- Order number -->
                                 <span
-                                    class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-violet-500/10 text-xs font-bold text-violet-600 dark:text-violet-400 select-none"
+                                    class="flex h-7 w-7 shrink-0 select-none items-center justify-center rounded-radius-full bg-accent-muted text-xs font-bold text-accent-label"
                                 >
                                     {{ index + 1 }}
                                 </span>
 
                                 <!-- Exercise info -->
                                 <div class="min-w-0 flex-1 select-none">
-                                    <p class="font-medium text-gray-900 dark:text-gray-100">
+                                    <p class="font-medium text-text-primary">
                                         {{ exercise.name }}
                                     </p>
-                                    <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                                    <p class="mt-0.5 text-xs text-text-secondary">
                                         {{ exercise.primary_muscle }}
                                     </p>
-                                    <p
-                                        class="mt-1.5 text-sm font-semibold text-violet-600 dark:text-violet-400"
-                                    >
+                                    <p class="mt-1.5 text-sm font-semibold text-accent-text-soft">
                                         {{ formatTarget(exercise) }}
                                     </p>
                                 </div>
 
                                 <!-- Reorder buttons -->
-                                <div
-                                    class="flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                                >
+                                <div class="flex flex-col gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
                                     <button
                                         type="button"
                                         @click.stop="moveUp(index)"
                                         :disabled="index === 0"
-                                        class="rounded-md p-1 text-gray-400 transition hover:bg-violet-500/10 hover:text-violet-500 disabled:opacity-20 disabled:cursor-not-allowed"
+                                        class="rounded-radius-sm p-1 text-text-secondary transition hover:bg-accent-muted hover:text-accent-text-soft disabled:cursor-not-allowed disabled:opacity-20"
                                         title="Mover para cima"
                                     >
-                                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 15l7-7 7 7" />
                                         </svg>
                                     </button>
@@ -253,10 +249,10 @@ const persistOrder = () => {
                                         type="button"
                                         @click.stop="moveDown(index)"
                                         :disabled="index === exercises.length - 1"
-                                        class="rounded-md p-1 text-gray-400 transition hover:bg-violet-500/10 hover:text-violet-500 disabled:opacity-20 disabled:cursor-not-allowed"
+                                        class="rounded-radius-sm p-1 text-text-secondary transition hover:bg-accent-muted hover:text-accent-text-soft disabled:cursor-not-allowed disabled:opacity-20"
                                         title="Mover para baixo"
                                     >
-                                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7" />
                                         </svg>
                                     </button>
@@ -266,23 +262,18 @@ const persistOrder = () => {
                     </div>
 
                     <!-- Start Workout Footer -->
-                    <div
-                        class="border-t border-gray-100 bg-gray-50/80 p-6 dark:border-gray-700 dark:bg-gray-900/30"
-                    >
-                        <Link
-                            :href="route('workouts.start', workout.id)"
-                            method="post"
-                            as="button"
-                            type="button"
-                            class="flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-6 py-3.5 text-base font-bold text-white shadow-lg shadow-violet-500/25 transition hover:bg-violet-700 hover:shadow-violet-500/40 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800"
-                        >
-                            🔥 Iniciar Treino
-                        </Link>
-                        <p class="mt-2 text-center text-xs text-gray-500 dark:text-gray-400">
+                    <div class="border-t border-border-subtle bg-surface-overlay/40 p-6">
+                        <BaseButton variant="primary" ripple :disabled="starting" class="w-full" @click="startWorkout">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                <path d="M12.963 2.286a.75.75 0 00-1.071-.136 9.742 9.742 0 00-3.539 6.176 7.547 7.547 0 01-1.705-1.715.75.75 0 00-1.152-.082A9 9 0 1015.68 4.534a7.46 7.46 0 01-2.717-2.248z" />
+                            </svg>
+                            {{ starting ? 'Iniciando...' : 'Iniciar Treino' }}
+                        </BaseButton>
+                        <p class="mt-2 text-center text-xs text-text-secondary">
                             Registre suas séries, repetições, pesos e tempo de descanso em tempo real.
                         </p>
                     </div>
-                </div>
+                </BaseCard>
             </div>
         </div>
     </AuthenticatedLayout>

@@ -5,10 +5,12 @@ import ProgramWorkoutCard from '@/Components/Programs/ProgramWorkoutCard.vue';
 import ConfirmationModal from '@/Components/ConfirmationModal.vue';
 import CreateWorkoutModal from '@/Components/Workouts/CreateWorkoutModal.vue';
 import ScanWorkoutModal from '@/Components/Workouts/ScanWorkoutModal.vue';
+import BaseBadge from '@/Components/UI/BaseBadge.vue';
+import BaseButton from '@/Components/UI/BaseButton.vue';
+import BaseCard from '@/Components/UI/BaseCard.vue';
+import SectionLabel from '@/Components/UI/SectionLabel.vue';
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
-import PrimaryButton from '@/Components/PrimaryButton.vue';
-import SecondaryButton from '@/Components/SecondaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
@@ -180,9 +182,9 @@ const detachWorkout = () => {
             <div class="flex items-center gap-3">
                 <Link
                     :href="route('programs.index')"
-                    class="inline-flex items-center gap-1.5 text-sm font-medium text-gray-500 transition hover:text-violet-600 dark:text-gray-400 dark:hover:text-violet-400"
+                    class="inline-flex items-center gap-1.5 text-sm font-medium text-text-secondary transition hover:text-accent-text-soft"
                 >
-                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
                     </svg>
                     Voltar aos programas
@@ -228,21 +230,18 @@ const detachWorkout = () => {
         <div class="py-6 sm:py-8">
             <div class="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
                 <!-- Cabeçalho do programa: visualização / edição inline -->
-                <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+                <BaseCard>
                     <div v-if="!isEditing" class="flex items-start justify-between gap-3">
                         <div class="min-w-0">
                             <div class="flex items-center gap-2">
-                                <h2 class="truncate text-xl font-bold text-gray-900 dark:text-gray-100">
+                                <h2 class="truncate text-xl font-semibold text-text-primary">
                                     {{ program.name }}
                                 </h2>
-                                <span
-                                    v-if="program.is_active"
-                                    class="inline-flex shrink-0 items-center rounded-full bg-violet-500/10 px-2.5 py-1 text-xs font-bold text-violet-600 dark:text-violet-400"
-                                >
+                                <BaseBadge v-if="program.is_active" tone="accent">
                                     Ativo
-                                </span>
+                                </BaseBadge>
                             </div>
-                            <p v-if="program.description" class="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                            <p v-if="program.description" class="mt-1 text-sm text-text-secondary">
                                 {{ program.description }}
                             </p>
                         </div>
@@ -250,10 +249,10 @@ const detachWorkout = () => {
                         <button
                             type="button"
                             @click="startEditing"
-                            class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-gray-400 transition hover:bg-violet-500/10 hover:text-violet-600 dark:hover:text-violet-400"
+                            class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-radius-sm text-text-secondary transition hover:bg-accent-muted hover:text-accent-text-soft"
                             title="Editar programa"
                         >
-                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                             </svg>
                         </button>
@@ -284,49 +283,37 @@ const detachWorkout = () => {
                         </div>
 
                         <div class="flex justify-end gap-3">
-                            <SecondaryButton type="button" :disabled="editForm.processing" @click="cancelEditing">
+                            <BaseButton type="button" variant="secondary" :disabled="editForm.processing" @click="cancelEditing">
                                 Cancelar
-                            </SecondaryButton>
-                            <PrimaryButton
-                                type="submit"
-                                :disabled="editForm.processing"
-                                :class="{ 'opacity-50': editForm.processing }"
-                            >
+                            </BaseButton>
+                            <BaseButton type="submit" variant="primary" :disabled="editForm.processing">
                                 {{ editForm.processing ? 'Salvando...' : 'Salvar' }}
-                            </PrimaryButton>
+                            </BaseButton>
                         </div>
                     </form>
-                </div>
+                </BaseCard>
 
                 <!-- Fichas vinculadas -->
                 <div class="mt-6">
                     <div class="mb-4 flex items-center justify-between">
-                        <h3 class="text-base font-bold text-gray-900 dark:text-gray-100">
-                            Fichas deste programa
-                        </h3>
-                        <button
-                            type="button"
-                            @click="openAttachWorkoutsModal"
-                            class="inline-flex items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-violet-500/20 transition hover:bg-violet-700"
-                        >
-                            + Adicionar Treino
-                        </button>
+                        <SectionLabel tone="secondary">Fichas deste programa</SectionLabel>
+                        <BaseButton variant="primary" @click="openAttachWorkoutsModal">
+                            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4" />
+                            </svg>
+                            Adicionar Treino
+                        </BaseButton>
                     </div>
 
-                    <div
-                        v-if="!program.workouts.length"
-                        class="rounded-2xl border border-dashed border-gray-300 bg-white px-6 py-16 text-center dark:border-gray-700 dark:bg-gray-800"
-                    >
-                        <div
-                            class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-violet-500/10"
-                        >
+                    <BaseCard v-if="!program.workouts.length" class="border-dashed px-6 py-16 text-center">
+                        <div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-radius-lg bg-accent-muted">
                             <SetwaveLogo :size="32" variant="mark" />
                         </div>
 
-                        <p class="text-sm text-gray-600 dark:text-gray-400">
+                        <p class="text-sm text-text-secondary">
                             Nenhuma ficha vinculada a este programa ainda.
                         </p>
-                    </div>
+                    </BaseCard>
 
                     <div v-else class="space-y-3">
                         <ProgramWorkoutCard
