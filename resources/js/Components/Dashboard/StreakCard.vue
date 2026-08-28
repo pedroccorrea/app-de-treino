@@ -1,4 +1,6 @@
 <script setup>
+import SetwaveLogo from '@/Components/Brand/SetwaveLogo.vue';
+
 defineProps({
     streak: {
         type: Number,
@@ -11,7 +13,7 @@ defineProps({
     <div
         class="flex items-center justify-between rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800"
     >
-        <div>
+        <div v-if="streak > 0">
             <p class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                 ⚡ Sequência de Treinos
             </p>
@@ -19,6 +21,15 @@ defineProps({
                 {{ streak }} {{ streak === 1 ? 'dia seguido' : 'dias seguidos' }}
             </p>
         </div>
-        <span class="text-4xl">🔥</span>
+        <div v-else>
+            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                Sequência de Treinos
+            </p>
+            <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                Você ainda não tem histórico de treinos. Complete um treino para começar sua sequência.
+            </p>
+        </div>
+        <span v-if="streak > 0" class="text-4xl">🔥</span>
+        <SetwaveLogo v-else :size="32" variant="mark" />
     </div>
 </template>

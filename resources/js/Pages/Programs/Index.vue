@@ -1,4 +1,5 @@
 <script setup>
+import SetwaveLogo from '@/Components/Brand/SetwaveLogo.vue';
 import CreateProgramModal from '@/Components/Programs/CreateProgramModal.vue';
 import ConfirmationModal from '@/Components/ConfirmationModal.vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
@@ -110,6 +111,12 @@ const deleteProgram = () => {
                     v-if="!programs.length"
                     class="rounded-2xl border border-dashed border-gray-300 bg-white px-6 py-16 text-center dark:border-gray-700 dark:bg-gray-800"
                 >
+                    <div
+                        class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-violet-500/10"
+                    >
+                        <SetwaveLogo :size="32" variant="mark" />
+                    </div>
+
                     <p class="text-sm text-gray-600 dark:text-gray-400">
                         Você ainda não tem nenhum programa de treino. Crie o
                         primeiro para organizar suas fichas por ciclo.

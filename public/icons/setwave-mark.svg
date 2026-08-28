@@ -1,0 +1,11 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Setwave">
+    <rect width="512" height="512" fill="#0B0F17" />
+    <path
+        d="M64 336c53.33 0 53.33-160 106.67-160S224 336 277.33 336 330.67 176 384 176s53.33 160 64 160"
+        fill="none"
+        stroke="#8B5CF6"
+        stroke-width="40"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+    />
+</svg>

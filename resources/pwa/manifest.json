@@ -1,7 +1,7 @@
 {
-    "name": "IA-LIFT - Meu App de Treino",
-    "short_name": "IA-LIFT",
-    "description": "Registre seus treinos, acompanhe suas séries e evolua com o IA-LIFT.",
+    "name": "Setwave — Treino e Progressão",
+    "short_name": "Setwave",
+    "description": "Registre seus treinos, acompanhe suas séries e evolua com o Setwave.",
     "start_url": "/dashboard",
     "scope": "/",
     "display": "standalone",

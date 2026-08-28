@@ -1,4 +1,5 @@
 <script setup>
+import SetwaveLogo from '@/Components/Brand/SetwaveLogo.vue';
 import AttachWorkoutsModal from '@/Components/Programs/AttachWorkoutsModal.vue';
 import ProgramWorkoutCard from '@/Components/Programs/ProgramWorkoutCard.vue';
 import ConfirmationModal from '@/Components/ConfirmationModal.vue';
@@ -316,6 +317,12 @@ const detachWorkout = () => {
                         v-if="!program.workouts.length"
                         class="rounded-2xl border border-dashed border-gray-300 bg-white px-6 py-16 text-center dark:border-gray-700 dark:bg-gray-800"
                     >
+                        <div
+                            class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-violet-500/10"
+                        >
+                            <SetwaveLogo :size="32" variant="mark" />
+                        </div>
+
                         <p class="text-sm text-gray-600 dark:text-gray-400">
                             Nenhuma ficha vinculada a este programa ainda.
                         </p>

@@ -1,6 +1,6 @@
 <script setup>
 import { ref, watch } from 'vue';
-import ApplicationLogo from '@/Components/ApplicationLogo.vue';
+import SetwaveLogo from '@/Components/Brand/SetwaveLogo.vue';
 import Sidebar from '@/Components/Navigation/Sidebar.vue';
 import { router, usePage } from '@inertiajs/vue3';
 
@@ -72,8 +72,7 @@ watch(
                     </svg>
                 </button>
 
-                <ApplicationLogo class="h-7 w-auto fill-current text-violet-500" />
-                <span class="text-base font-bold text-gray-800 dark:text-gray-100">IA-LIFT</span>
+                <SetwaveLogo :size="24" variant="full" />
             </div>
 
             <!-- Page Heading -->

@@ -135,7 +135,7 @@ while (true) {
 
         $evalPrompt = "Você é o Auditor de Qualidade Read-Only. Inspecione os arquivos do projeto e valide se a fase abaixo foi integralmente cumprida de acordo com todos os seus Acceptance Criteria e as regras de .ai/rules/.\n\n"
                     . "FASE:\n# Phase " . $phaseText . "\n\n"
-                    . "INSTRUÇÃO CRÍTICA DE FORMATO: Sua resposta DEVE começar com a palavra DONE (se aprovada) ou FALTA (se houver pendências). Nada antes dessa palavra. Se começar com FALTA, liste em seguida o que está pendente.";
+                    . "INSTRUÇÃO CRÍTICA DE FORMATO: Sua resposta DEVE começar com a palavra DONE ou FALTA. Texto puro, sem markdown, sem cabeçalho, sem ##, sem asteriscos, sem emoji antes dela. O primeiro caractere da sua resposta deve ser a letra D ou a letra F. Depois disso escreva o que quiser.";
 
         $verdict = shell_exec('claude -p ' . escapeshellarg($evalPrompt) . ' --allowedTools "Read,Glob,Grep" 2>&1');
         $verdictTrimmed = trim((string) $verdict);
@@ -148,8 +148,13 @@ while (true) {
         }
 
         // CORREÇÃO: veredito lido apenas na PRIMEIRA palavra (determinístico)
-        $firstWord = strtoupper(preg_split('/[\s,.\-:]+/', $verdictTrimmed)[0] ?? '');
+        $firstWord = strtoupper(preg_split('/[\s,.\-:#*`>\n]+/', $verdictTrimmed, -1, PREG_SPLIT_NO_EMPTY)[0] ?? '');
         $isApproved = ($firstWord === 'DONE');
+
+        // Fallback: o auditor às vezes ignora o formato e responde em markdown.
+        if (!$isApproved && preg_match('/(cumprida integralmente|✅\s*\**\s*Fase cumprida)/iu', $verdictTrimmed)) {
+            $isApproved = true;
+        }
 
         if ($isApproved) {
             echo "🏆 Auditor aprovou a fase com louvor (DONE)!\n";

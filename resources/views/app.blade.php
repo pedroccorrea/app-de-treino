@@ -8,12 +8,15 @@
 
         <!-- PWA -->
         <meta name="theme-color" content="#8B5CF6">
+        <meta name="application-name" content="Setwave">
         <meta name="mobile-web-app-capable" content="yes">
         <meta name="apple-mobile-web-app-capable" content="yes">
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-        <meta name="apple-mobile-web-app-title" content="IA-LIFT">
+        <meta name="apple-mobile-web-app-title" content="Setwave">
+        <meta property="og:site_name" content="Setwave">
         <link rel="manifest" href="/manifest.json">
-        <link rel="apple-touch-icon" href="/icons/icon-192x192.png">
+        <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+        <link rel="icon" type="image/x-icon" href="/favicon.ico">
         <link rel="icon" type="image/png" sizes="512x512" href="/icons/icon-512x512.png">
 
         <!-- Fonts -->

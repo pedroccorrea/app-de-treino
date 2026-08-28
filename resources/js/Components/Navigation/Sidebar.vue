@@ -1,5 +1,5 @@
 <script setup>
-import ApplicationLogo from '@/Components/ApplicationLogo.vue';
+import SetwaveLogo from '@/Components/Brand/SetwaveLogo.vue';
 import { Link, usePage } from '@inertiajs/vue3';
 
 defineProps({
@@ -65,8 +65,7 @@ const navigation = [
     >
         <div class="flex h-16 shrink-0 items-center gap-2 border-b border-gray-200 px-6 dark:border-gray-700">
             <Link :href="route('dashboard')" class="flex items-center gap-2">
-                <ApplicationLogo class="h-8 w-auto fill-current text-violet-500" />
-                <span class="text-lg font-bold text-gray-800 dark:text-gray-100">IA-LIFT</span>
+                <SetwaveLogo :size="28" variant="full" />
             </Link>
         </div>
 

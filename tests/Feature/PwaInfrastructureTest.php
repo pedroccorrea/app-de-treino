@@ -8,8 +8,8 @@ test('manifest.json is publicly accessible with the correct content-type', funct
 
     $manifest = json_decode($response->getContent(), true);
 
-    expect($manifest['name'])->toBe('IA-LIFT - Meu App de Treino');
-    expect($manifest['short_name'])->toBe('IA-LIFT');
+    expect($manifest['name'])->toBe('Setwave — Treino e Progressão');
+    expect($manifest['short_name'])->toBe('Setwave');
     expect($manifest['display'])->toBe('standalone');
     expect($manifest['background_color'])->toBe('#0B0F17');
     expect($manifest['theme_color'])->toBe('#8B5CF6');
