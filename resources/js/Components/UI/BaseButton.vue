@@ -41,7 +41,7 @@ const handleClick = (event) => {
 };
 
 const variantClasses = {
-    primary: 'border border-accent bg-accent-muted text-accent-text-strong shadow-[0_0_40px_var(--accent-glow)] hover:brightness-110 active:brightness-95',
+    primary: 'border border-border-accent bg-accent-muted text-accent-text-strong shadow-md shadow-accent-glow-soft hover:shadow-accent-glow-soft-hover hover:brightness-110 active:brightness-95',
     secondary: 'border border-border-subtle bg-transparent text-text-primary hover:border-border-accent',
     danger: 'border border-danger bg-transparent text-danger hover:brightness-125',
     ghost: 'border-0 bg-transparent text-text-secondary hover:text-text-primary',

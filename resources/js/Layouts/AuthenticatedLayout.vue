@@ -50,7 +50,7 @@ watch(
         <div class="flex min-h-screen flex-col lg:pl-64">
             <!-- Mobile top bar -->
             <div
-                class="flex h-16 shrink-0 items-center gap-4 border-b border-border-subtle bg-surface-raised px-4 lg:hidden"
+                class="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-4 border-b border-border-subtle bg-surface-base/90 px-4 backdrop-blur-md lg:hidden"
             >
                 <button
                     type="button"

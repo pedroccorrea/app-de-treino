@@ -19,6 +19,8 @@ Fonte de tokens: `resources/css/design-tokens.css`. Mapeamento Tailwind: `tailwi
 | `--accent` | `#8B5CF6` | Bordas e ícones de ênfase primária. **Nunca como preenchimento sólido** — ver "Uso parcimonioso do roxo" abaixo. |
 | `--accent-muted` | `rgba(139,92,246,.14)` | Fundo tingido por trás de um elemento com borda `--accent` (botão primário, badge de destaque). |
 | `--accent-glow` | `rgba(139,92,246,.45)` | Cor do `box-shadow`/`drop-shadow` de destaque em torno de um elemento acentuado. |
+| `--accent-glow-soft` | `rgba(139,92,246,.15)` | Brilho ambiente discreto em repouso (`BaseButton` primário, item ativo do `Sidebar`) — substitui o glow forte de `--accent-glow` nesses casos. |
+| `--accent-glow-soft-hover` | `rgba(139,92,246,.25)` | Intensificação sutil do glow acima, aplicada apenas no estado `:hover`. |
 | `--accent-text-strong` | `#EDE9FE` | Texto do rótulo do botão primário (ex: "Concluir série", "Aplicar 85 kg"). |
 | `--accent-text-soft` | `#C4B5FD` | Ícones/spinner sobre superfície acentuada, chips de destaque secundário (ex: badge de delta "+2,5 kg"), texto de link em hover. |
 | `--accent-label` | `#A78BFA` | Rótulo em caixa alta com tom de acento (`SectionLabel tone="accent"`, ex: "SUGESTÃO DE CARGA"). Não funde com `--accent-text-soft`: papel distinto (rótulo vs. texto/ícone de botão), gap de luminância de 18%. |

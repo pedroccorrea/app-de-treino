@@ -14,6 +14,8 @@
     --accent: #8B5CF6;
     --accent-muted: rgba(139, 92, 246, 0.14);
     --accent-glow: rgba(139, 92, 246, 0.45);
+    --accent-glow-soft: rgba(139, 92, 246, 0.15);
+    --accent-glow-soft-hover: rgba(139, 92, 246, 0.25);
     --accent-text-strong: #EDE9FE;
     --accent-text-soft: #C4B5FD;
     --accent-label: #A78BFA;

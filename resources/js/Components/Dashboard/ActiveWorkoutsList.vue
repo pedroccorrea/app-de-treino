@@ -18,7 +18,7 @@ defineProps({
         <ul class="mt-3 space-y-1">
             <li v-for="workout in workouts" :key="workout.id">
                 <Link
-                    :href="route('workouts.show', workout.id)"
+                    :href="route('workouts.show', { workout: workout.id, return_to: route('dashboard') })"
                     class="flex min-h-[48px] items-center justify-between gap-3 rounded-radius-md px-3 py-2 transition hover:bg-surface-overlay"
                 >
                     <div class="min-w-0">

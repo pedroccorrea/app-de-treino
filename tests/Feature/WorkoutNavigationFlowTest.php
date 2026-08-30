@@ -131,3 +131,23 @@ test('exercise history page carries the active session URL forward as return_to,
 
     expect($response->baseRequest->query('return_to'))->toBe($sessionUrl);
 });
+
+test('accessing a workout show page with return_to=/dashboard preserves it so the back button points to the dashboard', function () {
+    $user = User::factory()->create();
+    $workout = $user->workouts()->create(['name' => 'Treino Peito']);
+
+    // Workouts/Show.vue's "Voltar" button reads the return_to query string
+    // straight from window.location.search (the app-wide pattern — see
+    // .ai/rules/navigation-flow-invariants.md #4). This asserts the
+    // Dashboard's shortcut links to workouts.show land here with
+    // return_to=/dashboard intact, so the back button sends the user home.
+    $response = $this->actingAs($user)->get(route('workouts.show', [
+        'workout' => $workout,
+        'return_to' => '/dashboard',
+    ]));
+
+    $response->assertOk();
+    $response->assertInertia(fn ($page) => $page->component('Workouts/Show'));
+
+    expect($response->baseRequest->query('return_to'))->toBe('/dashboard');
+});

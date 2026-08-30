@@ -77,7 +77,7 @@ const navigation = [
                 class="flex min-h-[48px] items-center gap-3 rounded-radius-md px-3 py-2.5 text-sm font-medium transition duration-150 ease-in-out"
                 :class="
                     route().current(item.pattern)
-                        ? 'border border-border-accent bg-accent-muted text-accent-text-strong shadow-[0_0_24px_var(--accent-glow)]'
+                        ? 'border border-border-accent bg-accent-muted text-accent-text-strong shadow-md shadow-accent-glow-soft'
                         : 'border border-transparent text-text-secondary hover:bg-surface-overlay hover:text-text-primary'
                 "
                 @click="$emit('close')"

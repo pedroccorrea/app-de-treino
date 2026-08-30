@@ -28,6 +28,8 @@ export default {
                 accent: 'var(--accent)',
                 'accent-muted': 'var(--accent-muted)',
                 'accent-glow': 'var(--accent-glow)',
+                'accent-glow-soft': 'var(--accent-glow-soft)',
+                'accent-glow-soft-hover': 'var(--accent-glow-soft-hover)',
                 'accent-text-strong': 'var(--accent-text-strong)',
                 'accent-text-soft': 'var(--accent-text-soft)',
                 'accent-label': 'var(--accent-label)',

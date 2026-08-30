@@ -3,7 +3,7 @@ import BaseCard from '@/Components/UI/BaseCard.vue';
 import { router } from '@inertiajs/vue3';
 import { ref } from 'vue';
 
-const props = defineProps({
+defineProps({
     activeWorkouts: {
         type: Array,
         default: () => [],
