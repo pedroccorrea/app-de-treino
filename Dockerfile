@@ -15,8 +15,8 @@ RUN npm ci --no-audit --prefer-offline
 COPY . .
 RUN npm run build
 
-# --- Etapa 2: Backend & Produção (PHP 8.3 FPM + Nginx + Alpine) ---
-FROM php:8.3-fpm-alpine AS app
+# --- Etapa 2: Backend & Produção (PHP 8.4 FPM + Nginx + Alpine) ---
+FROM php:8.4-fpm-alpine AS app
 
 # Instalação de utilitários do sistema, Nginx, PostgreSQL client e Supervisor
 RUN apk update && apk add --no-cache \
