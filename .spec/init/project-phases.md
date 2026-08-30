@@ -535,3 +535,25 @@
 2. `php artisan test` passa em 100% de toda a suíte.
 3. `tests/Architecture/ArchitecturalRulesTest.php` passa sem nenhuma violação.
 4. `npm run build` compila com zero erros.
+
+# Phase 24: Otimização Extrema de Latência de IA, Timeouts Curtos e Driver Groq Ultrarrápido
+## Tasks
+1. **Redução Drástica de Timeouts no `AiManager` e Drivers:**
+   - Em `GeminiDriver.php` e `ClaudeDriver.php`:
+     * Para tarefas `AiTask::FastText` (Sobrecarga e Dashboard): configurar timeout máximo estrito de **6 segundos**.
+     * Para tarefas `AiTask::Vision` (Scanner de fotos): configurar timeout máximo de **30 segundos**.
+   - No `ClaudeDriver.php`: adicionar `Http::withoutVerifying()` para eliminar o erro cURL 60 no Windows.
+
+2. **Garantia de Resposta 200 com Fallback Suave:**
+   - No `WorkoutSessionController@overloadSuggestions`: capturar qualquer falha ou timeout e retornar SEMPRE status HTTP 200 com JSON estruturado `{"status": "fallback", "recommendations": []}` — NUNCA estourar status 500 no console do navegador.
+
+3. **Driver Groq Opcional de Ultra-Baixa Latência (app/Services/AI/Drivers/GroqDriver.php):**
+   - Criar o `GroqDriver` (usando a API gratuita do Groq compatível com OpenAI `https://api.groq.com/openai/v1/chat/completions` e modelo `llama-3.3-70b-versatile`).
+   - Adicionar `groq` nas opções de drivers em `config/services.php` e suporte no `AiManager`.
+
+## Acceptance Criteria
+1. O endpoint `/workout-sessions/{session}/overload-suggestions` retorna status HTTP 200 em caso de simulação de timeout ou falha de provedores.
+2. Os timeouts de `FastText` não ultrapassam 6 segundos por tentativa.
+3. `tests/Feature/AiResilienceTest.php` valida que falhas de rede não produzem status 500 na sessão de treino.
+4. `php artisan test` passa em 100% de toda a suíte.
+5. `npm run build` compila sem erros.
