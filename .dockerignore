@@ -1,0 +1,51 @@
+# Dependências locais e builds
+/node_modules
+/vendor
+/public/build
+/public/hot
+/public/storage
+
+# Variáveis de ambiente e segredos locais
+.env
+.env.*
+!.env.example
+auth.json
+
+# Controle de versão e IDEs
+.git
+.github
+.gitignore
+.gitattributes
+.cursorrules
+.vscode
+.idea
+.nova
+.zed
+.codex
+.editorconfig
+
+# Arquivos temporários e logs
+*.log
+storage/logs/*.log
+storage/framework/cache/data/*
+storage/framework/sessions/*
+storage/framework/views/*
+storage/pail/*
+
+# Banco de dados local SQLite (evita sobrescrever com dados locais de dev)
+database/*.sqlite
+database/*.sqlite-journal
+
+# Testes e relatórios
+/tests
+phpunit.xml
+.phpunit.result.cache
+.phpunit.cache
+
+# Contextos de IA e documentação de auxílio
+.phases
+.spec
+.ai
+.claude
+check_*.php
+loop.php
