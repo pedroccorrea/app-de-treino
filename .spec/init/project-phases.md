@@ -453,3 +453,28 @@
 4. Teste em `tests/Feature/AiResilienceTest.php` valida que simulação de timeout na IA não gera erro 500 e degrada com mensagem amigável.
 5. `php artisan test` passa em 100% de toda a suíte.
 6. `npm run build` compila com zero erros.
+
+# Phase 20: Arquitetura AiManager, Provedores Pluggáveis (Driver Pattern) e Auto-Failover
+## Tasks
+1. **Contrato e Camada de Abstração (app/Services/AI/):**
+   - Criar a interface `Contracts/AiDriverInterface.php` definindo os contratos:
+     * `generateStructured(string $prompt, ?string $systemInstruction = null): array`
+     * `analyzeImage(UploadedFile $image, string $prompt, ?string $systemInstruction = null): array`
+   - Criar a classe `AiManager.php` gerenciando os drivers configurados em `config/services.php`:
+     * Suporte a múltiplos drivers: `GeminiDriver` e `ClaudeDriver` (ou OpenAI/Groq).
+     * Leitura da variável `AI_DEFAULT_DRIVER` no `.env` (padrão: `gemini`).
+     * Mecanismo de **Auto-Failover**: se o driver primário falhar ou der timeout, acionar automaticamente o driver secundário configurado antes de degradar.
+
+2. **Implementação dos Drivers:**
+   - Criar `Drivers/GeminiDriver.php` encapsulando a lógica de conexão com o Google Gemini.
+   - Criar `Drivers/ClaudeDriver.php` encapsulando a lógica de conexão via API da Anthropic.
+
+3. **Refatoração dos Serviços de Domínio:**
+   - Refatorar `WorkoutScannerService`, `ProgressiveOverloadService` e `DashboardAnalyticsService` para injetarem e usarem estritamente o `AiManager` (eliminando qualquer dependência direta de classes proprietárias).
+
+## Acceptance Criteria
+1. O `AiManager` resolve o driver correto a partir da variável `AI_DEFAULT_DRIVER`.
+2. Teste em `tests/Feature/AiManagerTest.php` valida a troca dinâmica de driver e o mecanismo de fallback automático quando o primário simula falha.
+3. `php artisan test` passa em 100% de toda a suíte.
+4. `tests/Architecture/ArchitecturalRulesTest.php` passa sem violações.
+5. `npm run build` compila com zero erros.
