@@ -2,8 +2,10 @@
 
 namespace App\Services\AI;
 
+use App\Enums\AiTask;
 use App\Exceptions\GeminiException;
 use App\Services\AI\Support\AiJsonSanitizer;
+use App\Services\AI\Support\AiModelResolver;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -36,9 +38,9 @@ class GeminiClient
      *
      * @throws GeminiException
      */
-    public function generate(string $prompt, ?array $inlineImage = null): array
+    public function generate(string $prompt, ?array $inlineImage = null, ?AiTask $task = null): array
     {
-        return $this->decodeJson($this->request($prompt, $inlineImage));
+        return $this->decodeJson($this->request($prompt, $inlineImage, $task));
     }
 
     /**
@@ -58,7 +60,7 @@ class GeminiClient
      *
      * @throws GeminiException
      */
-    private function request(string $prompt, ?array $inlineImage = null): string
+    private function request(string $prompt, ?array $inlineImage = null, ?AiTask $task = null): string
     {
         $apiKey = $this->apiKey();
 
@@ -77,7 +79,7 @@ class GeminiClient
                 ->withHeaders(['x-goog-api-key' => $apiKey])
                 ->timeout(90)
                 ->post(
-                    "https://generativelanguage.googleapis.com/v1beta/models/{$this->model()}:generateContent?key={$apiKey}",
+                    "https://generativelanguage.googleapis.com/v1beta/models/{$this->model($task)}:generateContent?key={$apiKey}",
                     [
                         'contents' => [
                             ['parts' => $parts],
@@ -133,8 +135,8 @@ class GeminiClient
         return (string) (config('services.gemini.key') ?: env('GEMINI_API_KEY'));
     }
 
-    private function model(): string
+    private function model(?AiTask $task = null): string
     {
-        return (string) (config('services.gemini.model') ?: env('GEMINI_MODEL', 'gemini-2.0-flash'));
+        return AiModelResolver::resolve('gemini', $task, env('GEMINI_MODEL', 'gemini-3.7-flash'));
     }
 }

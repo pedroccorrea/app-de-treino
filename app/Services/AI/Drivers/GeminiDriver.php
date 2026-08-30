@@ -2,6 +2,7 @@
 
 namespace App\Services\AI\Drivers;
 
+use App\Enums\AiTask;
 use App\Services\AI\Contracts\AiDriverInterface;
 use App\Services\AI\GeminiClient;
 use Illuminate\Http\UploadedFile;
@@ -15,19 +16,20 @@ class GeminiDriver implements AiDriverInterface
 {
     public function __construct(private readonly GeminiClient $client) {}
 
-    public function generateStructured(string $prompt, ?string $systemInstruction = null): array
+    public function generateStructured(string $prompt, ?string $systemInstruction = null, ?AiTask $task = null): array
     {
-        return $this->client->generate($this->withSystemInstruction($prompt, $systemInstruction));
+        return $this->client->generate($this->withSystemInstruction($prompt, $systemInstruction), task: $task);
     }
 
-    public function analyzeImage(UploadedFile $image, string $prompt, ?string $systemInstruction = null): array
+    public function analyzeImage(UploadedFile $image, string $prompt, ?string $systemInstruction = null, ?AiTask $task = null): array
     {
         return $this->client->generate(
             $this->withSystemInstruction($prompt, $systemInstruction),
             [
                 'mimeType' => $image->getMimeType() ?: 'image/jpeg',
                 'data' => base64_encode(file_get_contents($image->getRealPath())),
-            ]
+            ],
+            task: $task,
         );
     }
 

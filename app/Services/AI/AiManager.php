@@ -2,6 +2,7 @@
 
 namespace App\Services\AI;
 
+use App\Enums\AiTask;
 use App\Exceptions\AiException;
 use App\Services\AI\Contracts\AiDriverInterface;
 use App\Services\AI\Drivers\ClaudeDriver;
@@ -19,7 +20,10 @@ use Throwable;
  * first; if it throws for any reason, AiManager automatically retries the
  * same operation on the secondary driver (AI_FALLBACK_DRIVER) before
  * degrading, so a single provider outage never has to be handled by each
- * domain service individually.
+ * domain service individually. The optional AiTask is forwarded to
+ * whichever driver ends up serving the request, so each provider can pick
+ * a model suited to the workload (see AiModelResolver) even across
+ * failover, instead of always using its general-purpose default.
  */
 class AiManager extends Manager implements AiDriverInterface
 {
@@ -43,17 +47,17 @@ class AiManager extends Manager implements AiDriverInterface
         return $this->container->make(ClaudeDriver::class);
     }
 
-    public function generateStructured(string $prompt, ?string $systemInstruction = null): array
+    public function generateStructured(string $prompt, ?string $systemInstruction = null, ?AiTask $task = null): array
     {
         return $this->withFailover(
-            fn (AiDriverInterface $driver) => $driver->generateStructured($prompt, $systemInstruction)
+            fn (AiDriverInterface $driver) => $driver->generateStructured($prompt, $systemInstruction, $task)
         );
     }
 
-    public function analyzeImage(UploadedFile $image, string $prompt, ?string $systemInstruction = null): array
+    public function analyzeImage(UploadedFile $image, string $prompt, ?string $systemInstruction = null, ?AiTask $task = null): array
     {
         return $this->withFailover(
-            fn (AiDriverInterface $driver) => $driver->analyzeImage($image, $prompt, $systemInstruction)
+            fn (AiDriverInterface $driver) => $driver->analyzeImage($image, $prompt, $systemInstruction, $task)
         );
     }
 

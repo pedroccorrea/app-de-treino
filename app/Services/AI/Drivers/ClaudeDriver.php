@@ -2,9 +2,11 @@
 
 namespace App\Services\AI\Drivers;
 
+use App\Enums\AiTask;
 use App\Exceptions\ClaudeException;
 use App\Services\AI\Contracts\AiDriverInterface;
 use App\Services\AI\Support\AiJsonSanitizer;
+use App\Services\AI\Support\AiModelResolver;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -17,20 +19,20 @@ use Throwable;
  */
 class ClaudeDriver implements AiDriverInterface
 {
-    public function generateStructured(string $prompt, ?string $systemInstruction = null): array
+    public function generateStructured(string $prompt, ?string $systemInstruction = null, ?AiTask $task = null): array
     {
-        return $this->decodeJson($this->request($prompt, $systemInstruction));
+        return $this->decodeJson($this->request($prompt, $systemInstruction, task: $task));
     }
 
-    public function analyzeImage(UploadedFile $image, string $prompt, ?string $systemInstruction = null): array
+    public function analyzeImage(UploadedFile $image, string $prompt, ?string $systemInstruction = null, ?AiTask $task = null): array
     {
-        return $this->decodeJson($this->request($prompt, $systemInstruction, $image));
+        return $this->decodeJson($this->request($prompt, $systemInstruction, $image, $task));
     }
 
     /**
      * @throws ClaudeException
      */
-    private function request(string $prompt, ?string $systemInstruction, ?UploadedFile $image = null): string
+    private function request(string $prompt, ?string $systemInstruction, ?UploadedFile $image = null, ?AiTask $task = null): string
     {
         $apiKey = $this->apiKey();
 
@@ -54,7 +56,7 @@ class ClaudeDriver implements AiDriverInterface
         $content[] = ['type' => 'text', 'text' => $prompt];
 
         $payload = [
-            'model' => $this->model(),
+            'model' => $this->model($task),
             'max_tokens' => 4096,
             'messages' => [
                 ['role' => 'user', 'content' => $content],
@@ -121,8 +123,8 @@ class ClaudeDriver implements AiDriverInterface
         return (string) config('services.claude.key');
     }
 
-    private function model(): string
+    private function model(?AiTask $task = null): string
     {
-        return (string) (config('services.claude.model') ?: 'claude-opus-5');
+        return AiModelResolver::resolve('claude', $task, 'claude-opus-5');
     }
 }

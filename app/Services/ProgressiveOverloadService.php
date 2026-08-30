@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\DataTransferObjects\OverloadSuggestion;
+use App\Enums\AiTask;
 use App\Enums\OverloadConfidence;
 use App\Models\SetLog;
 use App\Models\User;
@@ -41,7 +42,7 @@ class ProgressiveOverloadService
         $previousPerformance = $this->previousPerformanceByExercise($sessions);
 
         try {
-            $response = $this->aiManager->generateStructured($this->buildPrompt($sessions, $workout));
+            $response = $this->aiManager->generateStructured($this->buildPrompt($sessions, $workout), task: AiTask::FastText);
         } catch (\Throwable $e) {
             Log::warning('Falha ao consultar sugestões de sobrecarga progressiva via IA.', [
                 'workout_id' => $workout->id,

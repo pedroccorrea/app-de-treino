@@ -38,11 +38,19 @@ return [
     'gemini' => [
         'key' => env('GEMINI_API_KEY'),
         'model' => env('GEMINI_MODEL', 'gemini-3.7-flash'),
+        'models' => [
+            'vision' => env('GEMINI_VISION_MODEL', 'gemini-3.7-flash'),
+            'fast_text' => env('GEMINI_FAST_TEXT_MODEL', 'gemini-3.7-flash-lite'),
+        ],
     ],
 
     'claude' => [
         'key' => env('ANTHROPIC_API_KEY'),
         'model' => env('ANTHROPIC_MODEL', 'claude-opus-5'),
+        'models' => [
+            'vision' => env('ANTHROPIC_VISION_MODEL', 'claude-opus-5'),
+            'fast_text' => env('ANTHROPIC_FAST_TEXT_MODEL', 'claude-haiku-4-5-20251001'),
+        ],
     ],
 
     'ai' => [

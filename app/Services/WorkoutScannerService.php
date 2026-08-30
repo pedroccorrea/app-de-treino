@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\AiTask;
 use App\Enums\MuscleGroup;
 use App\Exceptions\AiException;
 use App\Models\Exercise;
@@ -70,7 +71,7 @@ class WorkoutScannerService
     private function transcribeWithAi(UploadedFile $image, Collection $catalog): array
     {
         try {
-            return $this->aiManager->analyzeImage($image, $this->buildPrompt($catalog));
+            return $this->aiManager->analyzeImage($image, $this->buildPrompt($catalog), task: AiTask::Vision);
         } catch (\Throwable $e) {
             Log::warning('Falha ao transcrever ficha de treino via IA.', ['message' => $e->getMessage()]);
 
