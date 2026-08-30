@@ -376,3 +376,24 @@
 4. `tests/Architecture/ArchitecturalRulesTest.php` passa sem violações.
 5. `php artisan test` passa em 100% de toda a suíte.
 6. `npm run build` compila com zero erros.
+
+# Phase 17: Header Fixo, Brilho Sutil de Botões e Navegação Contextual na Dashboard
+## Tasks
+1. **Header Fixo com Desfoque no Topo:**
+   - Em `resources/js/Layouts/AuthenticatedLayout.vue`: tornar a barra superior mobile fixa no topo durante a rolagem (`sticky top-0 z-40 bg-surface-base/90 backdrop-blur-md border-b border-border-subtle`).
+   - Garantir que o conteúdo principal (`<main>`) não fique escondido sob a barra fixa, mantendo o espaçamento visual correto.
+
+2. **Ajuste de Brilho dos Botões Primários:**
+   - Em `resources/js/Components/UI/BaseButton.vue` e nos botões primários do projeto: suavizar a intensidade do brilho roxo/violeta, substituindo sombras fortes por um brilho ambiente discreto e elegante (ex: `shadow-md shadow-violet-500/15 hover:shadow-violet-500/25` e borda sutil).
+
+3. **Correção de Navegação da Dashboard para Treinos:**
+   - Em `resources/js/Pages/Dashboard.vue` (e seus componentes de atalho a treinos):
+     * Nos botões de atalho do card de descanso e na lista de treinos ativos, passar obrigatoriamente o parâmetro `return_to = route('dashboard')` nos links para `workouts.show`.
+   - Em `resources/js/Pages/Workouts/Show.vue`:
+     * Garantir que o botão "← Voltar" leia a prop `returnTo` e devolva o usuário para a Dashboard quando a navegação foi originada nela.
+
+## Acceptance Criteria
+1. `tests/Feature/WorkoutNavigationFlowTest.php` valida que acessar `workouts.show` com `return_to=/dashboard` faz o botão voltar apontar para `/dashboard`.
+2. `php artisan test` passa em 100% de toda a suíte.
+3. `tests/Architecture/ArchitecturalRulesTest.php` passa sem nenhuma violação.
+4. `npm run build` compila com zero erros.
