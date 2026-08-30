@@ -124,6 +124,6 @@ class GroqDriver implements AiDriverInterface
 
     private function model(?AiTask $task = null): string
     {
-        return AiModelResolver::resolve('groq', $task, 'llama-3.3-70b-versatile');
+        return AiModelResolver::resolve('groq', $task, 'openai/gpt-oss-20b');
     }
 }

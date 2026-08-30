@@ -25,7 +25,7 @@ test('generateStructured sanitizes markdown fences and decodes the JSON payload'
 
     Http::assertSent(fn ($request) => $request->url() === 'https://api.groq.com/openai/v1/chat/completions'
         && $request->hasHeader('Authorization', 'Bearer test-groq-api-key')
-        && $request['model'] === 'llama-3.3-70b-versatile');
+        && $request['model'] === 'openai/gpt-oss-20b');
 });
 
 test('generateStructured sends the system instruction as a dedicated message', function () {

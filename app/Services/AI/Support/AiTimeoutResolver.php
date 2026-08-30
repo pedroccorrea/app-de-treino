@@ -19,7 +19,7 @@ class AiTimeoutResolver
     {
         return match ($task) {
             AiTask::FastText => (int) config('services.ai.timeouts.fast_text', 6),
-            default => (int) config('services.ai.timeouts.vision', 30),
+            default => (int) config('services.ai.timeouts.vision', 180),
         };
     }
 }

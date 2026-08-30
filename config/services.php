@@ -37,10 +37,10 @@ return [
 
     'gemini' => [
         'key' => env('GEMINI_API_KEY'),
-        'model' => env('GEMINI_MODEL', 'gemini-3.7-flash'),
+        'model' => env('GEMINI_MODEL', 'gemini-3.5-flash'),
         'models' => [
-            'vision' => env('GEMINI_VISION_MODEL', 'gemini-3.7-flash'),
-            'fast_text' => env('GEMINI_FAST_TEXT_MODEL', 'gemini-3.7-flash'),
+            'vision' => env('GEMINI_VISION_MODEL', 'gemini-3.5-flash'),
+            'fast_text' => env('GEMINI_FAST_TEXT_MODEL', 'gemini-3.5-flash'),
         ],
     ],
 
@@ -55,22 +55,22 @@ return [
 
     'groq' => [
         'key' => env('GROQ_API_KEY'),
-        'model' => env('GROQ_MODEL', 'llama-3.3-70b-versatile'),
+        'model' => env('GROQ_MODEL', 'openai/gpt-oss-20b'),
         'models' => [
-            'vision' => env('GROQ_VISION_MODEL', 'llama-3.3-70b-versatile'),
-            'fast_text' => env('GROQ_FAST_TEXT_MODEL', 'llama-3.3-70b-versatile'),
+            'vision' => env('GROQ_VISION_MODEL', 'llama-3.2-90b-vision-preview'),
+            'fast_text' => env('GROQ_FAST_TEXT_MODEL', 'openai/gpt-oss-20b'),
         ],
     ],
 
     'ai' => [
         'default_driver' => env('AI_DEFAULT_DRIVER', 'gemini'),
-        'fallback_driver' => env('AI_FALLBACK_DRIVER', 'claude'),
+        'fallback_driver' => env('AI_FALLBACK_DRIVER', 'gemini'),
         // Timeouts curtos por AiTask (segundos) para nunca deixar o usuário
         // esperando uma tela travada: FastText alimenta telas síncronas
         // (dashboard, sobrecarga progressiva), Vision faz upload de imagem.
         'timeouts' => [
             'fast_text' => env('AI_TIMEOUT_FAST_TEXT', 6),
-            'vision' => env('AI_TIMEOUT_VISION', 30),
+            'vision' => env('AI_TIMEOUT_VISION', 180),
         ],
     ],
 

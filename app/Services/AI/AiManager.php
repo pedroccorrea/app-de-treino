@@ -56,15 +56,48 @@ class AiManager extends Manager implements AiDriverInterface
     public function generateStructured(string $prompt, ?string $systemInstruction = null, ?AiTask $task = null): array
     {
         return $this->withFailover(
-            fn (AiDriverInterface $driver) => $driver->generateStructured($prompt, $systemInstruction, $task)
+            fn (AiDriverInterface $driver) => $driver->generateStructured($prompt, $systemInstruction, $task),
+            $task
         );
     }
 
     public function analyzeImage(UploadedFile $image, string $prompt, ?string $systemInstruction = null, ?AiTask $task = null): array
     {
         return $this->withFailover(
-            fn (AiDriverInterface $driver) => $driver->analyzeImage($image, $prompt, $systemInstruction, $task)
+            fn (AiDriverInterface $driver) => $driver->analyzeImage($image, $prompt, $systemInstruction, $task),
+            $task
         );
+    }
+
+    /**
+     * Vision tasks (image transcription) are only reliable on Gemini — Groq's
+     * vision model is not accurate enough for reading workout-sheet photos —
+     * so they are pinned to it here regardless of AI_DEFAULT_DRIVER, instead
+     * of trusting every future config change to keep Groq out of the loop.
+     */
+    private function resolvePrimaryDriver(?AiTask $task): string
+    {
+        if ($task === AiTask::Vision) {
+            return 'gemini';
+        }
+
+        return $this->getDefaultDriver();
+    }
+
+    /**
+     * Same guarantee as resolvePrimaryDriver(): a Vision task must never be
+     * allowed to fail over into Groq, even if AI_FALLBACK_DRIVER is (mis)configured
+     * to it.
+     */
+    private function resolveFallbackDriver(?AiTask $task): ?string
+    {
+        $fallbackName = $this->getFallbackDriver();
+
+        if ($task === AiTask::Vision && $fallbackName === 'groq') {
+            return null;
+        }
+
+        return $fallbackName;
     }
 
     /**
@@ -72,9 +105,9 @@ class AiManager extends Manager implements AiDriverInterface
      *
      * @throws AiException
      */
-    private function withFailover(Closure $operation): array
+    private function withFailover(Closure $operation, ?AiTask $task = null): array
     {
-        $primaryName = $this->getDefaultDriver();
+        $primaryName = $this->resolvePrimaryDriver($task);
 
         try {
             return $operation($this->driver($primaryName));
@@ -83,7 +116,7 @@ class AiManager extends Manager implements AiDriverInterface
                 'message' => $primaryException->getMessage(),
             ]);
 
-            $fallbackName = $this->getFallbackDriver();
+            $fallbackName = $this->resolveFallbackDriver($task);
 
             if ($fallbackName === null || $fallbackName === $primaryName) {
                 throw new AiException('Não foi possível concluir a solicitação de IA no momento.', previous: $primaryException);

@@ -103,16 +103,16 @@ class ProgressiveOverloadService
      */
     private function buildPrompt(Collection $sessions, Workout $workout): string
     {
-        $exercises = $workout->exercises->map(fn ($exercise) => [
+        $exercises = $workout->exercises->map(fn($exercise) => [
             'exercise_id' => $exercise->id,
             'name' => $exercise->name,
         ])->values()->all();
 
-        $history = $sessions->map(fn (WorkoutSession $session) => [
+        $history = $sessions->map(fn(WorkoutSession $session) => [
             'date' => $session->completed_at?->toDateString(),
             'sets' => $session->setLogs
                 ->sortBy([['exercise_id', 'asc'], ['set_number', 'asc']])
-                ->map(fn (SetLog $set) => [
+                ->map(fn(SetLog $set) => [
                     'exercise_id' => $set->exercise_id,
                     'exercise' => $set->exercise->name,
                     'set_number' => $set->set_number,
@@ -139,7 +139,7 @@ class ProgressiveOverloadService
         {$historyJson}
 
         Para cada exercise_id presente no histórico, sugira a próxima carga e repetições, com uma justificativa
-        (rationale) curta baseada no desempenho recente. Se o usuário completou as séries com folga, sugira aumento
+        (rationale) curta baseada no desempenho recente. IMPORTANTE: A justificativa (rationale) DEVE ser escrita estritamente em Português do Brasil (pt-BR). Se o usuário completou as séries com folga, sugira aumento
         de carga. Se teve dificuldade ou RPE alto, mantenha a carga e foque em técnica. Informe também seu grau de
         confiança nessa sugestão.
 
@@ -175,7 +175,7 @@ class ProgressiveOverloadService
         }
 
         return collect($recommendations)
-            ->map(fn (mixed $recommendation) => $this->toSuggestion($recommendation, $workoutExerciseIds, $previousPerformance))
+            ->map(fn(mixed $recommendation) => $this->toSuggestion($recommendation, $workoutExerciseIds, $previousPerformance))
             ->filter()
             ->values();
     }

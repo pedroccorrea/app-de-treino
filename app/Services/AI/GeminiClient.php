@@ -75,22 +75,39 @@ class GeminiClient
             $parts[] = ['inlineData' => $inlineImage];
         }
 
-        try {
-            $response = Http::withoutVerifying()
-                ->withHeaders(['x-goog-api-key' => $apiKey])
-                ->timeout(AiTimeoutResolver::resolve($task))
-                ->post(
-                    "https://generativelanguage.googleapis.com/v1beta/models/{$this->model($task)}:generateContent?key={$apiKey}",
-                    [
-                        'contents' => [
-                            ['parts' => $parts],
-                        ],
-                    ]
-                );
-        } catch (Throwable $e) {
-            Log::warning('Falha de comunicação com a API do Gemini.', ['message' => $e->getMessage()]);
+        $maxTries = 3;
+        $response = null;
 
-            throw new GeminiException('Não foi possível comunicar com a IA no momento. Tente novamente em instantes.', previous: $e);
+        for ($attempt = 1; $attempt <= $maxTries; $attempt++) {
+            try {
+                $response = Http::withoutVerifying()
+                    ->withHeaders(['x-goog-api-key' => $apiKey])
+                    ->timeout(AiTimeoutResolver::resolve($task))
+                    ->post(
+                        "https://generativelanguage.googleapis.com/v1beta/models/{$this->model($task)}:generateContent?key={$apiKey}",
+                        [
+                            'contents' => [
+                                ['parts' => $parts],
+                            ],
+                        ]
+                    );
+
+                // Se a API estiver sobrecarregada, esperamos 1 segundo e tentamos de novo.
+                if ($response->status() === 503 && $attempt < $maxTries) {
+                    sleep(1);
+                    continue;
+                }
+
+                break;
+            } catch (Throwable $e) {
+                if ($attempt < $maxTries) {
+                    sleep(1);
+                    continue;
+                }
+
+                Log::warning('Falha de comunicação com a API do Gemini.', ['message' => $e->getMessage()]);
+                throw new GeminiException('Não foi possível comunicar com a IA no momento. Tente novamente em instantes.', previous: $e);
+            }
         }
 
         if ($response->failed()) {
@@ -99,7 +116,7 @@ class GeminiClient
                 'body' => $response->body(),
             ]);
 
-            throw new GeminiException('Erro retornado pelo Google Gemini ('.$response->status().'): '.$response->body());
+            throw new GeminiException('Erro retornado pelo Google Gemini (' . $response->status() . '): ' . $response->body());
         }
 
         $rawText = data_get($response->json(), 'candidates.0.content.parts.0.text');

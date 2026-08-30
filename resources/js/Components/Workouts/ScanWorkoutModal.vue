@@ -21,11 +21,11 @@ const props = defineProps({
 const emit = defineEmits(['close', 'submit']);
 
 // Max width (px) and JPEG quality used to downscale photos taken on a phone
-// camera before upload. Calibrated at 2048px/88% (~500KB) to preserve the
-// legibility of dot-matrix characters printed on thermal-paper workout
-// sheets, while still keeping the file small enough for PHP's upload limits.
-const MAX_WIDTH = 2048;
-const JPEG_QUALITY = 0.88;
+// camera before upload. Calibrated at 800px/70% (<100KB) to ensure the
+// image is small enough for instant upload without cURL timeouts, while
+// still being large enough for Gemini Vision to read text on workout sheets.
+const MAX_WIDTH = 800;
+const JPEG_QUALITY = 0.70;
 
 const cameraInput = ref(null);
 const galleryInput = ref(null);

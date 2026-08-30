@@ -7,12 +7,12 @@ test('FastText requests never budget more than 6 seconds', function () {
     expect(AiTimeoutResolver::resolve(AiTask::FastText))->toBe(6);
 });
 
-test('Vision requests budget up to 30 seconds', function () {
-    expect(AiTimeoutResolver::resolve(AiTask::Vision))->toBe(30);
+test('Vision requests budget up to 180 seconds', function () {
+    expect(AiTimeoutResolver::resolve(AiTask::Vision))->toBe(180);
 });
 
 test('a request without a task falls back to the Vision budget', function () {
-    expect(AiTimeoutResolver::resolve(null))->toBe(30);
+    expect(AiTimeoutResolver::resolve(null))->toBe(180);
 });
 
 test('timeouts are configurable via services.ai.timeouts', function () {
