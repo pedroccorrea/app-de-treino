@@ -515,3 +515,23 @@
 2. `php artisan test` passa em 100% de toda a suíte.
 3. `tests/Architecture/ArchitecturalRulesTest.php` passa sem violações.
 4. `npm run build` compila com zero erros.
+
+# Phase 23: Encerramento Limpo de Sessões Fantasmas e Sincronização do Banner Global
+## Tasks
+1. **Limpeza e Encerramento Atômico de Sessões (`WorkoutSessionService.php`):**
+   - No método `finishSession(WorkoutSession $session)`:
+     * Carimbar `completed_at = now()` na sessão atual.
+     * Encerrar qualquer outra sessão órfã pendente do mesmo usuário que tenha ficado com `completed_at is null` em testes passados.
+   - No método `startSession(User $user, Workout $workout)`:
+     * Se o usuário já possuir alguma sessão aberta com `completed_at is null`, encerrá-la automaticamente antes de abrir a nova sessão.
+   - Criar comando Artisan/Migration ou limpeza no service para fechar todas as sessões antigas atualmente abertas no banco.
+
+2. **Reatividade no Frontend (`ActiveSessionBanner.vue` e `AuthenticatedLayout.vue`):**
+   - Garantir que `ActiveSessionBanner.vue` seja condicional estrito (`v-if="activeWorkoutSession"` lido reativamente das props do Inertia).
+   - Ao receber o redirect de finalização com sucesso, o banner deve desaparecer instantaneamente da barra superior sem deixar resíduos de timer.
+
+## Acceptance Criteria
+1. Teste de Feature `tests/Feature/ActiveSessionCleanupTest.php` valida que finalizar um treino remove completamente a prop `activeWorkoutSession` e que iniciar um novo fecha sessões anteriores.
+2. `php artisan test` passa em 100% de toda a suíte.
+3. `tests/Architecture/ArchitecturalRulesTest.php` passa sem nenhuma violação.
+4. `npm run build` compila com zero erros.
