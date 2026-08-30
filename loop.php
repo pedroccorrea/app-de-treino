@@ -6,22 +6,35 @@ $progressFile = __DIR__ . '/.phases/.progress';
 $manifestFile = __DIR__ . '/.phases/manifest.txt';
 $tempTaskFile = __DIR__ . '/.spec/.active_task.tmp';
 
-// Padrões que indicam erro de INFRAESTRUTURA (limite, auth, rede).
-// Nesses casos o script aborta sem consumir ciclos.
 $infraErrorPattern = '/(session limit|rate limit|usage limit|quota exceeded|Invalid API key|not authenticated|unauthorized|ECONNREFUSED|ETIMEDOUT|network error)/i';
 
 if (!file_exists(__DIR__ . '/.phases')) {
     mkdir(__DIR__ . '/.phases', 0755, true);
 }
 
+// Suporte a override via CLI: php loop.php 14
+if (isset($argv[1]) && is_numeric($argv[1])) {
+    file_put_contents($progressFile, (string) (int) $argv[1]);
+}
+
+function readProgressIndex(string $file): int {
+    if (!file_exists($file)) {
+        file_put_contents($file, '0');
+        return 0;
+    }
+    $raw = (string) file_get_contents($file);
+    // Remove BOM UTF-8 e qualquer caractere não numérico
+    $digitsOnly = preg_replace('/\D/', '', $raw);
+    return $digitsOnly === '' ? 0 : (int) $digitsOnly;
+}
+
 if (!file_exists($progressFile)) {
-    file_put_contents($progressFile, 0);
+    file_put_contents($progressFile, '0');
 }
 
 $content = file_get_contents($phasesFile);
 $phases = preg_split('/^# Phase /m', $content, -1, PREG_SPLIT_NO_EMPTY);
 
-// ─── Pré-voo ──────────────────────────────────────────────────────────────
 echo "🔍 Verificação de pré-voo...\n";
 
 exec('claude --version 2>&1', $vOut, $vCode);
@@ -38,12 +51,12 @@ if (!empty($dirtyPreflight)) {
     exit(1);
 }
 
+$initialPhase = readProgressIndex($progressFile);
 echo "✅ Pré-voo ok. " . count($phases) . " fases carregadas.\n";
-echo "   Fase atual: índice " . (int) trim(file_get_contents($progressFile)) . "\n";
+echo "   Fase atual: índice " . $initialPhase . "\n";
 
-// ─── Loop principal ───────────────────────────────────────────────────────
 while (true) {
-    $currentPhaseIndex = (int) trim(file_get_contents($progressFile));
+    $currentPhaseIndex = readProgressIndex($progressFile);
 
     if ($currentPhaseIndex >= count($phases)) {
         echo "\n" . str_repeat('=', 70) . "\n";
@@ -58,7 +71,7 @@ while (true) {
     $phaseTitle = trim($lines[0]);
 
     echo "\n" . str_repeat('=', 70) . "\n";
-    echo "🚀 EXECUTANDO: Phase " . $phaseTitle . "\n";
+    echo "🚀 EXECUTANDO: Phase " . $phaseTitle . " (Índice: " . $currentPhaseIndex . ")\n";
     echo str_repeat('=', 70) . "\n";
 
     $tries = 0;
@@ -81,7 +94,6 @@ while (true) {
 
         file_put_contents($tempTaskFile, $promptContent);
 
-        // ─── Agente 1: Implementador ──────────────────────────────────────
         echo "🤖 Agente 1 (Implementador) aplicando alterações no disco...\n";
 
         $implOutput = [];
@@ -106,7 +118,6 @@ while (true) {
             exit(3);
         }
 
-        // ─── Gates mecânicos ──────────────────────────────────────────────
         echo "\n⚙️  Executando Esteira Mecânica de Verificação...\n";
 
         $testOutput = [];
@@ -127,7 +138,6 @@ while (true) {
 
         echo "✅ Gates Mecânicos passaram com sucesso (Testes 100% e Build 0 erros)!\n";
 
-        // ─── Agente 2: Auditor ────────────────────────────────────────────
         echo "⚖️  Agente 2 (Auditor Read-Only) inspecionando conformidade com a Spec...\n";
 
         $evalPrompt = "Você é o Auditor de Qualidade Read-Only. Inspecione os arquivos do projeto e valide se a fase abaixo foi integralmente cumprida de acordo com todos os seus Acceptance Criteria e as regras de .ai/rules/.\n\n"
@@ -146,22 +156,18 @@ while (true) {
             exit(2);
         }
 
-        // Detector de veredito — tolerante a markdown, emoji e preâmbulo.
         $isApproved = false;
 
-        // 1) Primeira palavra, ignorando markdown/emoji/pontuação inicial.
         $cleanVerdict = preg_replace('/^[\s#*`>\-–—✅❌📋🏆⚖️🔍\x{1F300}-\x{1FAFF}]+/u', '', $verdictTrimmed);
         $firstWord = strtoupper(preg_split('/[\s,.\-:]+/', $cleanVerdict, -1, PREG_SPLIT_NO_EMPTY)[0] ?? '');
         if ($firstWord === 'DONE') {
             $isApproved = true;
         }
 
-        // 2) Fallback: frases de aprovação explícita em qualquer lugar do texto.
         if (!$isApproved && preg_match('/(cumprida integralmente|integralmente cumprida|fase cumprida|aprovad[ao] integralmente|veredito:?\s*\**\s*(✅|DONE|APROVAD))/iu', $verdictTrimmed)) {
             $isApproved = true;
         }
 
-        // 3) Rejeição explícita tem prioridade sobre os dois acima.
         if (preg_match('/^\s*[#*`\s]*FALTA\b/iu', $verdictTrimmed)
             || preg_match('/(reprovad[ao]|não cumprida|nao cumprida|pendência bloqueante|pendencia bloqueante)/iu', $verdictTrimmed)) {
             $isApproved = false;
@@ -170,27 +176,27 @@ while (true) {
         if ($isApproved) {
             echo "🏆 Auditor aprovou a fase (DONE)!\n";
 
-            $commitMsg = "feat(phase): " . $phaseTitle;
+            $cleanTitle = preg_replace('/^(?:Phase|Fase)\s*\d+:\s*/i', '', $phaseTitle);
+            $commitMsg = "feat(fase-" . ($currentPhaseIndex + 1) . "): " . $cleanTitle;
             $commitOutput = [];
             $commitCode = 0;
             exec('git add -A && git commit -q -m ' . escapeshellarg($commitMsg) . ' 2>&1', $commitOutput, $commitCode);
 
             if ($commitCode !== 0) {
                 echo "\n🛑 [ABORT] O commit falhou:\n" . implode("\n", $commitOutput) . "\n";
-                echo "Fase NÃO avançada. Verifique a configuração do git (user.name/user.email) ou hooks.\n";
+                echo "Fase NÃO avançada. Verifique a configuração do git.\n";
                 exit(4);
             }
 
             $commitSha = trim((string) shell_exec('git rev-parse --short HEAD'));
-            $manifestEntry = date('Y-m-d H:i:s') . " | Phase " . ($currentPhaseIndex + 1) . " | " . $commitSha . " | " . $phaseTitle . "\n";
+            $manifestEntry = date('Y-m-d H:i:s') . " | Fase " . ($currentPhaseIndex + 1) . " | " . $commitSha . " | " . $cleanTitle . "\n";
             file_put_contents($manifestFile, $manifestEntry, FILE_APPEND);
 
             echo "📦 Commit atômico gerado: [$commitSha] '$commitMsg'\n";
 
-            // O manifesto acabou de mudar: commita junto para a árvore ficar limpa.
-            exec('git add -A && git commit -q -m ' . escapeshellarg('chore: atualiza manifesto e progresso') . ' 2>&1');
+            exec('git add -A && git commit -q -m ' . escapeshellarg('chore: atualiza manifesto') . ' 2>&1');
 
-            file_put_contents($progressFile, $currentPhaseIndex + 1);
+            file_put_contents($progressFile, (string) ($currentPhaseIndex + 1));
             exec('git add -A && git commit -q -m ' . escapeshellarg('chore: avanca progresso') . ' 2>&1');
 
             $phasePassed = true;
