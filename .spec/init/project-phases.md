@@ -397,3 +397,27 @@
 2. `php artisan test` passa em 100% de toda a suíte.
 3. `tests/Architecture/ArchitecturalRulesTest.php` passa sem nenhuma violação.
 4. `npm run build` compila com zero erros.
+
+# Phase 18: Otimização de Entrada, Fluxo de Login, Remoção de Autofoco Mobile e Blindagem PWA
+## Tasks
+1. **Redirecionamento da Rota Raiz (`routes/web.php`):**
+   - Na rota raiz `/`, redirecionar para a `dashboard` caso o usuário esteja autenticado (`auth()->check()`), ou para a rota `login` caso seja um visitante.
+
+2. **Ajuste na Tela de Login (`resources/js/Pages/Auth/Login.vue`):**
+   - Garantir link claro, estilizado e acessível para a rota de cadastro (`route('register')`), permitindo novos usuários se registrarem facilmente.
+
+3. **Remoção de Autofoco em Telas Mobile:**
+   - Em `resources/js/Pages/Workouts/Edit.vue` e formulários de criação/edição: remover qualquer atributo `autofocus` dos inputs para evitar a abertura automática indesejada do teclado virtual em celulares.
+
+4. **Blindagem PWA no HTML Principal (`resources/views/app.blade.php`):**
+   - Adicionar meta tags PWA para Android e iOS:
+     * `viewport-fit=cover` na meta tag viewport (para suporte correto ao entalhe/notch do iPhone).
+     * `apple-mobile-web-app-capable` e `mobile-web-app-capable` com valor `yes`.
+     * `apple-mobile-web-app-status-bar-style` como `black-translucent`.
+     * Link para `/manifest.json` e script de registro do Service Worker `/sw.js`.
+
+## Acceptance Criteria
+1. Teste de Feature valida que a rota raiz `/` redireciona para `/dashboard` quando logado e para `/login` quando visitante.
+2. `resources/views/app.blade.php` possui a tag com `viewport-fit=cover` e registro do service worker.
+3. `php artisan test` passa em 100% de toda a suíte.
+4. `npm run build` compila sem erros.
