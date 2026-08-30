@@ -12,3 +12,4 @@
 2026-08-27 22:05:31 | Phase 11 | 960f5d3 | 10: PWA Completo e Instalável no Celular
 2026-08-28 09:19:03 | Phase 14 | e4e6b3c | 14: Propagação do Design System às Telas Existentes
 2026-08-30 10:10:14 | Fase 15 | e36e368 | 15: Contrato Estruturado do Motor de Sobrecarga Progressiva
+2026-08-30 10:16:59 | Fase 16 | 2876ab8 | 16: Tela de Histórico e Progressão por Exercício
