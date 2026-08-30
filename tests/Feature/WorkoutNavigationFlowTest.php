@@ -1,7 +1,9 @@
 <?php
 
+use App\Models\Exercise;
 use App\Models\User;
 use App\Models\WorkoutProgram;
+use Database\Seeders\ExerciseSeeder;
 
 test('creating a workout linked to a program redirects back to the program page', function () {
     $user = User::factory()->create();
@@ -93,4 +95,39 @@ test('deleting a workout without return_to redirects to the workouts list', func
     $response = $this->actingAs($user)->delete(route('workouts.destroy', $workout));
 
     $response->assertRedirect(route('workouts.index'));
+});
+
+test('exercise history page carries the active session URL forward as return_to, unmodified', function () {
+    $this->seed(ExerciseSeeder::class);
+    $user = User::factory()->create();
+    $exercise = Exercise::first();
+
+    $workout = $user->workouts()->create(['name' => 'Treino Peito']);
+    $workout->workoutExercises()->create([
+        'exercise_id' => $exercise->id,
+        'order' => 0,
+        'target_sets' => 3,
+        'target_reps' => '10',
+    ]);
+
+    $session = $user->workoutSessions()->create([
+        'workout_id' => $workout->id,
+        'started_at' => now(),
+    ]);
+
+    // This mirrors the link ExerciseActiveCard.vue builds: the exercise's
+    // name links to its history page carrying the current (active session)
+    // URL as return_to, so the history page's back button can bring the
+    // user exactly back here — the invariant in .ai/rules/navigation-flow-invariants.md.
+    $sessionUrl = route('workout-sessions.show', $session);
+
+    $response = $this->actingAs($user)->get(route('exercises.history', [
+        'exercise' => $exercise,
+        'return_to' => $sessionUrl,
+    ]));
+
+    $response->assertOk();
+    $response->assertInertia(fn ($page) => $page->component('Exercises/History'));
+
+    expect($response->baseRequest->query('return_to'))->toBe($sessionUrl);
 });

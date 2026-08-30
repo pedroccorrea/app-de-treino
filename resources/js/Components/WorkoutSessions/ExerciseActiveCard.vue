@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue';
+import { Link } from '@inertiajs/vue3';
 import BaseCard from '@/Components/UI/BaseCard.vue';
 import CompleteSetButton from '@/Components/WorkoutSessions/CompleteSetButton.vue';
 import LoadRepsHero from '@/Components/WorkoutSessions/LoadRepsHero.vue';
@@ -98,6 +99,16 @@ const restDisplay = computed(() => {
     const s = total % 60;
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 });
+
+// Ponto de entrada para a tela de histórico do exercício: a sessão ativa
+// (esta própria página) vira o return_to, para o botão Voltar do histórico
+// trazer o usuário de volta exatamente para cá.
+const historyUrl = computed(() =>
+    route('exercises.history', {
+        exercise: props.exercise.id,
+        return_to: window.location.pathname + window.location.search,
+    }),
+);
 </script>
 
 <template>
@@ -106,7 +117,12 @@ const restDisplay = computed(() => {
         <BaseCard class="mb-4">
             <div class="flex items-start justify-between gap-3">
                 <div class="min-w-0 flex-1">
-                    <h2 class="text-xl font-bold text-white truncate">{{ exercise.name }}</h2>
+                    <Link :href="historyUrl" class="inline-flex items-center gap-1.5 group">
+                        <h2 class="text-xl font-bold text-white truncate group-hover:text-violet-400 transition">{{ exercise.name }}</h2>
+                        <svg class="h-4 w-4 shrink-0 text-gray-500 group-hover:text-violet-400 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                        </svg>
+                    </Link>
                     <p class="mt-0.5 text-sm text-gray-400">{{ exercise.primary_muscle }}</p>
                 </div>
             </div>

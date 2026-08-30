@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\ExerciseHistoryController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\WorkoutController;
 use App\Http\Controllers\WorkoutProgramController;
@@ -61,6 +62,8 @@ Route::middleware('auth')->group(function () {
     Route::get('/workout-sessions/{session}', [WorkoutSessionController::class, 'show'])->name('workout-sessions.show');
     Route::post('/workout-sessions/{session}/sets', [WorkoutSessionController::class, 'logSet'])->name('workout-sessions.sets.store');
     Route::post('/workout-sessions/{session}/finish', [WorkoutSessionController::class, 'finish'])->name('workout-sessions.finish');
+
+    Route::get('/exercises/{exercise}/history', [ExerciseHistoryController::class, 'show'])->name('exercises.history');
 
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
