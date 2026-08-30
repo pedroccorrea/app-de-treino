@@ -77,7 +77,7 @@ class GeminiClient
         try {
             $response = Http::withoutVerifying()
                 ->withHeaders(['x-goog-api-key' => $apiKey])
-                ->timeout(90)
+                ->timeout(60)
                 ->post(
                     "https://generativelanguage.googleapis.com/v1beta/models/{$this->model($task)}:generateContent?key={$apiKey}",
                     [

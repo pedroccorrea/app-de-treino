@@ -40,7 +40,7 @@ return [
         'model' => env('GEMINI_MODEL', 'gemini-3.7-flash'),
         'models' => [
             'vision' => env('GEMINI_VISION_MODEL', 'gemini-3.7-flash'),
-            'fast_text' => env('GEMINI_FAST_TEXT_MODEL', 'gemini-3.7-flash-lite'),
+            'fast_text' => env('GEMINI_FAST_TEXT_MODEL', 'gemini-3.7-flash'),
         ],
     ],
 
