@@ -478,3 +478,40 @@
 3. `php artisan test` passa em 100% de toda a suíte.
 4. `tests/Architecture/ArchitecturalRulesTest.php` passa sem violações.
 5. `npm run build` compila com zero erros.
+
+# Phase 21: Roteamento Semântico de Modelos por Tarefa (Task-Based AI Routing)
+## Tasks
+1. **Enum de Tarefas de IA (`app/Enums/AiTask.php`):**
+   - Criar o enum `AiTask` com os casos `Vision` e `FastText`.
+2. **Refatoração do `AiManager` e Drivers (`app/Services/AI/`):**
+   - Atualizar `AiDriverInterface`, `GeminiDriver` e `ClaudeDriver` para aceitarem `?AiTask $task = null`.
+   - Atualizar `config/services.php` com os modelos padrão de cada tarefa e provedor.
+   - No `AiManager`: resolver dinamicamente o modelo correspondente à tarefa e driver ativo com auto-failover seguro.
+3. **Consumo nos Serviços:**
+   - `WorkoutScannerService`: chamar `aiManager->analyzeImage(..., task: AiTask::Vision)`.
+   - `ProgressiveOverloadService` e `DashboardAnalyticsService`: chamar `aiManager->generateStructured(..., task: AiTask::FastText)`.
+
+## Acceptance Criteria
+1. `tests/Feature/AiTaskRoutingTest.php` passa 100% validando o roteamento por `AiTask`.
+2. `php artisan test` passa em 100% de toda a suíte.
+3. `tests/Architecture/ArchitecturalRulesTest.php` passa sem nenhuma violação.
+4. `npm run build` compila com zero erros.
+
+# Phase 22: Sessão Ativa em Segundo Plano e Indicador Global de Treino
+## Tasks
+1. **Compartilhamento de Sessão Ativa no Inertia:**
+   - Em `app/Http/Middleware/HandleInertiaRequests.php`: compartilhar globalmente a prop `activeWorkoutSession` (contendo `id`, `workout_name`, `started_at`) caso o usuário autenticado possua uma sessão em andamento (`completed_at is null`).
+
+2. **Navegação Livre e Menu Acessível em `Active.vue`:**
+   - Garantir que a barra superior com o botão hambúrguer do menu continue acessível na tela de treino ativo, permitindo ao usuário navegar livremente para outras páginas sem interromper a sessão.
+
+3. **Componente Indicador Global (`resources/js/Components/Navigation/ActiveSessionBanner.vue`):**
+   - Criar o componente de indicador pulsante no topo/header do `AuthenticatedLayout.vue`.
+   - Quando `activeWorkoutSession` existir e o usuário NÃO estiver na rota `workout-sessions.show`, exibir o banner/pílula com brilho roxo no canto superior direito: "🔥 Treino em andamento" com o tempo decorrido ao vivo.
+   - Clicar no indicador navega imediatamente para `route('workout-sessions.show', activeWorkoutSession.id)`.
+
+## Acceptance Criteria
+1. `tests/Feature/ActiveSessionGlobalBannerTest.php` valida que a prop `activeWorkoutSession` é compartilhada quando há sessão aberta e ausente quando todas estão finalizadas.
+2. `php artisan test` passa em 100% de toda a suíte.
+3. `tests/Architecture/ArchitecturalRulesTest.php` passa sem violações.
+4. `npm run build` compila com zero erros.
