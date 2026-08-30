@@ -16,3 +16,4 @@
 2026-08-30 12:45:54 | Fase 19 | 93167fe | 19: Consultas de IA Assíncronas, Degradação Graciosa e Desduplicação de Timers
 2026-08-30 16:48:47 | Fase 20 | bf5314a | 20: Arquitetura AiManager, Provedores Pluggáveis (Driver Pattern) e Auto-Failover
 2026-08-30 17:20:37 | Fase 21 | debb73f | 21: Roteamento Semântico de Modelos por Tarefa (Task-Based AI Routing)
+2026-08-30 17:26:20 | Fase 22 | 6dcee8f | 22: Sessão Ativa em Segundo Plano e Indicador Global de Treino
