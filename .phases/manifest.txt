@@ -19,3 +19,4 @@
 2026-08-30 17:26:20 | Fase 22 | 6dcee8f | 22: Sessão Ativa em Segundo Plano e Indicador Global de Treino
 2026-08-30 17:36:56 | Fase 23 | c30e9b8 | 23: Encerramento Limpo de Sessões Fantasmas e Sincronização do Banner Global
 2026-08-30 18:21:49 | Fase 24 | c561c4e | 24: Otimização Extrema de Latência de IA, Timeouts Curtos e Driver Groq Ultrarrápido
+2026-08-30 18:39:16 | Fase 25 | 8409848 | 25: Calibração de Imagem 2K e Prompt Especializado em Cupons Térmicos
