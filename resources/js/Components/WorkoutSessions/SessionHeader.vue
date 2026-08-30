@@ -22,22 +22,34 @@ defineProps({
     },
 });
 
-defineEmits(['open-drawer']);
+defineEmits(['open-drawer', 'open-menu']);
 </script>
 
 <template>
     <header class="flex-shrink-0 border-b border-gray-800 bg-gray-900/80 backdrop-blur-sm px-4 py-3">
         <div class="flex items-center justify-between gap-3">
-            <div class="min-w-0">
-                <div class="flex items-center gap-2">
-                    <span class="relative flex h-2 w-2 flex-shrink-0">
-                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-75"></span>
-                        <span class="relative inline-flex rounded-full h-2 w-2 bg-violet-500"></span>
-                    </span>
-                    <p class="truncate text-sm font-bold text-white">{{ workoutName }}</p>
-                </div>
-                <div class="mt-0.5 flex items-center gap-3">
-                    <p class="text-xs font-mono text-violet-400">⏱ {{ elapsedDisplay }}</p>
+            <div class="flex min-w-0 items-center gap-3">
+                <button
+                    type="button"
+                    class="-ms-1 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-gray-300 transition hover:bg-gray-800 hover:text-white"
+                    @click="$emit('open-menu')"
+                >
+                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+                    </svg>
+                </button>
+
+                <div class="min-w-0">
+                    <div class="flex items-center gap-2">
+                        <span class="relative flex h-2 w-2 flex-shrink-0">
+                            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-75"></span>
+                            <span class="relative inline-flex rounded-full h-2 w-2 bg-violet-500"></span>
+                        </span>
+                        <p class="truncate text-sm font-bold text-white">{{ workoutName }}</p>
+                    </div>
+                    <div class="mt-0.5 flex items-center gap-3">
+                        <p class="text-xs font-mono text-violet-400">⏱ {{ elapsedDisplay }}</p>
+                    </div>
                 </div>
             </div>
 

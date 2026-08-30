@@ -1,4 +1,5 @@
 <script setup>
+import Sidebar from '@/Components/Navigation/Sidebar.vue';
 import ExerciseActiveCard from '@/Components/WorkoutSessions/ExerciseActiveCard.vue';
 import ExerciseOverviewDrawer from '@/Components/WorkoutSessions/ExerciseOverviewDrawer.vue';
 import ExerciseStepper from '@/Components/WorkoutSessions/ExerciseStepper.vue';
@@ -8,6 +9,13 @@ import RestTimerOverlay from '@/Components/WorkoutSessions/RestTimerOverlay.vue'
 import SessionHeader from '@/Components/WorkoutSessions/SessionHeader.vue';
 import { Head, router } from '@inertiajs/vue3';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+
+// ─── Menu lateral (navegação livre sem interromper a sessão) ──────────────────
+const sidebarOpen = ref(false);
+
+const logout = () => {
+    router.post(route('logout'));
+};
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 const props = defineProps({
@@ -522,6 +530,7 @@ watch(
             :total-planned-sets="totalPlannedSets"
             :progress-percent="progressPercent"
             @open-drawer="showDrawer = true"
+            @open-menu="sidebarOpen = true"
         />
 
         <ExerciseStepper
@@ -608,4 +617,6 @@ watch(
         @confirm="finishWorkout"
         @cancel="showFinishModal = false"
     />
+
+    <Sidebar :open="sidebarOpen" @close="sidebarOpen = false" @logout="logout" />
 </template>

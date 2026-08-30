@@ -1,6 +1,7 @@
 <script setup>
 import { ref, watch } from 'vue';
 import SetwaveLogo from '@/Components/Brand/SetwaveLogo.vue';
+import ActiveSessionBanner from '@/Components/Navigation/ActiveSessionBanner.vue';
 import Sidebar from '@/Components/Navigation/Sidebar.vue';
 import { router, usePage } from '@inertiajs/vue3';
 
@@ -46,6 +47,8 @@ watch(
 <template>
     <div class="min-h-screen bg-surface-base">
         <Sidebar :open="sidebarOpen" @close="sidebarOpen = false" @logout="logout" />
+
+        <ActiveSessionBanner />
 
         <div class="flex min-h-screen flex-col lg:pl-64">
             <!-- Mobile top bar -->

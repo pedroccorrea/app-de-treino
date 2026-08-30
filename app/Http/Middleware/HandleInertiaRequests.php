@@ -38,6 +38,37 @@ class HandleInertiaRequests extends Middleware
                 'success' => fn () => $request->session()->get('success'),
                 'error' => fn () => $request->session()->get('error'),
             ],
+            'activeWorkoutSession' => fn () => $this->formatActiveWorkoutSession($request),
+        ];
+    }
+
+    /**
+     * The authenticated user's in-progress workout session (if any), shared
+     * globally so any page can render the "treino em andamento" indicator
+     * without an extra round trip.
+     */
+    private function formatActiveWorkoutSession(Request $request): ?array
+    {
+        $user = $request->user();
+
+        if (! $user) {
+            return null;
+        }
+
+        $session = $user->workoutSessions()
+            ->whereNull('completed_at')
+            ->with('workout')
+            ->latest('started_at')
+            ->first();
+
+        if (! $session) {
+            return null;
+        }
+
+        return [
+            'id' => $session->id,
+            'workout_name' => $session->workout->name,
+            'started_at' => $session->started_at,
         ];
     }
 }
