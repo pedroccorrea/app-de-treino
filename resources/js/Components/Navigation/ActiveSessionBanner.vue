@@ -1,9 +1,12 @@
 <script setup>
 import { Link, usePage } from '@inertiajs/vue3';
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onUnmounted, ref, watch } from 'vue';
 
 const page = usePage();
 
+// Lida reativamente com a prop compartilhada pelo Inertia: assim que o
+// backend deixa de enviar uma sessão aberta (ex: redirect pós-finalização),
+// esse computed cai para `null` e o banner some sem nenhum passo manual.
 const activeSession = computed(() => page.props.activeWorkoutSession ?? null);
 
 const isOnSessionPage = computed(() => route().current('workout-sessions.show'));
@@ -14,15 +17,30 @@ const showBanner = computed(() => activeSession.value !== null && !isOnSessionPa
 const now = ref(Date.now());
 let tick = null;
 
-onMounted(() => {
-    tick = setInterval(() => {
-        now.value = Date.now();
-    }, 1000);
-});
-
-onUnmounted(() => {
+const stopTick = () => {
     clearInterval(tick);
-});
+    tick = null;
+};
+
+// O intervalo só existe enquanto houver sessão ativa: ao finalizar o
+// treino, `activeSession` vira null, o timer é destruído imediatamente e
+// nenhum resíduo (id antigo, contagem congelada) sobra para a próxima sessão.
+watch(
+    activeSession,
+    (session) => {
+        stopTick();
+        now.value = Date.now();
+
+        if (session) {
+            tick = setInterval(() => {
+                now.value = Date.now();
+            }, 1000);
+        }
+    },
+    { immediate: true },
+);
+
+onUnmounted(stopTick);
 
 const elapsedDisplay = computed(() => {
     if (!activeSession.value?.started_at) return '00:00';
