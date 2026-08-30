@@ -557,3 +557,21 @@
 3. `tests/Feature/AiResilienceTest.php` valida que falhas de rede não produzem status 500 na sessão de treino.
 4. `php artisan test` passa em 100% de toda a suíte.
 5. `npm run build` compila sem erros.
+
+# Phase 25: Calibração de Imagem 2K e Prompt Especializado em Cupons Térmicos
+## Tasks
+1. **Calibração de Resolução no Frontend (`ScanWorkoutModal.vue`):**
+   - Ajustar a compressão Canvas para uma resolução máxima de **2048px (2K)** na maior dimensão e qualidade JPEG em **88%** com `imageSmoothingQuality = 'high'`.
+   - Isso preserva a nitidez dos caracteres em matriz de pontos de cupons térmicos sem estourar a memória do PHP (~500KB de arquivo).
+
+2. **Especialização do Prompt de Leitura (`WorkoutScannerService.php`):**
+   - Atualizar o prompt da IA com diretrizes específicas para comprovantes térmicos:
+     * Identificação de abreviações comuns (`S: 3` = 3 séries, `Rept: 10-12` = 12 reps).
+     * Mapeamento de variações de pegada (`P. PRONADA`, `P. SUPINADA`, etc.) salvando os detalhes no campo `notes` do exercício.
+     * Extração do nome da divisão ou treino a partir do cabeçalho da ficha (ex: "Treino 1 - Costas e Ombros").
+
+## Acceptance Criteria
+1. `tests/Feature/WorkoutScannerTest.php` passa em 100%.
+2. `php artisan test` passa em 100% de toda a suíte.
+3. `tests/Architecture/ArchitecturalRulesTest.php` passa sem violações.
+4. `npm run build` compila com zero erros.
