@@ -55,6 +55,7 @@ Route::middleware('auth')->group(function () {
     Route::delete('/programs/{program}/workouts/{workout}/detach', [WorkoutProgramController::class, 'detachWorkout'])->name('programs.workouts.detach');
 
     Route::get('/workout-sessions/{session}', [WorkoutSessionController::class, 'show'])->name('workout-sessions.show');
+    Route::get('/workout-sessions/{session}/overload-suggestions', [WorkoutSessionController::class, 'overloadSuggestions'])->name('workout-sessions.overload-suggestions');
     Route::post('/workout-sessions/{session}/sets', [WorkoutSessionController::class, 'logSet'])->name('workout-sessions.sets.store');
     Route::post('/workout-sessions/{session}/finish', [WorkoutSessionController::class, 'finish'])->name('workout-sessions.finish');
 

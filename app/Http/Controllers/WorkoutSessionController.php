@@ -9,6 +9,7 @@ use App\Models\Workout;
 use App\Models\WorkoutSession;
 use App\Services\ProgressiveOverloadService;
 use App\Services\WorkoutSessionService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -27,7 +28,7 @@ class WorkoutSessionController extends Controller
             ->with('success', 'Treino iniciado! Bom treino!');
     }
 
-    public function show(Request $request, WorkoutSession $session, WorkoutSessionService $service, ProgressiveOverloadService $overloadService): Response
+    public function show(Request $request, WorkoutSession $session, WorkoutSessionService $service): Response
     {
         abort_if($session->user_id !== $request->user()->id, 403);
 
@@ -76,18 +77,31 @@ class WorkoutSessionController extends Controller
             'exercises' => $exercises,
             'setLogs' => $setLogs,
             'lastLogs' => (object) $lastLogs,
-            'overloadSuggestions' => $workout
+        ]);
+    }
+
+    /**
+     * AI-backed overload suggestions are fetched by the frontend in the
+     * background after the session screen has already rendered, so a slow
+     * or failing Gemini call never blocks opening the workout session.
+     * ProgressiveOverloadService already degrades to an empty collection on
+     * any Gemini/JSON failure, so this only shapes the typed DTOs into a
+     * plain JSON payload — no parsing happens here.
+     */
+    public function overloadSuggestions(Request $request, WorkoutSession $session, ProgressiveOverloadService $overloadService): JsonResponse
+    {
+        abort_if($session->user_id !== $request->user()->id, 403);
+
+        $workout = $session->workout;
+
+        return response()->json([
+            'suggestions' => $workout
                 ? $this->safeOverloadSuggestions($overloadService, $request->user(), $workout)
                 : [],
         ]);
     }
 
     /**
-     * The overload suggestions are the only AI-backed part of the active
-     * session screen; ProgressiveOverloadService already degrades to an
-     * empty collection on any Gemini/JSON failure, so this only shapes the
-     * typed DTOs into plain props — no parsing happens here.
-     *
      * @return array<int, array{exercise_id: int, suggested_load: float, suggested_reps: int, previous_load: ?float, previous_reps: ?int, rationale: string, confidence: string}>
      */
     private function safeOverloadSuggestions(ProgressiveOverloadService $overloadService, User $user, Workout $workout): array

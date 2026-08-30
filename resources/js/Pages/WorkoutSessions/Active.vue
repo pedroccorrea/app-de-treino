@@ -16,7 +16,6 @@ const props = defineProps({
     exercises: { type: Array, required: true },
     setLogs: { type: Array, default: () => [] },
     lastLogs: { type: Object, default: () => ({}) },
-    overloadSuggestions: { type: Array, default: () => [] },
 });
 
 // ─── Sorted exercises ─────────────────────────────────────────────────────────
@@ -30,12 +29,33 @@ const currentExercise = computed(() => sortedExercises.value[currentIndex.value]
 const totalExercises = computed(() => sortedExercises.value.length);
 
 // ─── AI overload suggestion for the exercise in focus ──────────────────────────
+// Fetched in the background after the screen renders, so a slow or failing
+// Gemini call never blocks opening the session — the user can start Série 1
+// immediately, and cards update silently once the suggestions arrive.
 // dismissedSuggestions[exerciseId] = true once the user closes the card for it.
 const dismissedSuggestions = ref({});
+const overloadSuggestions = ref([]);
+const overloadStatus = ref('loading'); // 'loading' | 'ready' | 'error'
+
+const fetchOverloadSuggestions = async () => {
+    overloadStatus.value = 'loading';
+    try {
+        const response = await fetch(route('workout-sessions.overload-suggestions', props.session.id), {
+            headers: { Accept: 'application/json' },
+        });
+        if (!response.ok) throw new Error('overload-suggestions request failed');
+        const data = await response.json();
+        overloadSuggestions.value = Array.isArray(data.suggestions) ? data.suggestions : [];
+        overloadStatus.value = 'ready';
+    } catch (_) {
+        overloadSuggestions.value = [];
+        overloadStatus.value = 'error';
+    }
+};
 
 const currentOverloadSuggestion = computed(() => {
     if (dismissedSuggestions.value[currentExercise.value?.id]) return null;
-    return props.overloadSuggestions.find((s) => s.exercise_id === currentExercise.value?.id) ?? null;
+    return overloadSuggestions.value.find((s) => s.exercise_id === currentExercise.value?.id) ?? null;
 });
 
 const dismissOverloadSuggestion = () => {
@@ -467,6 +487,7 @@ onMounted(() => {
     workoutTimerInterval = setInterval(() => { elapsedSeconds.value++; }, 1000);
     sortedExercises.value.forEach((ex) => initSetsForExercise(ex));
     autoStartNextSet(currentExercise.value);
+    fetchOverloadSuggestions();
 });
 
 onUnmounted(() => {
@@ -497,8 +518,6 @@ watch(
         <SessionHeader
             :workout-name="workout.name"
             :elapsed-display="elapsedDisplay"
-            :exercise-timer-active="exerciseTimerActive"
-            :exercise-timer-display="exerciseTimerDisplay"
             :total-done-sets="totalDoneSets"
             :total-planned-sets="totalPlannedSets"
             :progress-percent="progressPercent"
@@ -515,6 +534,7 @@ watch(
             <ExerciseActiveCard
                 :exercise="currentExercise"
                 :overload-suggestion="currentOverloadSuggestion"
+                :overload-status="overloadStatus"
                 :last-log="currentLastLog"
                 :set-inputs="setInputs[currentExercise.id]"
                 :sets="currentSets"

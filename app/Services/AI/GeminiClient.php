@@ -4,6 +4,7 @@ namespace App\Services\AI;
 
 use App\Exceptions\GeminiException;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
@@ -83,16 +84,25 @@ class GeminiClient
                     ]
                 );
         } catch (Throwable $e) {
+            Log::warning('Falha de comunicação com a API do Gemini.', ['message' => $e->getMessage()]);
+
             throw new GeminiException('Não foi possível comunicar com a IA no momento. Tente novamente em instantes.', previous: $e);
         }
 
         if ($response->failed()) {
+            Log::warning('A API do Gemini retornou um erro.', [
+                'status' => $response->status(),
+                'body' => $response->body(),
+            ]);
+
             throw new GeminiException('Erro retornado pelo Google Gemini ('.$response->status().'): '.$response->body());
         }
 
         $rawText = data_get($response->json(), 'candidates.0.content.parts.0.text');
 
         if (! is_string($rawText) || trim($rawText) === '') {
+            Log::warning('A API do Gemini não retornou nenhum conteúdo de texto.');
+
             throw new GeminiException('A IA não retornou nenhum conteúdo.');
         }
 
@@ -110,6 +120,8 @@ class GeminiClient
         $parsed = json_decode($sanitized, true);
 
         if (json_last_error() !== JSON_ERROR_NONE || ! is_array($parsed)) {
+            Log::warning('Não foi possível interpretar a resposta JSON da IA.', ['raw_text' => $rawText]);
+
             throw new GeminiException('Não foi possível interpretar a resposta da IA.');
         }
 

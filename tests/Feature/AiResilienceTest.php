@@ -68,17 +68,18 @@ test('scanning a workout sheet never returns a fatal 500 when Gemini times out',
 
     $response->assertStatus(302);
     $response->assertRedirect(route('workouts.index'));
-    $response->assertSessionHas('error');
+    $response->assertSessionHas('error', 'Não foi possível ler esta imagem. Tente tirar uma foto mais nítida ou aproximada.');
     expect($user->workouts()->count())->toBe(0);
 });
 
-test('starting a workout session never returns a fatal 500 when Gemini times out', function () {
+test('opening a workout session never returns a fatal 500 when Gemini times out, since it never calls the AI synchronously', function () {
     fakeGeminiNetworkTimeout();
     $user = User::factory()->create();
     $workout = Workout::factory()->for($user)->create();
 
-    // A completed session in the past makes the active-session screen try to
-    // fetch automatic overload suggestions from Gemini.
+    // A completed session in the past would make the background
+    // overload-suggestions request try to reach Gemini, but the active
+    // session screen itself must never wait on it.
     $user->workoutSessions()->create([
         'workout_id' => $workout->id,
         'started_at' => now()->subDay()->subHour(),
@@ -90,14 +91,33 @@ test('starting a workout session never returns a fatal 500 when Gemini times out
         'started_at' => now(),
     ]);
 
-    $response = $this->actingAs($user)->get(route('workout-sessions.show', $session));
+    $this->actingAs($user)
+        ->get(route('workout-sessions.show', $session))
+        ->assertOk();
 
-    $response->assertOk();
-    $response->assertInertia(
-        fn ($page) => $page
-            ->component('WorkoutSessions/Active')
-            ->where('overloadSuggestions', [])
-    );
+    Http::assertNothingSent();
+});
+
+test('the background overload-suggestions request degrades to an empty list without a fatal 500 when Gemini times out', function () {
+    fakeGeminiNetworkTimeout();
+    $user = User::factory()->create();
+    $workout = Workout::factory()->for($user)->create();
+
+    $user->workoutSessions()->create([
+        'workout_id' => $workout->id,
+        'started_at' => now()->subDay()->subHour(),
+        'completed_at' => now()->subDay(),
+    ]);
+
+    $session = $user->workoutSessions()->create([
+        'workout_id' => $workout->id,
+        'started_at' => now(),
+    ]);
+
+    $this->actingAs($user)
+        ->getJson(route('workout-sessions.overload-suggestions', $session))
+        ->assertOk()
+        ->assertExactJson(['suggestions' => []]);
 });
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -114,11 +134,11 @@ test('scanning a workout sheet handles broken markdown from the AI gracefully', 
 
     $response->assertStatus(302);
     $response->assertRedirect(route('workouts.index'));
-    $response->assertSessionHas('error');
+    $response->assertSessionHas('error', 'Não foi possível ler esta imagem. Tente tirar uma foto mais nítida ou aproximada.');
     expect($user->workouts()->count())->toBe(0);
 });
 
-test('starting a workout session falls back to no suggestions when the AI returns broken markdown', function () {
+test('the background overload-suggestions request falls back to no suggestions when the AI returns broken markdown', function () {
     fakeGeminiBrokenMarkdown();
     $user = User::factory()->create();
     $workout = Workout::factory()->for($user)->create();
@@ -134,14 +154,10 @@ test('starting a workout session falls back to no suggestions when the AI return
         'started_at' => now(),
     ]);
 
-    $response = $this->actingAs($user)->get(route('workout-sessions.show', $session));
-
-    $response->assertOk();
-    $response->assertInertia(
-        fn ($page) => $page
-            ->component('WorkoutSessions/Active')
-            ->where('overloadSuggestions', [])
-    );
+    $this->actingAs($user)
+        ->getJson(route('workout-sessions.overload-suggestions', $session))
+        ->assertOk()
+        ->assertExactJson(['suggestions' => []]);
 });
 
 // ─────────────────────────────────────────────────────────────────────────

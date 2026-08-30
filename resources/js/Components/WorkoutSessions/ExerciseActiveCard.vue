@@ -17,6 +17,12 @@ const props = defineProps({
         type: Object,
         default: null,
     },
+    // 'loading' | 'ready' | 'error' — drives the discreet AI-suggestion
+    // states while the overload-suggestions request runs in the background.
+    overloadStatus: {
+        type: String,
+        default: 'ready',
+    },
     lastLog: {
         type: Object,
         default: null,
@@ -154,8 +160,14 @@ const historyUrl = computed(() =>
         </BaseCard>
 
         <!-- AI-backed load suggestion, before/while executing this exercise -->
+        <p
+            v-if="overloadStatus === 'loading' && !overloadSuggestion && !isExerciseDone"
+            class="mb-4 text-xs text-gray-500"
+        >
+            💡 Analisando histórico de cargas...
+        </p>
         <OverloadSuggestionCard
-            v-if="overloadSuggestion && !isExerciseDone"
+            v-else-if="overloadSuggestion && !isExerciseDone"
             class="mb-4"
             :suggested-load="overloadSuggestion.suggested_load"
             :suggested-reps="overloadSuggestion.suggested_reps"
@@ -165,6 +177,12 @@ const historyUrl = computed(() =>
             @apply="$emit('apply-overload-suggestion', $event)"
             @dismiss="$emit('dismiss-overload-suggestion')"
         />
+        <p
+            v-else-if="overloadStatus === 'error' && !isExerciseDone"
+            class="mb-4 text-xs text-gray-500"
+        >
+            Mantenha a carga anterior ou progrida conforme se sentir confortável
+        </p>
 
         <!-- ─── Sets ─────────────────────────────────────────────── -->
         <div class="space-y-3">

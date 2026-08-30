@@ -82,7 +82,52 @@ test('authenticated user can view active workout session page', function () {
         );
 });
 
-test('opening a session with completed history automatically loads AI overload suggestions', function () {
+test('opening an active workout session never performs an external HTTP call', function () {
+    $this->seed(ExerciseSeeder::class);
+    $user = User::factory()->create();
+    $exercise = Exercise::first();
+
+    $workout = $user->workouts()->create(['name' => 'Treino Peito']);
+    $workout->workoutExercises()->create([
+        'exercise_id' => $exercise->id,
+        'order' => 0,
+        'target_sets' => 4,
+        'target_reps' => '8-12',
+    ]);
+
+    $pastSession = $user->workoutSessions()->create([
+        'workout_id' => $workout->id,
+        'started_at' => now()->subDay()->subHour(),
+        'completed_at' => now()->subDay(),
+    ]);
+    $pastSession->setLogs()->create([
+        'exercise_id' => $exercise->id,
+        'set_number' => 1,
+        'weight' => 30,
+        'reps' => 12,
+        'rpe' => 7,
+    ]);
+
+    Http::fake();
+
+    $session = $user->workoutSessions()->create([
+        'workout_id' => $workout->id,
+        'started_at' => now(),
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('workout-sessions.show', $session))
+        ->assertOk()
+        ->assertInertia(
+            fn ($page) => $page
+                ->component('WorkoutSessions/Active')
+                ->missing('overloadSuggestions')
+        );
+
+    Http::assertNothingSent();
+});
+
+test('the overload-suggestions endpoint returns AI recommendations for a session with completed history', function () {
     $this->seed(ExerciseSeeder::class);
     $user = User::factory()->create();
     $exercise = Exercise::first();
@@ -143,35 +188,33 @@ test('opening a session with completed history automatically loads AI overload s
     ]);
 
     $this->actingAs($user)
-        ->get(route('workout-sessions.show', $session))
+        ->getJson(route('workout-sessions.overload-suggestions', $session))
         ->assertOk()
-        ->assertInertia(
-            fn ($page) => $page
-                ->component('WorkoutSessions/Active')
-                ->where('overloadSuggestions', [
-                    [
-                        'exercise_id' => $exercise->id,
-                        'suggested_load' => 32,
-                        'suggested_reps' => 8,
-                        'previous_load' => 30,
-                        'previous_reps' => 12,
-                        'rationale' => 'Você completou as séries com facilidade no último treino. Hora de progredir a carga.',
-                        'confidence' => 'high',
-                    ],
-                    [
-                        'exercise_id' => $secondExercise->id,
-                        'suggested_load' => 20,
-                        'suggested_reps' => 12,
-                        'previous_load' => 20,
-                        'previous_reps' => 15,
-                        'rationale' => 'Mantenha a carga e foque na cadência e controle na fase excêntrica antes de subir o peso.',
-                        'confidence' => 'medium',
-                    ],
-                ])
-        );
+        ->assertExactJson([
+            'suggestions' => [
+                [
+                    'exercise_id' => $exercise->id,
+                    'suggested_load' => 32,
+                    'suggested_reps' => 8,
+                    'previous_load' => 30,
+                    'previous_reps' => 12,
+                    'rationale' => 'Você completou as séries com facilidade no último treino. Hora de progredir a carga.',
+                    'confidence' => 'high',
+                ],
+                [
+                    'exercise_id' => $secondExercise->id,
+                    'suggested_load' => 20,
+                    'suggested_reps' => 12,
+                    'previous_load' => 20,
+                    'previous_reps' => 15,
+                    'rationale' => 'Mantenha a carga e foque na cadência e controle na fase excêntrica antes de subir o peso.',
+                    'confidence' => 'medium',
+                ],
+            ],
+        ]);
 });
 
-test('opening a session with no completed history skips the AI overload call', function () {
+test('the overload-suggestions endpoint returns an empty array and skips the AI call when there is no completed history', function () {
     $this->seed(ExerciseSeeder::class);
     $user = User::factory()->create();
 
@@ -185,13 +228,9 @@ test('opening a session with no completed history skips the AI overload call', f
     ]);
 
     $this->actingAs($user)
-        ->get(route('workout-sessions.show', $session))
+        ->getJson(route('workout-sessions.overload-suggestions', $session))
         ->assertOk()
-        ->assertInertia(
-            fn ($page) => $page
-                ->component('WorkoutSessions/Active')
-                ->where('overloadSuggestions', [])
-        );
+        ->assertExactJson(['suggestions' => []]);
 
     Http::assertNothingSent();
 });

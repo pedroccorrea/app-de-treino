@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Enums\MuscleGroup;
+use App\Exceptions\GeminiException;
 use App\Models\Exercise;
 use App\Models\User;
 use App\Models\Workout;
@@ -10,6 +11,7 @@ use App\Services\AI\GeminiClient;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class WorkoutScannerService
 {
@@ -66,13 +68,19 @@ class WorkoutScannerService
      */
     private function transcribeWithGemini(UploadedFile $image, Collection $catalog): array
     {
-        return $this->gemini->generate(
-            $this->buildPrompt($catalog),
-            [
-                'mimeType' => $image->getMimeType() ?: 'image/jpeg',
-                'data' => base64_encode(file_get_contents($image->getRealPath())),
-            ]
-        );
+        try {
+            return $this->gemini->generate(
+                $this->buildPrompt($catalog),
+                [
+                    'mimeType' => $image->getMimeType() ?: 'image/jpeg',
+                    'data' => base64_encode(file_get_contents($image->getRealPath())),
+                ]
+            );
+        } catch (\Throwable $e) {
+            Log::warning('Falha ao transcrever ficha de treino via IA.', ['message' => $e->getMessage()]);
+
+            throw new GeminiException('Não foi possível ler esta imagem. Tente tirar uma foto mais nítida ou aproximada.', previous: $e);
+        }
     }
 
     /**

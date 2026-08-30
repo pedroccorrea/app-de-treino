@@ -8,14 +8,6 @@ defineProps({
         type: String,
         required: true,
     },
-    exerciseTimerActive: {
-        type: Boolean,
-        default: false,
-    },
-    exerciseTimerDisplay: {
-        type: String,
-        default: '00:00',
-    },
     totalDoneSets: {
         type: Number,
         default: 0,
@@ -46,14 +38,6 @@ defineEmits(['open-drawer']);
                 </div>
                 <div class="mt-0.5 flex items-center gap-3">
                     <p class="text-xs font-mono text-violet-400">⏱ {{ elapsedDisplay }}</p>
-                    <Transition name="fade">
-                        <p
-                            v-if="exerciseTimerActive"
-                            class="text-xs font-mono font-bold text-orange-400"
-                        >
-                            🏋️ {{ exerciseTimerDisplay }}
-                        </p>
-                    </Transition>
                 </div>
             </div>
 
@@ -80,15 +64,3 @@ defineEmits(['open-drawer']);
         </div>
     </header>
 </template>
-
-<style scoped>
-.fade-enter-active,
-.fade-leave-active {
-    transition: opacity 0.25s ease;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-    opacity: 0;
-}
-</style>

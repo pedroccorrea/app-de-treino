@@ -4,7 +4,6 @@ namespace App\Services;
 
 use App\DataTransferObjects\OverloadSuggestion;
 use App\Enums\OverloadConfidence;
-use App\Exceptions\GeminiException;
 use App\Models\SetLog;
 use App\Models\User;
 use App\Models\Workout;
@@ -43,7 +42,12 @@ class ProgressiveOverloadService
 
         try {
             $response = $this->gemini->generate($this->buildPrompt($sessions, $workout));
-        } catch (GeminiException) {
+        } catch (\Throwable $e) {
+            Log::warning('Falha ao consultar sugestões de sobrecarga progressiva via IA.', [
+                'workout_id' => $workout->id,
+                'message' => $e->getMessage(),
+            ]);
+
             return collect();
         }
 

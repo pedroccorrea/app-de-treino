@@ -2,10 +2,10 @@
 
 namespace App\Http\Controllers;
 
-use App\Exceptions\GeminiException;
 use App\Http\Requests\ScanWorkoutRequest;
 use App\Services\WorkoutScannerService;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\Log;
 
 class WorkoutScannerController extends Controller
 {
@@ -17,10 +17,12 @@ class WorkoutScannerController extends Controller
                 $request->user(),
                 $request->validated('workout_program_id'),
             );
-        } catch (GeminiException $e) {
+        } catch (\Throwable $e) {
+            Log::warning('Falha ao escanear e importar ficha de treino.', ['message' => $e->getMessage()]);
+
             return redirect()
                 ->route('workouts.index')
-                ->with('error', 'Não foi possível escanear a ficha: '.$e->getMessage());
+                ->with('error', 'Não foi possível ler esta imagem. Tente tirar uma foto mais nítida ou aproximada.');
         }
 
         return redirect()
