@@ -125,6 +125,45 @@ test('scanning fails gracefully with a flash error when the AI response is not v
     expect($user->workouts()->count())->toBe(0);
 });
 
+test('scanning a thermal receipt extracts the division name from the header and saves grip variations as notes', function () {
+    $fixture = file_get_contents(base_path('tests/Fixtures/ocr-thermal-receipt-grip.json'));
+
+    fakeGeminiResponse($fixture);
+
+    $user = User::factory()->create();
+
+    $response = $this->actingAs($user)->post(route('workouts.scan'), [
+        'image' => UploadedFile::fake()->create('cupom.jpg', 100, 'image/jpeg'),
+    ]);
+
+    $workout = $user->workouts()->firstOrFail();
+
+    $response->assertRedirect(route('workouts.show', $workout));
+
+    $this->assertDatabaseHas('workouts', [
+        'id' => $workout->id,
+        'name' => 'Treino 1 - Costas e Ombros',
+    ]);
+
+    $puxada = Exercise::where('name', 'Puxada Frontal')->firstOrFail();
+    $this->assertDatabaseHas('workout_exercises', [
+        'workout_id' => $workout->id,
+        'exercise_id' => $puxada->id,
+        'target_sets' => 3,
+        'target_reps' => '10-12',
+        'notes' => 'Pegada pronada',
+    ]);
+
+    $remada = Exercise::where('name', 'Remada Baixa')->firstOrFail();
+    $this->assertDatabaseHas('workout_exercises', [
+        'workout_id' => $workout->id,
+        'exercise_id' => $remada->id,
+        'target_sets' => 4,
+        'target_reps' => '8-10',
+        'notes' => 'Pegada supinada',
+    ]);
+});
+
 test('scanning a workout sheet rejects images larger than 10MB', function () {
     $user = User::factory()->create();
 

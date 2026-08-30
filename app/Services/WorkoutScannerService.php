@@ -57,6 +57,7 @@ class WorkoutScannerService
                     'order' => $index,
                     'target_sets' => $exerciseData['target_sets'] ?? null,
                     'target_reps' => isset($exerciseData['target_reps']) ? (string) $exerciseData['target_reps'] : null,
+                    'notes' => $exerciseData['notes'] ?? null,
                 ]);
             }
 
@@ -66,7 +67,7 @@ class WorkoutScannerService
 
     /**
      * @param  Collection<int, string>  $catalog
-     * @return array{workout_name?: string, exercises?: array<int, array{name: string, target_sets?: int, target_reps?: int|string, muscle_group?: string}>}
+     * @return array{workout_name?: string, exercises?: array<int, array{name: string, target_sets?: int, target_reps?: int|string, muscle_group?: string, notes?: string}>}
      */
     private function transcribeWithAi(UploadedFile $image, Collection $catalog): array
     {
@@ -91,9 +92,24 @@ class WorkoutScannerService
             : $catalog->map(fn (string $name, int $id) => "- {$name}")->implode("\n");
 
         return <<<PROMPT
-        Você é um assistente que digitaliza fichas de treino de musculação escritas à mão ou impressas em papel.
+        Você é um assistente que digitaliza fichas de treino de musculação escritas à mão ou impressas em cupons térmicos
+        (o tipo de recibo estreito e de matriz de pontos comum em academias, com fontes de baixa resolução e abreviações).
 
         Analise a imagem enviada e extraia o nome do treino e a lista de exercícios, com as séries e repetições alvo de cada um.
+
+        Extraia o nome do treino ou da divisão a partir do cabeçalho da ficha (ex: "Treino 1 - Costas e Ombros",
+        "Treino A - Peito e Tríceps"). Use exatamente o texto do cabeçalho, sem traduzir ou reformatar.
+
+        Cupons térmicos costumam usar abreviações. Interprete-as corretamente:
+        - "S: 3" ou "Séries: 3" significa 3 séries → "target_sets": 3.
+        - "Rept: 10-12" ou "Reps: 10-12" significa a faixa de repetições alvo → "target_reps": "10-12".
+        - Uma faixa de repetições (ex: "8-10", "10 a 12") deve ser preservada como string em "target_reps",
+          não convertida para um único número.
+
+        Fichas de treino frequentemente indicam variações de pegada junto ao nome do exercício, como "P. PRONADA"
+        (pegada pronada), "P. SUPINADA" (pegada supinada), "P. NEUTRA" (pegada neutra), "P. ABERTA" (pegada aberta)
+        ou "P. FECHADA" (pegada fechada). Não inclua essa informação no campo "name" do exercício — em vez disso,
+        registre o detalhe da pegada (por extenso) no campo "notes" daquele exercício.
 
         Para cada exercício identificado, compare o nome lido na imagem com a lista de exercícios já cadastrados abaixo.
         Se o exercício da imagem for o mesmo exercício (mesmo que escrito de forma abreviada, com sinônimo ou grafia diferente),
@@ -104,7 +120,8 @@ class WorkoutScannerService
         Exercícios já cadastrados:
         {$catalogList}
 
-        Responda SOMENTE com um JSON no seguinte formato, sem markdown, sem comentários e sem texto adicional:
+        Responda SOMENTE com um JSON no seguinte formato, sem markdown, sem comentários e sem texto adicional.
+        O campo "notes" é opcional e só deve ser incluído quando houver informação relevante (ex: variação de pegada):
         {
           "workout_name": "string",
           "exercises": [
@@ -112,7 +129,8 @@ class WorkoutScannerService
               "name": "string",
               "target_sets": number,
               "target_reps": number,
-              "muscle_group": "string"
+              "muscle_group": "string",
+              "notes": "string"
             }
           ]
         }

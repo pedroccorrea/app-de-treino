@@ -21,10 +21,11 @@ const props = defineProps({
 const emit = defineEmits(['close', 'submit']);
 
 // Max width (px) and JPEG quality used to downscale photos taken on a phone
-// camera before upload. Capped at 1200px/75% (~120KB) so the round trip to
-// Gemini stays fast without losing legibility of thermal-printer text.
-const MAX_WIDTH = 1200;
-const JPEG_QUALITY = 0.75;
+// camera before upload. Calibrated at 2048px/88% (~500KB) to preserve the
+// legibility of dot-matrix characters printed on thermal-paper workout
+// sheets, while still keeping the file small enough for PHP's upload limits.
+const MAX_WIDTH = 2048;
+const JPEG_QUALITY = 0.88;
 
 const cameraInput = ref(null);
 const galleryInput = ref(null);
@@ -70,6 +71,7 @@ const compressImage = (file) =>
                 reject(new Error('Canvas indisponível.'));
                 return;
             }
+            context.imageSmoothingQuality = 'high';
             context.drawImage(img, 0, 0, width, height);
 
             canvas.toBlob(

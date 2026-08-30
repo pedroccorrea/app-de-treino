@@ -1,0 +1,7 @@
+{
+  "workout_name": "Treino 1 - Costas e Ombros",
+  "exercises": [
+    { "name": "Puxada Frontal", "target_sets": 3, "target_reps": "10-12", "muscle_group": "BACK", "notes": "Pegada pronada" },
+    { "name": "Remada Baixa", "target_sets": 4, "target_reps": "8-10", "muscle_group": "BACK", "notes": "Pegada supinada" }
+  ]
+}
