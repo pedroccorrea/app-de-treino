@@ -47,7 +47,6 @@ const submit = () => {
                     class="mt-1 block w-full"
                     v-model="form.email"
                     required
-                    autofocus
                     autocomplete="username"
                 />
 
@@ -95,6 +94,16 @@ const submit = () => {
                     Log in
                 </PrimaryButton>
             </div>
+
+            <p class="mt-4 text-center text-sm text-gray-600 dark:text-gray-400">
+                Ainda não tem uma conta?
+                <Link
+                    :href="route('register')"
+                    class="rounded-md font-semibold text-violet-600 underline hover:text-violet-800 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 dark:text-violet-400 dark:hover:text-violet-300 dark:focus:ring-offset-gray-800"
+                >
+                    Cadastre-se
+                </Link>
+            </p>
         </form>
     </GuestLayout>
 </template>

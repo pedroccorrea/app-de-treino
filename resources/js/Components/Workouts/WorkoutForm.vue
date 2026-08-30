@@ -179,7 +179,6 @@ const moveDown = (index) => {
                         class="mt-1.5 block w-full rounded-xl focus:border-violet-500 focus:ring-violet-500 dark:focus:border-violet-500 dark:focus:ring-violet-500"
                         placeholder="Ex: Treino A - Peito e Tríceps"
                         required
-                        autofocus
                     />
                     <InputError
                         class="mt-1.5"

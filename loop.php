@@ -150,13 +150,7 @@ while (true) {
 
         $evalPrompt = "Você é o Auditor de Qualidade Read-Only. Inspecione os arquivos do projeto e valide se a fase abaixo foi integralmente cumprida de acordo com todos os seus Acceptance Criteria e as regras de .ai/rules/.\n\n"
                     . "FASE:\n# Phase " . $phaseText . "\n\n"
-                    . "INSTRUÇÃO OBRIGATÓRIA DE RESPOSTA:\n"
-                    . "Retorne ESTRITAMENTE um objeto JSON (sem blocos de código adicionais, sem preâmbulos) com este formato exato:\n"
-                    . "{\n"
-                    . '  "status": "DONE" | "FALTA",' . "\n"
-                    . '  "summary": "Resumo conciso da auditoria",' . "\n"
-                    . '  "pending_reasons": ["Motivo 1 se status for FALTA"]' . "\n"
-                    . "}";
+                    . "INSTRUÇÃO CRÍTICA DE FORMATO: Sua resposta DEVE começar com a palavra DONE (se aprovada) ou FALTA (se reprovada).";
 
         $verdict = shell_exec('claude -p ' . escapeshellarg($evalPrompt) . ' --allowedTools "Read,Glob,Grep" 2>&1');
         $verdictTrimmed = trim((string) $verdict);
@@ -167,16 +161,20 @@ while (true) {
             exit(2);
         }
 
-        // Sanitização e decodificação estrita do JSON retornado pelo Auditor
         $sanitizedJson = preg_replace('/^```(?:json)?\s*|\s*```$/m', '', $verdictTrimmed);
         $parsedVerdict = json_decode(trim($sanitizedJson), true);
 
-        $status = strtoupper((string) ($parsedVerdict['status'] ?? ''));
-        $isApproved = ($status === 'DONE');
-        $summary = $parsedVerdict['summary'] ?? $verdictTrimmed;
+        $isApproved = false;
+        if (is_array($parsedVerdict) && isset($parsedVerdict['status'])) {
+            $isApproved = (strtoupper($parsedVerdict['status']) === 'DONE');
+        } else {
+            $hasApproval = preg_match('/\b(DONE|APROVAD[AO]|cumprida integralmente|integralmente cumprida|Veredito:\s*✅\s*Aprovada)\b/iu', $verdictTrimmed);
+            $hasRejection = preg_match('/\b(FALTA|REPROVAD[AO]|NÃO cumprida|NAO cumprida)\b/iu', $verdictTrimmed);
+            $isApproved = $hasApproval && !$hasRejection;
+        }
 
         if ($isApproved) {
-            echo "🏆 Auditor aprovou a fase (DONE): " . $summary . "\n";
+            echo "🏆 Auditor aprovou a fase (DONE)!\n";
 
             $cleanTitle = preg_replace('/^(?:Phase|Fase)\s*\d+:\s*/i', '', $phaseTitle);
             $commitMsg = "feat(fase-" . ($currentPhaseIndex + 1) . "): " . $cleanTitle;
@@ -204,9 +202,8 @@ while (true) {
             $phasePassed = true;
             break;
         } else {
-            $pendingList = !empty($parsedVerdict['pending_reasons']) ? implode('; ', $parsedVerdict['pending_reasons']) : $summary;
-            $feedback = "O AUDITOR READ-ONLY REPROVOU A IMPLEMENTAÇÃO:\n" . $pendingList;
-            echo "❌ Auditor reprovou: " . $pendingList . "\n";
+            $feedback = "O AUDITOR READ-ONLY REPROVOU A IMPLEMENTAÇÃO:\n" . $verdictTrimmed;
+            echo "❌ Auditor reprovou: " . $verdictTrimmed . "\n";
         }
     }
 

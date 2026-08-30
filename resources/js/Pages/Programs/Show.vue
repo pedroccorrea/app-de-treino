@@ -266,7 +266,6 @@ const detachWorkout = () => {
                                 v-model="editForm.name"
                                 type="text"
                                 class="mt-1 block w-full"
-                                autofocus
                             />
                             <InputError :message="editForm.errors.name" class="mt-2" />
                         </div>

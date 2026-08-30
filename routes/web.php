@@ -7,9 +7,7 @@ use App\Http\Controllers\WorkoutController;
 use App\Http\Controllers\WorkoutProgramController;
 use App\Http\Controllers\WorkoutScannerController;
 use App\Http\Controllers\WorkoutSessionController;
-use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
-use Inertia\Inertia;
 
 Route::get('/manifest.json', function () {
     return response(file_get_contents(resource_path('pwa/manifest.json')), 200, [
@@ -24,12 +22,9 @@ Route::get('/sw.js', function () {
 })->name('pwa.service-worker');
 
 Route::get('/', function () {
-    return Inertia::render('Welcome', [
-        'canLogin' => Route::has('login'),
-        'canRegister' => Route::has('register'),
-        'laravelVersion' => Application::VERSION,
-        'phpVersion' => PHP_VERSION,
-    ]);
+    return auth()->check()
+        ? redirect()->route('dashboard')
+        : redirect()->route('login');
 });
 
 Route::get('/dashboard', [DashboardController::class, 'index'])

@@ -41,7 +41,6 @@ const emit = defineEmits(['close', 'submit']);
                     type="text"
                     class="mt-1 block w-full"
                     placeholder="Ex: Treino A - Peito e Tríceps"
-                    autofocus
                 />
                 <InputError :message="form.errors.name" class="mt-2" />
             </div>
