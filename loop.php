@@ -12,24 +12,23 @@ if (!file_exists(__DIR__ . '/.phases')) {
     mkdir(__DIR__ . '/.phases', 0755, true);
 }
 
-// Suporte a override via CLI: php loop.php 14
-if (isset($argv[1]) && is_numeric($argv[1])) {
-    file_put_contents($progressFile, (string) (int) $argv[1]);
-}
-
 function readProgressIndex(string $file): int {
     if (!file_exists($file)) {
         file_put_contents($file, '0');
         return 0;
     }
     $raw = (string) file_get_contents($file);
-    // Remove BOM UTF-8 e qualquer caractere não numérico
     $digitsOnly = preg_replace('/\D/', '', $raw);
     return $digitsOnly === '' ? 0 : (int) $digitsOnly;
 }
 
 if (!file_exists($progressFile)) {
     file_put_contents($progressFile, '0');
+}
+
+// Suporte a override via CLI: php loop.php 14
+if (isset($argv[1]) && is_numeric($argv[1])) {
+    file_put_contents($progressFile, (string) (int) $argv[1]);
 }
 
 $content = file_get_contents($phasesFile);
@@ -43,10 +42,16 @@ if ($vCode !== 0) {
     exit(1);
 }
 
+// Checagem de Git ignorando arquivos internos de controle do harness
 exec('git status --porcelain', $dirtyPreflight);
-if (!empty($dirtyPreflight)) {
-    echo "🛑 A árvore do git tem alterações não commitadas:\n";
-    echo implode("\n", $dirtyPreflight) . "\n";
+$dirtyCodeFiles = array_filter($dirtyPreflight, function ($line) {
+    $trimmed = trim(substr($line, 2));
+    return !str_starts_with($trimmed, '.phases/') && !str_starts_with($trimmed, '.spec/.active_task.tmp');
+});
+
+if (!empty($dirtyCodeFiles)) {
+    echo "🛑 A árvore do git tem alterações de código não commitadas:\n";
+    echo implode("\n", $dirtyCodeFiles) . "\n";
     echo "Commite ou descarte antes de rodar o harness.\n";
     exit(1);
 }
@@ -112,8 +117,13 @@ while (true) {
 
         $dirtyOutput = [];
         exec('git status --porcelain', $dirtyOutput);
-        if (empty($dirtyOutput)) {
-            echo "\n🛑 [ABORT] O agente não alterou nenhum arquivo.\n";
+        $dirtyCodeChanges = array_filter($dirtyOutput, function ($line) {
+            $trimmed = trim(substr($line, 2));
+            return !str_starts_with($trimmed, '.phases/') && !str_starts_with($trimmed, '.spec/.active_task.tmp');
+        });
+
+        if (empty($dirtyCodeChanges)) {
+            echo "\n🛑 [ABORT] O agente não alterou nenhum arquivo de código.\n";
             echo "Os gates passariam por inércia (o código anterior está intacto).\n";
             exit(3);
         }
