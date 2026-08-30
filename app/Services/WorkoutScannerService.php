@@ -85,52 +85,61 @@ class WorkoutScannerService
      */
     private function buildPrompt(Collection $catalog): string
     {
-        $muscleGroups = implode(', ', array_map(fn (MuscleGroup $case) => $case->value, MuscleGroup::cases()));
+        $muscleGroups = implode(', ', array_map(fn(MuscleGroup $case) => $case->value, MuscleGroup::cases()));
 
         $catalogList = $catalog->isEmpty()
             ? '(nenhum exercício cadastrado ainda)'
-            : $catalog->map(fn (string $name, int $id) => "- {$name}")->implode("\n");
+            : $catalog->map(fn(string $name, int $id) => "- {$name}")->implode("\n");
 
         return <<<PROMPT
-        Você é um assistente que digitaliza fichas de treino de musculação escritas à mão ou impressas em cupons térmicos
-        (o tipo de recibo estreito e de matriz de pontos comum em academias, com fontes de baixa resolução e abreviações).
+        Você é um assistente especialista em digitalização e OCR de fichas de treino de musculação (fichas escritas à mão, impressas em cupons térmicos de academias ou digitadas em aplicativos).
 
-        Analise a imagem enviada e extraia o nome do treino e a lista de exercícios, com as séries e repetições alvo de cada um.
+        Sua missão é extrair com MÁXIMA FIDELIDADE e PRECISÃO os exercícios, séries e repetições da imagem.
 
-        Extraia o nome do treino ou da divisão a partir do cabeçalho da ficha (ex: "Treino 1 - Costas e Ombros",
-        "Treino A - Peito e Tríceps"). Use exatamente o texto do cabeçalho, sem traduzir ou reformatar.
+        DIRETRIZES DE EXTRAÇÃO E NOMENCLATURA:
+        1. NOME DO TREINO:
+           - Extraia o nome da divisão ou título no cabeçalho da ficha (ex: "Treino A - Peito e Tríceps", "Treino 1 - Costas e Ombros").
+           - Formate em Title Case elegante.
 
-        Cupons térmicos costumam usar abreviações. Interprete-as corretamente:
-        - "S: 3" ou "Séries: 3" significa 3 séries → "target_sets": 3.
-        - "Rept: 10-12" ou "Reps: 10-12" significa a faixa de repetições alvo → "target_reps": "10-12".
-        - Uma faixa de repetições (ex: "8-10", "10 a 12") deve ser preservada como string em "target_reps",
-          não convertida para um único número.
+        2. PRESERVAÇÃO DE ESPECIFICAÇÕES NO NOME DO EXERCÍCIO:
+           - NUNCA simplifique ou generalize o nome de um exercício.
+           - Se a ficha indicar uma variação de PEGADA (ex: "P. PRONADA", "P. SUPINADA", "NEUTRA", "ABERTA", "FECHADA", "TRIÂNGULO", "ROMANA") ou variação de EQUIPAMENTO/APARELHO (ex: "MÁQUINA", "HALTERES", "POLIA", "BARRA", "SMITH", "ARTICULADO", "INCLINADO", "DECLINADO"), essa especificação DEVE ser incorporada diretamente no campo "name" do exercício.
+           - Exemplos de padronização no campo "name":
+             * "PUXADOR FRENTE P. PRONADA" -> "Puxador Frente (Pegada Pronada)"
+             * "REMADA CURVADA P. SUPINADA" -> "Remada Curvada (Pegada Supinada)"
+             * "CRUCIFIXO INV. MAQUINA" -> "Crucifixo Inverso na Máquina"
+             * "ELEVAÇÃO LATERAL HALTER" -> "Elevação Lateral com Halteres"
+             * "TRICEPS CORDA POLIA" -> "Tríceps Corda na Polia"
+             * "SUPINO RETO BARRA" -> "Supino Reto com Barra"
 
-        Fichas de treino frequentemente indicam variações de pegada junto ao nome do exercício, como "P. PRONADA"
-        (pegada pronada), "P. SUPINADA" (pegada supinada), "P. NEUTRA" (pegada neutra), "P. ABERTA" (pegada aberta)
-        ou "P. FECHADA" (pegada fechada). Não inclua essa informação no campo "name" do exercício — em vez disso,
-        registre o detalhe da pegada (por extenso) no campo "notes" daquele exercício.
+        3. FORMATAÇÃO EM TITLE CASE ELEGANTE:
+           - Todos os nomes de exercícios no campo "name" DEVEM estar formatados em Title Case elegante (apenas a primeira letra de palavras relevantes em maiúscula; conectivos como 'na', 'no', 'com', 'de', 'em' em minúsculas).
+           - NUNCA retorne nomes em CAIXA ALTA (ALL CAPS).
 
-        Para cada exercício identificado, compare o nome lido na imagem com a lista de exercícios já cadastrados abaixo.
-        Se o exercício da imagem for o mesmo exercício (mesmo que escrito de forma abreviada, com sinônimo ou grafia diferente),
-        você DEVE usar exatamente o nome já cadastrado no campo "name" da resposta, para não criar um exercício duplicado.
-        Se não houver correspondência na lista, retorne o nome como está na imagem e classifique o grupo muscular principal
-        em "muscle_group" usando um destes valores: {$muscleGroups}.
+        4. FIDELIDADE AO CATÁLOGO (SEM MATCHING FORÇADO):
+           - Abaixo está a lista de exercícios já cadastrados no catálogo do usuário.
+           - Só reutilize o nome exato de um exercício do catálogo se houver CORRESPONDÊNCIA EXATA 1:1 de exercício, pegada e equipamento.
+           - NUNCA force um match genérico (ex: se o catálogo tiver "Puxada Frontal" e a ficha contiver "Puxador Frente (Pegada Supinada)", NÃO combine — mantenha como "Puxador Frente (Pegada Supinada)").
+           - Se o exercício for novo ou tiver variação não presente no catálogo, retorne o nome completo e específico formatado em Title Case e atribua o grupo muscular principal no campo "muscle_group" com um destes valores: {$muscleGroups}.
 
-        Exercícios já cadastrados:
+        5. SÉRIES E REPETIÇÕES:
+           - "S: 3" ou "Séries: 3" -> "target_sets": 3.
+           - "R: 10-12" ou "Reps: 10 a 12" -> "target_reps": "10-12" (preserve faixas de repetições como string).
+           - Se houver notas de método/técnica adicionais (ex: "Drop-set na última", "Rest-pause", "Pico de contração 2s"), coloque no campo "notes".
+
+        Exercícios já cadastrados no catálogo:
         {$catalogList}
 
-        Responda SOMENTE com um JSON no seguinte formato, sem markdown, sem comentários e sem texto adicional.
-        O campo "notes" é opcional e só deve ser incluído quando houver informação relevante (ex: variação de pegada):
+        Responda ESTRITAMENTE com um JSON no seguinte formato, sem markdown, sem comentários e sem texto adicional:
         {
           "workout_name": "string",
           "exercises": [
             {
               "name": "string",
               "target_sets": number,
-              "target_reps": number,
+              "target_reps": "string ou number",
               "muscle_group": "string",
-              "notes": "string"
+              "notes": "string opcional"
             }
           ]
         }
@@ -146,7 +155,7 @@ class WorkoutScannerService
         $name = trim($exerciseData['name'] ?? '');
 
         $matchedId = $catalog->search(
-            fn (string $existingName) => mb_strtolower($existingName) === mb_strtolower($name)
+            fn(string $existingName) => mb_strtolower($existingName) === mb_strtolower($name)
         );
 
         if ($matchedId !== false) {
