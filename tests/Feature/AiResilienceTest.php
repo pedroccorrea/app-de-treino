@@ -2,6 +2,7 @@
 
 use App\Models\User;
 use App\Models\Workout;
+use App\Services\ProgressiveOverloadService;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
@@ -118,6 +119,31 @@ test('the background overload-suggestions request degrades to an empty list with
         ->getJson(route('workout-sessions.overload-suggestions', $session))
         ->assertOk()
         ->assertExactJson(['suggestions' => []]);
+});
+
+test('the background overload-suggestions request returns a soft fallback with HTTP 200 when something unexpected breaks past the AI layer', function () {
+    $user = User::factory()->create();
+    $workout = Workout::factory()->for($user)->create();
+
+    $user->workoutSessions()->create([
+        'workout_id' => $workout->id,
+        'started_at' => now()->subDay()->subHour(),
+        'completed_at' => now()->subDay(),
+    ]);
+
+    $session = $user->workoutSessions()->create([
+        'workout_id' => $workout->id,
+        'started_at' => now(),
+    ]);
+
+    $this->mock(ProgressiveOverloadService::class, function ($mock) {
+        $mock->shouldReceive('analyzeWorkout')->andThrow(new RuntimeException('Falha inesperada fora da camada de IA.'));
+    });
+
+    $this->actingAs($user)
+        ->getJson(route('workout-sessions.overload-suggestions', $session))
+        ->assertOk()
+        ->assertExactJson(['status' => 'fallback', 'recommendations' => []]);
 });
 
 // ─────────────────────────────────────────────────────────────────────────

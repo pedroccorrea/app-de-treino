@@ -7,6 +7,7 @@ use App\Exceptions\ClaudeException;
 use App\Services\AI\Contracts\AiDriverInterface;
 use App\Services\AI\Support\AiJsonSanitizer;
 use App\Services\AI\Support\AiModelResolver;
+use App\Services\AI\Support\AiTimeoutResolver;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -68,11 +69,12 @@ class ClaudeDriver implements AiDriverInterface
         }
 
         try {
-            $response = Http::withHeaders([
-                'x-api-key' => $apiKey,
-                'anthropic-version' => '2023-06-01',
-            ])
-                ->timeout(90)
+            $response = Http::withoutVerifying()
+                ->withHeaders([
+                    'x-api-key' => $apiKey,
+                    'anthropic-version' => '2023-06-01',
+                ])
+                ->timeout(AiTimeoutResolver::resolve($task))
                 ->post('https://api.anthropic.com/v1/messages', $payload);
         } catch (Throwable $e) {
             Log::warning('Falha de comunicação com a API da Anthropic (Claude).', ['message' => $e->getMessage()]);

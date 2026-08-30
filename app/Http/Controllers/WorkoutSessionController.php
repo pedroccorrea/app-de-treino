@@ -12,8 +12,10 @@ use App\Services\WorkoutSessionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response;
+use Throwable;
 
 class WorkoutSessionController extends Controller
 {
@@ -83,10 +85,13 @@ class WorkoutSessionController extends Controller
     /**
      * AI-backed overload suggestions are fetched by the frontend in the
      * background after the session screen has already rendered, so a slow
-     * or failing Gemini call never blocks opening the workout session.
+     * or failing AI call never blocks opening the workout session.
      * ProgressiveOverloadService already degrades to an empty collection on
-     * any Gemini/JSON failure, so this only shapes the typed DTOs into a
-     * plain JSON payload — no parsing happens here.
+     * any provider/JSON failure, so this only shapes the typed DTOs into a
+     * plain JSON payload — no parsing happens here. The try/catch below is a
+     * last-resort safety net: no matter what breaks (including something
+     * outside the AI call itself), this endpoint must always answer with
+     * HTTP 200 and never surface a fatal 500 in the browser console.
      */
     public function overloadSuggestions(Request $request, WorkoutSession $session, ProgressiveOverloadService $overloadService): JsonResponse
     {
@@ -94,11 +99,23 @@ class WorkoutSessionController extends Controller
 
         $workout = $session->workout;
 
-        return response()->json([
-            'suggestions' => $workout
-                ? $this->safeOverloadSuggestions($overloadService, $request->user(), $workout)
-                : [],
-        ]);
+        try {
+            return response()->json([
+                'suggestions' => $workout
+                    ? $this->safeOverloadSuggestions($overloadService, $request->user(), $workout)
+                    : [],
+            ]);
+        } catch (Throwable $e) {
+            Log::warning('Falha inesperada ao montar sugestões de sobrecarga progressiva. Retornando fallback suave.', [
+                'session_id' => $session->id,
+                'message' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'status' => 'fallback',
+                'recommendations' => [],
+            ]);
+        }
     }
 
     /**

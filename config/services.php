@@ -53,9 +53,25 @@ return [
         ],
     ],
 
+    'groq' => [
+        'key' => env('GROQ_API_KEY'),
+        'model' => env('GROQ_MODEL', 'llama-3.3-70b-versatile'),
+        'models' => [
+            'vision' => env('GROQ_VISION_MODEL', 'llama-3.3-70b-versatile'),
+            'fast_text' => env('GROQ_FAST_TEXT_MODEL', 'llama-3.3-70b-versatile'),
+        ],
+    ],
+
     'ai' => [
         'default_driver' => env('AI_DEFAULT_DRIVER', 'gemini'),
         'fallback_driver' => env('AI_FALLBACK_DRIVER', 'claude'),
+        // Timeouts curtos por AiTask (segundos) para nunca deixar o usuário
+        // esperando uma tela travada: FastText alimenta telas síncronas
+        // (dashboard, sobrecarga progressiva), Vision faz upload de imagem.
+        'timeouts' => [
+            'fast_text' => env('AI_TIMEOUT_FAST_TEXT', 6),
+            'vision' => env('AI_TIMEOUT_VISION', 30),
+        ],
     ],
 
 ];

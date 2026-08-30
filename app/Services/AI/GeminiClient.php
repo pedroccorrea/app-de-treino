@@ -6,6 +6,7 @@ use App\Enums\AiTask;
 use App\Exceptions\GeminiException;
 use App\Services\AI\Support\AiJsonSanitizer;
 use App\Services\AI\Support\AiModelResolver;
+use App\Services\AI\Support\AiTimeoutResolver;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -77,7 +78,7 @@ class GeminiClient
         try {
             $response = Http::withoutVerifying()
                 ->withHeaders(['x-goog-api-key' => $apiKey])
-                ->timeout(60)
+                ->timeout(AiTimeoutResolver::resolve($task))
                 ->post(
                     "https://generativelanguage.googleapis.com/v1beta/models/{$this->model($task)}:generateContent?key={$apiKey}",
                     [

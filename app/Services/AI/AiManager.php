@@ -7,6 +7,7 @@ use App\Exceptions\AiException;
 use App\Services\AI\Contracts\AiDriverInterface;
 use App\Services\AI\Drivers\ClaudeDriver;
 use App\Services\AI\Drivers\GeminiDriver;
+use App\Services\AI\Drivers\GroqDriver;
 use Closure;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Log;
@@ -45,6 +46,11 @@ class AiManager extends Manager implements AiDriverInterface
     protected function createClaudeDriver(): ClaudeDriver
     {
         return $this->container->make(ClaudeDriver::class);
+    }
+
+    protected function createGroqDriver(): GroqDriver
+    {
+        return $this->container->make(GroqDriver::class);
     }
 
     public function generateStructured(string $prompt, ?string $systemInstruction = null, ?AiTask $task = null): array

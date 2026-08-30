@@ -17,17 +17,19 @@ class AiDoctorCommand extends Command
 {
     protected $signature = 'ai:doctor';
 
-    protected $description = 'Diagnostica se o ambiente está pronto para usar as funcionalidades de IA (Gemini)';
+    protected $description = 'Diagnostica se o ambiente está pronto para usar as funcionalidades de IA (Gemini, Claude e Groq)';
 
     public function handle(GeminiClient $gemini): int
     {
-        $this->info('🩺 Diagnóstico do ambiente de IA (Gemini)');
+        $this->info('🩺 Diagnóstico do ambiente de IA (Gemini, Claude e Groq)');
         $this->newLine();
 
         $checks = [
             $this->checkApiKey(),
             $this->checkMemoryLimit(),
             $this->checkGeminiConnection($gemini),
+            $this->checkOptionalDriverKey('claude', 'ANTHROPIC_API_KEY', 'services.claude.key'),
+            $this->checkOptionalDriverKey('groq', 'GROQ_API_KEY', 'services.groq.key'),
         ];
 
         $this->newLine();
@@ -97,6 +99,30 @@ class AiDoctorCommand extends Command
             'k' => $number * 1024,
             default => (int) $value,
         };
+    }
+
+    /**
+     * Claude and Groq are optional drivers (used for failover/ultra-low
+     * latency), so a missing key is only informational here — it never
+     * fails the overall diagnostic the way a missing GEMINI_API_KEY does.
+     */
+    private function checkOptionalDriverKey(string $driverLabel, string $envName, string $configKey): bool
+    {
+        $key = config($configKey) ?: env($envName);
+
+        if (empty($key)) {
+            $this->line("  <fg=yellow>[INFO]</> {$envName} não está definida (driver '{$driverLabel}' opcional, sem uso no momento).");
+
+            return true;
+        }
+
+        $masked = strlen($key) > 8
+            ? substr($key, 0, 4).str_repeat('*', strlen($key) - 8).substr($key, -4)
+            : str_repeat('*', strlen($key));
+
+        $this->line("  <fg=green>[OK]</> {$envName} encontrada ({$masked}).");
+
+        return true;
     }
 
     private function checkGeminiConnection(GeminiClient $gemini): bool

@@ -51,6 +51,20 @@ test('AiManager switches driver dynamically based on AI_DEFAULT_DRIVER', functio
     Http::assertSent(fn ($request) => str_contains($request->url(), 'api.anthropic.com'));
 });
 
+test('AiManager switches to the Groq driver when configured as AI_DEFAULT_DRIVER', function () {
+    config(['services.ai.default_driver' => 'groq']);
+    Http::fake([
+        'api.groq.com/*' => Http::response([
+            'choices' => [['message' => ['content' => json_encode(['foo' => 'groq-response'])]]],
+        ], 200),
+    ]);
+
+    $result = app(AiManager::class)->generateStructured('qualquer prompt');
+
+    expect($result)->toBe(['foo' => 'groq-response']);
+    Http::assertSent(fn ($request) => str_contains($request->url(), 'api.groq.com'));
+});
+
 test('AiManager automatically fails over to the secondary driver when the primary throws', function () {
     config([
         'services.ai.default_driver' => 'gemini',
