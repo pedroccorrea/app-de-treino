@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Exceptions\GeminiException;
 use App\Http\Requests\LogSetRequest;
 use App\Models\SetLog;
 use App\Models\User;
@@ -85,71 +84,18 @@ class WorkoutSessionController extends Controller
 
     /**
      * The overload suggestions are the only AI-backed part of the active
-     * session screen; a Gemini failure shouldn't prevent the workout from
-     * being logged, so it degrades to "no suggestions" instead of a fatal
-     * error. Skipped entirely when there's no completed-session history yet,
-     * since the AI has nothing to base a suggestion on.
+     * session screen; ProgressiveOverloadService already degrades to an
+     * empty collection on any Gemini/JSON failure, so this only shapes the
+     * typed DTOs into plain props — no parsing happens here.
      *
-     * The AI returns free-text strings (e.g. "32kg", "8-10"); the frontend
-     * needs plain numbers, so they're parsed here rather than in the Vue
-     * component.
-     *
-     * @return array<int, array{exercise_name: string, suggested_load: ?float, suggested_reps: ?int, current_load: ?float, rationale: string}>
+     * @return array<int, array{exercise_id: int, suggested_load: float, suggested_reps: int, previous_load: ?float, previous_reps: ?int, rationale: string, confidence: string}>
      */
     private function safeOverloadSuggestions(ProgressiveOverloadService $overloadService, User $user, Workout $workout): array
     {
-        $hasHistory = $workout->workoutSessions()
-            ->where('user_id', $user->id)
-            ->whereNotNull('completed_at')
-            ->exists();
-
-        if (! $hasHistory) {
-            return [];
-        }
-
-        try {
-            $recommendations = $overloadService->analyzeWorkout($user, $workout)['recommendations'] ?? [];
-        } catch (GeminiException) {
-            return [];
-        }
-
-        return collect($recommendations)->map(fn (array $recommendation) => [
-            'exercise_name' => $recommendation['exercise_name'] ?? '',
-            'suggested_load' => $this->parseNumericValue($recommendation['suggested_load'] ?? null),
-            'suggested_reps' => $this->parseIntValue($recommendation['suggested_reps'] ?? null),
-            'current_load' => $this->parseNumericValue($recommendation['current_load'] ?? null),
-            'rationale' => $recommendation['rationale'] ?? '',
-        ])->all();
-    }
-
-    /**
-     * Extracts the first number found in a free-text value like "32kg" or
-     * "32,5 kg", accepting both comma and dot as the decimal separator.
-     */
-    private function parseNumericValue(?string $value): ?float
-    {
-        if ($value === null) {
-            return null;
-        }
-
-        $normalized = str_replace(',', '.', $value);
-
-        if (! preg_match('/-?\d+(\.\d+)?/', $normalized, $matches)) {
-            return null;
-        }
-
-        return (float) $matches[0];
-    }
-
-    /**
-     * Same as parseNumericValue, rounded to an int — used for rep ranges
-     * like "8-10", which take the lower bound.
-     */
-    private function parseIntValue(?string $value): ?int
-    {
-        $numeric = $this->parseNumericValue($value);
-
-        return $numeric !== null ? (int) round($numeric) : null;
+        return $overloadService->analyzeWorkout($user, $workout)
+            ->map(fn ($suggestion) => $suggestion->toArray())
+            ->values()
+            ->all();
     }
 
     public function logSet(LogSetRequest $request, WorkoutSession $session, WorkoutSessionService $service): RedirectResponse

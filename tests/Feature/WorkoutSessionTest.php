@@ -86,6 +86,7 @@ test('opening a session with completed history automatically loads AI overload s
     $this->seed(ExerciseSeeder::class);
     $user = User::factory()->create();
     $exercise = Exercise::first();
+    $secondExercise = Exercise::skip(1)->first();
 
     $workout = $user->workouts()->create(['name' => 'Treino Peito']);
     $workout->workoutExercises()->create([
@@ -93,6 +94,12 @@ test('opening a session with completed history automatically loads AI overload s
         'order' => 0,
         'target_sets' => 4,
         'target_reps' => '8-12',
+    ]);
+    $workout->workoutExercises()->create([
+        'exercise_id' => $secondExercise->id,
+        'order' => 1,
+        'target_sets' => 3,
+        'target_reps' => '12-15',
     ]);
 
     $pastSession = $user->workoutSessions()->create([
@@ -107,12 +114,25 @@ test('opening a session with completed history automatically loads AI overload s
         'reps' => 12,
         'rpe' => 7,
     ]);
+    $pastSession->setLogs()->create([
+        'exercise_id' => $secondExercise->id,
+        'set_number' => 1,
+        'weight' => 20,
+        'reps' => 15,
+        'rpe' => 6,
+    ]);
 
-    $fixture = file_get_contents(base_path('tests/Fixtures/progressive-overload-advice.json'));
+    // The fixture is written with placeholder exercise_id values (1 and 2);
+    // the real seeded ids are substituted here so the test doesn't depend on
+    // exercise autoincrement order matching the static fixture file.
+    $fixture = json_decode(file_get_contents(base_path('tests/Fixtures/progressive-overload-advice.json')), true);
+    $fixture['recommendations'][0]['exercise_id'] = $exercise->id;
+    $fixture['recommendations'][1]['exercise_id'] = $secondExercise->id;
+
     Http::fake([
         'generativelanguage.googleapis.com/*' => Http::response([
             'candidates' => [
-                ['content' => ['parts' => [['text' => $fixture]]]],
+                ['content' => ['parts' => [['text' => json_encode($fixture)]]]],
             ],
         ], 200),
     ]);
@@ -130,18 +150,22 @@ test('opening a session with completed history automatically loads AI overload s
                 ->component('WorkoutSessions/Active')
                 ->where('overloadSuggestions', [
                     [
-                        'exercise_name' => 'Supino Reto Barra',
+                        'exercise_id' => $exercise->id,
                         'suggested_load' => 32,
                         'suggested_reps' => 8,
-                        'current_load' => 30,
-                        'rationale' => 'Você completou 3 séries de 12 repetições com facilidade no último treino. Hora de progredir a carga.',
+                        'previous_load' => 30,
+                        'previous_reps' => 12,
+                        'rationale' => 'Você completou as séries com facilidade no último treino. Hora de progredir a carga.',
+                        'confidence' => 'high',
                     ],
                     [
-                        'exercise_name' => 'Tríceps Corda no Pulley',
+                        'exercise_id' => $secondExercise->id,
                         'suggested_load' => 20,
                         'suggested_reps' => 12,
-                        'current_load' => 20,
+                        'previous_load' => 20,
+                        'previous_reps' => 15,
                         'rationale' => 'Mantenha a carga e foque na cadência e controle na fase excêntrica antes de subir o peso.',
+                        'confidence' => 'medium',
                     ],
                 ])
         );

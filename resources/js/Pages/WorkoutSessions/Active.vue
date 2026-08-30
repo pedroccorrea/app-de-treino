@@ -35,7 +35,7 @@ const dismissedSuggestions = ref({});
 
 const currentOverloadSuggestion = computed(() => {
     if (dismissedSuggestions.value[currentExercise.value?.id]) return null;
-    return props.overloadSuggestions.find((s) => s.exercise_name === currentExercise.value?.name) ?? null;
+    return props.overloadSuggestions.find((s) => s.exercise_id === currentExercise.value?.id) ?? null;
 });
 
 const dismissOverloadSuggestion = () => {
