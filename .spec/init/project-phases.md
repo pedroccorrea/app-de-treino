@@ -421,3 +421,35 @@
 2. `resources/views/app.blade.php` possui a tag com `viewport-fit=cover` e registro do service worker.
 3. `php artisan test` passa em 100% de toda a suíte.
 4. `npm run build` compila sem erros.
+
+# Phase 19: Consultas de IA Assíncronas, Degradação Graciosa e Desduplicação de Timers
+## Tasks
+1. **Abertura Instantânea da Sessão de Treino (`WorkoutSessions/Active.vue`):**
+   - No `WorkoutSessionController@show`: REMOVER qualquer chamada síncrona que bloqueie o carregamento da sessão de treino. A tela deve carregar instantaneamente via SQL puro (<100ms).
+   - Criar rota e endpoint JSON: `GET /workout-sessions/{session}/overload-suggestions` (name: `workout-sessions.overload-suggestions`).
+   - No `WorkoutSessionController@overloadSuggestions`: chamar o `ProgressiveOverloadService` em segundo plano e retornar `JsonResponse` com as sugestões.
+
+2. **Frontend Reativo e Não-Bloqueante (`Active.vue` / `OverloadSuggestionCard.vue`):**
+   - Ao abrir a tela de treino ativo, a página carrega 100% funcional imediatamente para o usuário já poder iniciar a Série 1.
+   - No card do exercício, exibir um estado discreto de carregamento: *"💡 Analisando histórico de cargas..."*.
+   - Fazer a requisição assíncrona em segundo plano para `/workout-sessions/{session}/overload-suggestions`.
+   - Quando a resposta chegar, atualizar os cards com as sugestões automaticamente e sem piscar a tela.
+   - Se a requisição falhar ou der timeout: exibir discretamente *"Mantenha a carga anterior ou progrida conforme se sentir confortável"*, sem travar o treino.
+
+3. **Desduplicação de Timers em `Active.vue`:**
+   - No topo/cabeçalho geral da tela: exibir ESTRITAMENTE o cronômetro da duração total do treino (sessão geral).
+   - Remover a exibição duplicada do timer do exercício do topo da tela, mantendo o timer da série exclusivamente no card/seção inferior do exercício em execução.
+
+4. **Blindagem Global contra Erros 500 (Degradação Graciosa):**
+   - Em `GeminiClient.php`, `WorkoutScannerService.php`, `ProgressiveOverloadService.php` e `DashboardAnalyticsService.php`:
+     * Envolver TODAS as chamadas externas em blocos `try / catch (\Throwable $e)` com `Log::warning(...)`.
+     * NENHUMA falha de IA (seja timeout, SSL, cota ou resposta malformada) pode estourar `500 Internal Server Error`.
+     * No scanner de ficha (`WorkoutScannerController@store`): em caso de falha de leitura, capturar o erro e redirecionar de volta com mensagem flash amigável: *"Não foi possível ler esta imagem. Tente tirar uma foto mais nítida ou aproximada."*.
+
+## Acceptance Criteria
+1. O carregamento de `GET /workout-sessions/{session}` responde em <100ms sem realizar chamadas HTTP externas (validado via teste Pest).
+2. O endpoint `GET /workout-sessions/{session}/overload-suggestions` retorna JSON com sugestões ou array vazio em caso de falha simulada com `Http::fake()`.
+3. No topo de `Active.vue`, apenas o timer da sessão total é exibido.
+4. Teste em `tests/Feature/AiResilienceTest.php` valida que simulação de timeout na IA não gera erro 500 e degrada com mensagem amigável.
+5. `php artisan test` passa em 100% de toda a suíte.
+6. `npm run build` compila com zero erros.
