@@ -3,6 +3,7 @@
 namespace App\Services\AI;
 
 use App\Exceptions\GeminiException;
+use App\Services\AI\Support\AiJsonSanitizer;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -116,10 +117,9 @@ class GeminiClient
      */
     private function decodeJson(string $rawText): array
     {
-        $sanitized = preg_replace('/^```(?:json)?\s+|\s+```$/m', '', trim($rawText));
-        $parsed = json_decode($sanitized, true);
+        $parsed = AiJsonSanitizer::decode($rawText);
 
-        if (json_last_error() !== JSON_ERROR_NONE || ! is_array($parsed)) {
+        if ($parsed === null) {
             Log::warning('Não foi possível interpretar a resposta JSON da IA.', ['raw_text' => $rawText]);
 
             throw new GeminiException('Não foi possível interpretar a resposta da IA.');

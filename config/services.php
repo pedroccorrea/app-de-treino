@@ -40,4 +40,14 @@ return [
         'model' => env('GEMINI_MODEL', 'gemini-2.0-flash'),
     ],
 
+    'claude' => [
+        'key' => env('ANTHROPIC_API_KEY'),
+        'model' => env('ANTHROPIC_MODEL', 'claude-opus-5'),
+    ],
+
+    'ai' => [
+        'default_driver' => env('AI_DEFAULT_DRIVER', 'gemini'),
+        'fallback_driver' => env('AI_FALLBACK_DRIVER', 'claude'),
+    ],
+
 ];

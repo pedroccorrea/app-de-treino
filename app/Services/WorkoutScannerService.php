@@ -3,11 +3,11 @@
 namespace App\Services;
 
 use App\Enums\MuscleGroup;
-use App\Exceptions\GeminiException;
+use App\Exceptions\AiException;
 use App\Models\Exercise;
 use App\Models\User;
 use App\Models\Workout;
-use App\Services\AI\GeminiClient;
+use App\Services\AI\AiManager;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -16,15 +16,16 @@ use Illuminate\Support\Facades\Log;
 class WorkoutScannerService
 {
     public function __construct(
-        private readonly GeminiClient $gemini,
+        private readonly AiManager $aiManager,
         private readonly WorkoutProgramService $workoutProgramService,
     ) {}
 
     /**
-     * Reads a photo of a paper workout sheet, asks Gemini to transcribe it,
-     * and imports the result as a new Workout for the user. Exercises the AI
-     * recognizes as synonyms of an existing catalog entry are reused instead
-     * of duplicated; genuinely new exercises are created for the user.
+     * Reads a photo of a paper workout sheet, asks the AI (via AiManager) to
+     * transcribe it, and imports the result as a new Workout for the user.
+     * Exercises the AI recognizes as synonyms of an existing catalog entry
+     * are reused instead of duplicated; genuinely new exercises are created
+     * for the user.
      */
     public function scanAndImport(UploadedFile $image, User $user, ?int $workoutProgramId = null): Workout
     {
@@ -35,7 +36,7 @@ class WorkoutScannerService
 
         $catalog = Exercise::query()->forUser($user)->pluck('name', 'id');
 
-        $parsed = $this->transcribeWithGemini($image, $catalog);
+        $parsed = $this->transcribeWithAi($image, $catalog);
 
         return DB::transaction(function () use ($parsed, $catalog, $user, $workoutProgramId) {
             $workout = $user->workouts()->create([
@@ -66,20 +67,14 @@ class WorkoutScannerService
      * @param  Collection<int, string>  $catalog
      * @return array{workout_name?: string, exercises?: array<int, array{name: string, target_sets?: int, target_reps?: int|string, muscle_group?: string}>}
      */
-    private function transcribeWithGemini(UploadedFile $image, Collection $catalog): array
+    private function transcribeWithAi(UploadedFile $image, Collection $catalog): array
     {
         try {
-            return $this->gemini->generate(
-                $this->buildPrompt($catalog),
-                [
-                    'mimeType' => $image->getMimeType() ?: 'image/jpeg',
-                    'data' => base64_encode(file_get_contents($image->getRealPath())),
-                ]
-            );
+            return $this->aiManager->analyzeImage($image, $this->buildPrompt($catalog));
         } catch (\Throwable $e) {
             Log::warning('Falha ao transcrever ficha de treino via IA.', ['message' => $e->getMessage()]);
 
-            throw new GeminiException('Não foi possível ler esta imagem. Tente tirar uma foto mais nítida ou aproximada.', previous: $e);
+            throw new AiException('Não foi possível ler esta imagem. Tente tirar uma foto mais nítida ou aproximada.', previous: $e);
         }
     }
 

@@ -8,18 +8,18 @@ use App\Models\SetLog;
 use App\Models\User;
 use App\Models\Workout;
 use App\Models\WorkoutSession;
-use App\Services\AI\GeminiClient;
+use App\Services\AI\AiManager;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
 class ProgressiveOverloadService
 {
-    public function __construct(private readonly GeminiClient $gemini) {}
+    public function __construct(private readonly AiManager $aiManager) {}
 
     /**
      * Analyzes the user's 3 most recent completed sessions of this workout and
-     * asks Gemini for progressive-overload advice. Read-only: nothing is
-     * written to the database during the analysis.
+     * asks the AI (via AiManager) for progressive-overload advice. Read-only:
+     * nothing is written to the database during the analysis.
      *
      * The AI response is only ever consumed as structured JSON matched by
      * exercise_id (never by exercise name). Any suggestion the AI invents for
@@ -41,7 +41,7 @@ class ProgressiveOverloadService
         $previousPerformance = $this->previousPerformanceByExercise($sessions);
 
         try {
-            $response = $this->gemini->generate($this->buildPrompt($sessions, $workout));
+            $response = $this->aiManager->generateStructured($this->buildPrompt($sessions, $workout));
         } catch (\Throwable $e) {
             Log::warning('Falha ao consultar sugestões de sobrecarga progressiva via IA.', [
                 'workout_id' => $workout->id,
