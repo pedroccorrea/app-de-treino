@@ -18,7 +18,7 @@ RUN npm run build
 # --- Etapa 2: Backend & Produção (PHP 8.3 FPM + Nginx + Alpine) ---
 FROM php:8.3-fpm-alpine AS app
 
-# Instalação de utilitários do sistema, Nginx e Supervisor
+# Instalação de utilitários do sistema, Nginx, PostgreSQL client e Supervisor
 RUN apk update && apk add --no-cache \
     nginx \
     supervisor \
@@ -26,16 +26,21 @@ RUN apk update && apk add --no-cache \
     bash \
     sqlite \
     sqlite-dev \
+    postgresql-client \
+    postgresql-dev \
     libzip-dev \
     icu-dev \
     oniguruma-dev \
     libxml2-dev
 
-# Instalação de extensões PHP via instalador oficial otimizado
+# Instalação de extensões PHP essenciais (incluindo pdo_pgsql para PostgreSQL do Render)
 COPY --from=mlocati/php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/
 RUN install-php-extensions \
+    pdo_pgsql \
+    pgsql \
     pdo_sqlite \
     sqlite3 \
+    pdo_mysql \
     bcmath \
     mbstring \
     xml \
@@ -57,15 +62,19 @@ COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
+# Cache de dependências do Composer (instalação rápida sem dev)
+ENV COMPOSER_ALLOW_SUPERUSER=1
+COPY composer.json composer.lock ./
+RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --no-interaction
+
 # Cópia do código da aplicação (filtrado pelo .dockerignore)
 COPY . /var/www/html
 
 # Cópia dos assets compilados na Etapa 1
 COPY --from=frontend /app/public/build /var/www/html/public/build
 
-# Instalação das dependências de produção do Composer
-ENV COMPOSER_ALLOW_SUPERUSER=1
-RUN composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist
+# Finalização do autoload do Composer otimizado para produção
+RUN composer dump-autoload --optimize --no-dev --classmap-authoritative
 
 # Criação de pastas necessárias e configuração de permissões
 RUN mkdir -p \
