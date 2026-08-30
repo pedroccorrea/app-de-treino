@@ -26,7 +26,6 @@ if (!file_exists($progressFile)) {
     file_put_contents($progressFile, '0');
 }
 
-// Suporte a override via CLI: php loop.php 14
 if (isset($argv[1]) && is_numeric($argv[1])) {
     file_put_contents($progressFile, (string) (int) $argv[1]);
 }
@@ -42,7 +41,6 @@ if ($vCode !== 0) {
     exit(1);
 }
 
-// Checagem de Git ignorando arquivos internos de controle do harness
 exec('git status --porcelain', $dirtyPreflight);
 $dirtyCodeFiles = array_filter($dirtyPreflight, function ($line) {
     $trimmed = trim(substr($line, 2));
@@ -152,10 +150,13 @@ while (true) {
 
         $evalPrompt = "Você é o Auditor de Qualidade Read-Only. Inspecione os arquivos do projeto e valide se a fase abaixo foi integralmente cumprida de acordo com todos os seus Acceptance Criteria e as regras de .ai/rules/.\n\n"
                     . "FASE:\n# Phase " . $phaseText . "\n\n"
-                    . "INSTRUÇÃO CRÍTICA DE FORMATO: Sua resposta DEVE começar com a palavra DONE (aprovada) ou FALTA (com pendências). "
-                    . "O PRIMEIRO CARACTERE da sua resposta deve ser a letra D ou a letra F. "
-                    . "Proibido qualquer coisa antes: sem markdown, sem ##, sem asteriscos, sem emoji, sem saudação, sem 'Aqui está'. "
-                    . "Depois dessa primeira palavra, escreva o relatório como quiser.";
+                    . "INSTRUÇÃO OBRIGATÓRIA DE RESPOSTA:\n"
+                    . "Retorne ESTRITAMENTE um objeto JSON (sem blocos de código adicionais, sem preâmbulos) com este formato exato:\n"
+                    . "{\n"
+                    . '  "status": "DONE" | "FALTA",' . "\n"
+                    . '  "summary": "Resumo conciso da auditoria",' . "\n"
+                    . '  "pending_reasons": ["Motivo 1 se status for FALTA"]' . "\n"
+                    . "}";
 
         $verdict = shell_exec('claude -p ' . escapeshellarg($evalPrompt) . ' --allowedTools "Read,Glob,Grep" 2>&1');
         $verdictTrimmed = trim((string) $verdict);
@@ -166,25 +167,16 @@ while (true) {
             exit(2);
         }
 
-        $isApproved = false;
+        // Sanitização e decodificação estrita do JSON retornado pelo Auditor
+        $sanitizedJson = preg_replace('/^```(?:json)?\s*|\s*```$/m', '', $verdictTrimmed);
+        $parsedVerdict = json_decode(trim($sanitizedJson), true);
 
-        $cleanVerdict = preg_replace('/^[\s#*`>\-–—✅❌📋🏆⚖️🔍\x{1F300}-\x{1FAFF}]+/u', '', $verdictTrimmed);
-        $firstWord = strtoupper(preg_split('/[\s,.\-:]+/', $cleanVerdict, -1, PREG_SPLIT_NO_EMPTY)[0] ?? '');
-        if ($firstWord === 'DONE') {
-            $isApproved = true;
-        }
-
-        if (!$isApproved && preg_match('/(cumprida integralmente|integralmente cumprida|fase cumprida|aprovad[ao] integralmente|veredito:?\s*\**\s*(✅|DONE|APROVAD))/iu', $verdictTrimmed)) {
-            $isApproved = true;
-        }
-
-        if (preg_match('/^\s*[#*`\s]*FALTA\b/iu', $verdictTrimmed)
-            || preg_match('/(reprovad[ao]|não cumprida|nao cumprida|pendência bloqueante|pendencia bloqueante)/iu', $verdictTrimmed)) {
-            $isApproved = false;
-        }
+        $status = strtoupper((string) ($parsedVerdict['status'] ?? ''));
+        $isApproved = ($status === 'DONE');
+        $summary = $parsedVerdict['summary'] ?? $verdictTrimmed;
 
         if ($isApproved) {
-            echo "🏆 Auditor aprovou a fase (DONE)!\n";
+            echo "🏆 Auditor aprovou a fase (DONE): " . $summary . "\n";
 
             $cleanTitle = preg_replace('/^(?:Phase|Fase)\s*\d+:\s*/i', '', $phaseTitle);
             $commitMsg = "feat(fase-" . ($currentPhaseIndex + 1) . "): " . $cleanTitle;
@@ -212,8 +204,9 @@ while (true) {
             $phasePassed = true;
             break;
         } else {
-            $feedback = "O AUDITOR READ-ONLY REPROVOU A IMPLEMENTAÇÃO:\n" . $verdictTrimmed;
-            echo "❌ Auditor reprovou: " . $verdictTrimmed . "\n";
+            $pendingList = !empty($parsedVerdict['pending_reasons']) ? implode('; ', $parsedVerdict['pending_reasons']) : $summary;
+            $feedback = "O AUDITOR READ-ONLY REPROVOU A IMPLEMENTAÇÃO:\n" . $pendingList;
+            echo "❌ Auditor reprovou: " . $pendingList . "\n";
         }
     }
 
