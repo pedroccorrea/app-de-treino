@@ -3,10 +3,10 @@ import BaseBadge from '@/Components/UI/BaseBadge.vue';
 import BaseButton from '@/Components/UI/BaseButton.vue';
 import BaseCard from '@/Components/UI/BaseCard.vue';
 import SectionLabel from '@/Components/UI/SectionLabel.vue';
-import OfflineSessionPanel from '@/Components/WorkoutSessions/OfflineSessionPanel.vue';
+import ActiveWorkoutSession from '@/Pages/WorkoutSessions/Active.vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { useOfflineWorkoutSession } from '@/Composables/useOfflineWorkoutSession';
-import { cacheWorkout } from '@/Utils/offlineStorage';
+import { useOfflineSync } from '@/Composables/useOfflineSync';
+import { cacheWorkout, generateUuid, getCachedLastLogs } from '@/Utils/offlineStorage';
 import { Head, Link, router } from '@inertiajs/vue3';
 import { computed, onMounted, ref } from 'vue';
 
@@ -117,14 +117,43 @@ const persistOrder = () => {
 };
 
 const starting = ref(false);
-const showOfflinePanel = ref(false);
+const { queueAction } = useOfflineSync();
 
-const offlineSession = useOfflineWorkoutSession();
+// Sessão iniciada 100% offline: em vez de um painel à parte, renderiza o
+// mesmíssimo componente da sessão ativa online (`WorkoutSessions/Active.vue`)
+// com dados sintetizados localmente — a tela fica idêntica em ambos os casos,
+// e o `start_session` só é confirmado no servidor quando a fila sincronizar.
+const offlineSessionProps = ref(null);
 
-const startWorkout = () => {
+const startWorkout = async () => {
     if (!navigator.onLine) {
-        showOfflinePanel.value = true;
-        offlineSession.start(props.workout);
+        starting.value = true;
+
+        const clientSessionId = generateUuid();
+        await queueAction({
+            type: 'start_session',
+            client_session_id: clientSessionId,
+            occurred_at: new Date().toISOString(),
+            workout_id: props.workout.id,
+        });
+
+        offlineSessionProps.value = {
+            session: {
+                id: clientSessionId,
+                started_at: new Date().toISOString(),
+                completed_at: null,
+                notes: null,
+            },
+            workout: {
+                id: props.workout.id,
+                name: props.workout.name,
+                description: props.workout.description,
+            },
+            exercises: exercises.value,
+            setLogs: [],
+            lastLogs: await getCachedLastLogs(),
+        };
+        starting.value = false;
         return;
     }
 
@@ -134,11 +163,6 @@ const startWorkout = () => {
         {},
         { onFinish: () => { starting.value = false; } },
     );
-};
-
-const closeOfflinePanel = () => {
-    showOfflinePanel.value = false;
-    offlineSession.reset();
 };
 </script>
 
@@ -292,7 +316,6 @@ const closeOfflinePanel = () => {
                         </BaseButton>
                         <p class="mt-2 text-center text-xs text-text-secondary">
                             Registre suas séries, repetições, pesos e tempo de descanso em tempo real.
-                            Sem internet? O treino pode ser iniciado offline e sincroniza sozinho depois.
                         </p>
                     </div>
                 </BaseCard>
@@ -300,22 +323,9 @@ const closeOfflinePanel = () => {
         </div>
     </AuthenticatedLayout>
 
-    <OfflineSessionPanel
-        v-if="showOfflinePanel"
-        :workout-name="workout.name"
-        :exercises="offlineSession.sortedExercises.value"
-        :current-index="offlineSession.currentIndex.value"
-        :current-exercise="offlineSession.currentExercise.value"
-        :set-inputs="offlineSession.currentSetInputs.value"
-        :sets="offlineSession.currentSets.value"
-        :done-sets-count="offlineSession.doneSetsCount.value"
-        :finished="offlineSession.finished.value"
-        :finishing="offlineSession.finishing.value"
-        @go-to-exercise="offlineSession.goToExercise"
-        @update-weight="(n, v) => offlineSession.updateSetField(n, 'weight', v)"
-        @update-reps="(n, v) => offlineSession.updateSetField(n, 'reps', v)"
-        @save-set="offlineSession.saveSet"
-        @finish="offlineSession.finishOffline"
-        @close="closeOfflinePanel"
+    <ActiveWorkoutSession
+        v-if="offlineSessionProps"
+        v-bind="offlineSessionProps"
+        :offline-only="true"
     />
 </template>

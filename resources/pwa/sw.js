@@ -114,6 +114,28 @@ async function handleNavigationRequest(request) {
     }
 }
 
+// Requisições Inertia (X-Inertia) ou qualquer outra chamada GET que espera
+// JSON: network-first, com fallback para o cache daquela URL exata. Se nem a
+// rede nem o cache tiverem uma resposta, o pior cenário NUNCA pode ser deixar
+// a Promise do Axios rejeitar com erro de rede (isso é o que gera a tela
+// branca / `ERR_INTERNET_DISCONNECTED` ao navegar pelo menu offline) — em vez
+// disso devolvemos um JSON válido sinalizando o fallback, e o bootstrap do
+// app (ver `resources/js/bootstrap.js`) reage a esse sinal recarregando a
+// página, que por sua vez cai na navegação de documento completo acima.
+async function handleInertiaRequest(request) {
+    try {
+        return await networkFirst(request, INERTIA_CACHE);
+    } catch (error) {
+        return new Response(JSON.stringify({ offline: true }), {
+            status: 200,
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Inertia-Offline-Fallback': 'true',
+            },
+        });
+    }
+}
+
 self.addEventListener('fetch', (event) => {
     const { request } = event;
     if (request.method !== 'GET') {
@@ -140,7 +162,7 @@ self.addEventListener('fetch', (event) => {
     const isJsonRequest = (request.headers.get('Accept') ?? '').includes('application/json');
 
     if (isInertiaRequest || isJsonRequest) {
-        event.respondWith(networkFirst(request, INERTIA_CACHE));
+        event.respondWith(handleInertiaRequest(request));
         return;
     }
 

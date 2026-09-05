@@ -38,6 +38,12 @@ const props = defineProps({
     exercises: { type: Array, required: true },
     setLogs: { type: Array, default: () => [] },
     lastLogs: { type: Object, default: () => ({}) },
+    // true quando esta sessão nasceu 100% offline (nenhuma WorkoutSession
+    // real existe no servidor ainda — `session.id` é só o `client_session_id`
+    // gerado no dispositivo). Nesse modo toda mutação vai para a fila de
+    // sincronização, mesmo que a conexão volte no meio do treino: só a
+    // sincronização em lote sabe criar a sessão real a partir do zero.
+    offlineOnly: { type: Boolean, default: false },
 });
 
 // ─── Sorted exercises ─────────────────────────────────────────────────────────
@@ -105,7 +111,6 @@ const pendingNavIndex = ref(null);
 // ─── Finish modal ─────────────────────────────────────────────────────────────
 const showFinishModal = ref(false);
 const finishing = ref(false);
-const finishedOffline = ref(false);
 
 // ─── Exercise timer (runs while a set is "executing") ─────────────────────────
 // Timer starts when user clicks "▶ Iniciar Série X", stops when set is saved.
@@ -373,16 +378,23 @@ const markSetCompleteLocally = (exercise, setNumber, inputs) => {
     startRest(exercise.rest_seconds ?? 60);
 };
 
+// Sessão sem WorkoutSession real no servidor ainda (nasceu offline): toda
+// mutação segue para a fila mesmo que a conexão volte no meio do treino,
+// já que só a sincronização em lote sabe criar essa sessão a partir do zero.
+const clientSessionId = computed(() =>
+    props.offlineOnly ? props.session.id : `session-${props.session.id}`,
+);
+
 const completeSet = async (exercise, setNumber) => {
     const exId = exercise.id;
     const inputs = setInputs.value[exId]?.[setNumber] ?? {};
     savingSet.value = `${exId}-${setNumber}`;
 
-    if (!isOnline.value) {
+    if (props.offlineOnly || !isOnline.value) {
         await queueAction({
             type: 'log_set',
-            client_session_id: `session-${props.session.id}`,
-            session_id: props.session.id,
+            client_session_id: clientSessionId.value,
+            session_id: props.offlineOnly ? null : props.session.id,
             occurred_at: new Date().toISOString(),
             exercise_id: exId,
             set_number: setNumber,
@@ -543,23 +555,22 @@ watch(restRemaining, (seconds) => {
 });
 
 // ─── Finish workout ───────────────────────────────────────────────────────────
-// Offline: navegar de volta ao dashboard exigiria uma nova requisição
-// Inertia (que falharia sem rede), então a finalização apenas fica marcada
-// localmente — o servidor confirmará `completed_at` quando a fila
-// sincronizar automaticamente com a volta da conexão.
+// Offline: a mutação vai para a fila e o app navega direto para o dashboard,
+// exatamente como o redirect que o servidor faria após um `finish` online —
+// o Service Worker serve essa navegação a partir do cache (ver
+// `resources/pwa/sw.js`), então a transição é idêntica à do caminho online e
+// a sincronização real acontece em segundo plano assim que a conexão voltar.
 const finishWorkout = async () => {
     finishing.value = true;
 
-    if (!isOnline.value) {
+    if (props.offlineOnly || !isOnline.value) {
         await queueAction({
             type: 'finish_session',
-            client_session_id: `session-${props.session.id}`,
-            session_id: props.session.id,
+            client_session_id: clientSessionId.value,
+            session_id: props.offlineOnly ? null : props.session.id,
             occurred_at: new Date().toISOString(),
         });
-        finishing.value = false;
-        showFinishModal.value = false;
-        finishedOffline.value = true;
+        router.visit(route('dashboard'));
         return;
     }
 
@@ -574,8 +585,17 @@ const finishWorkout = async () => {
 onMounted(() => {
     sortedExercises.value.forEach((ex) => initSetsForExercise(ex));
     autoStartNextSet(currentExercise.value);
-    fetchOverloadSuggestions();
     requestWakeLock();
+
+    // Sessão sem WorkoutSession real no servidor ainda: não há o que
+    // consultar para sugestões de sobrecarga. O card já sabe se degradar
+    // graciosamente para o estado 'error' (mesmo texto neutro exibido quando
+    // a chamada real falha por qualquer outro motivo).
+    if (props.offlineOnly) {
+        overloadStatus.value = 'error';
+    } else {
+        fetchOverloadSuggestions();
+    }
 
     // Cacheia treino e histórico recente no IndexedDB para uso offline
     // (permite reabrir/continuar esta ficha sem conexão em uma próxima vez).
@@ -583,16 +603,6 @@ onMounted(() => {
         cacheWorkout({ ...props.workout, exercises: props.exercises });
     }
     cacheLastLogs(props.lastLogs);
-});
-
-// Assim que a conexão volta após uma finalização feita offline, a página
-// segue automaticamente para o dashboard — nesse ponto a fila já sincroniza
-// via `useOfflineSync`, então a navegação real ao dashboard só depende de
-// rede, não do resultado da sincronização.
-watch(isOnline, (online) => {
-    if (online && finishedOffline.value) {
-        router.visit(route('dashboard'));
-    }
 });
 
 onUnmounted(() => {
@@ -618,19 +628,7 @@ watch(
 <template>
     <Head :title="`🔥 ${workout.name}`" />
 
-    <div v-if="finishedOffline" class="fixed inset-0 flex flex-col items-center justify-center gap-3 bg-surface-base px-6 text-center text-text-primary" style="z-index: 50">
-        <div class="flex h-16 w-16 items-center justify-center rounded-full bg-success/10 text-3xl">✓</div>
-        <h3 class="text-lg font-bold">Treino finalizado offline!</h3>
-        <p class="max-w-xs text-sm text-text-secondary">
-            Este treino será sincronizado com o servidor automaticamente assim que a internet voltar.
-        </p>
-    </div>
-
-    <div v-else class="fixed inset-0 flex flex-col bg-gray-950 text-white" style="z-index: 50">
-        <p v-if="!isOnline" class="bg-warning/10 px-4 py-1.5 text-center text-xs text-warning">
-            Sem conexão — suas séries estão sendo salvas neste dispositivo.
-        </p>
-
+    <div class="fixed inset-0 flex flex-col bg-gray-950 text-white" style="z-index: 50">
         <SessionHeader
             :workout-name="workout.name"
             :elapsed-display="elapsedDisplay"

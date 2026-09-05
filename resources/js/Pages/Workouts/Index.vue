@@ -4,16 +4,13 @@ import BaseButton from '@/Components/UI/BaseButton.vue';
 import BaseCard from '@/Components/UI/BaseCard.vue';
 import ProgramHeader from '@/Components/Programs/ProgramHeader.vue';
 import ConfirmationModal from '@/Components/ConfirmationModal.vue';
-import OfflineSessionPanel from '@/Components/WorkoutSessions/OfflineSessionPanel.vue';
-import OfflineWorkoutDetailPanel from '@/Components/Workouts/OfflineWorkoutDetailPanel.vue';
 import ScanWorkoutModal from '@/Components/Workouts/ScanWorkoutModal.vue';
 import WorkoutCard from '@/Components/Workouts/WorkoutCard.vue';
 import WorkoutsIndexHeader from '@/Components/Workouts/WorkoutsIndexHeader.vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { useOfflineWorkoutSession } from '@/Composables/useOfflineWorkoutSession';
 import { Head, router, useForm } from '@inertiajs/vue3';
 import { computed, onMounted, ref } from 'vue';
-import { cacheWorkoutsList, getCachedWorkoutById, getCachedWorkoutsList, isOffline } from '@/Utils/offlineStorage';
+import { cacheWorkoutsList, getCachedWorkoutsList, isOffline } from '@/Utils/offlineStorage';
 
 const props = defineProps({
     workouts: {
@@ -61,42 +58,13 @@ const activeProgramWorkouts = computed(() =>
 const hasWorkouts = computed(() => activeProgramWorkouts.value.length > 0);
 
 // ─── Abertura de treino (offline-first) ──────────────────────────────────────
-// Sem conexão, tentamos primeiro o detalhe já salvo no IndexedDB (abre
-// instantâneo, sem depender de rede). Se ainda não houver essa cópia local,
-// confiamos no Cache Warming: o Service Worker já deve ter o JSON do Inertia
-// para `workouts.show` no `INERTIA_CACHE` (populado em segundo plano por
-// `warmWorkoutsCache`), então um `router.visit` normal tende a funcionar
-// mesmo offline — sem exibir nenhum bloqueio manual para o usuário.
-const offlineWorkoutDetail = ref(null);
-const showOfflineSessionPanel = ref(false);
-const offlineSession = useOfflineWorkoutSession();
-
-const openWorkout = async (workout) => {
-    if (isOffline()) {
-        const cached = await getCachedWorkoutById(workout.id);
-
-        if (cached) {
-            offlineWorkoutDetail.value = cached;
-            return;
-        }
-    }
-
+// A navegação é sempre a mesma, online ou offline: o Cache Warming já deixou
+// o JSON do Inertia para `workouts.show` no `INERTIA_CACHE` (ver
+// `resources/js/Utils/cacheWarming.js`), e o Service Worker (network-first
+// com fallback para esse cache) resolve a requisição de forma invisível —
+// sem nenhuma tela ou painel diferente do fluxo online.
+const openWorkout = (workout) => {
     router.visit(route('workouts.show', { workout: workout.id, return_to: route('workouts.index') }));
-};
-
-const closeOfflineDetail = () => {
-    offlineWorkoutDetail.value = null;
-};
-
-const startOfflineFromDetail = () => {
-    showOfflineSessionPanel.value = true;
-    offlineSession.start(offlineWorkoutDetail.value);
-};
-
-const closeOfflineSessionPanel = () => {
-    showOfflineSessionPanel.value = false;
-    offlineWorkoutDetail.value = null;
-    offlineSession.reset();
 };
 
 // ─── Archive / reactivate ───────────────────────────────────────────────────
@@ -240,30 +208,4 @@ const submitScan = () => {
             </div>
         </div>
     </AuthenticatedLayout>
-
-    <OfflineWorkoutDetailPanel
-        v-if="offlineWorkoutDetail && !showOfflineSessionPanel"
-        :workout="offlineWorkoutDetail"
-        @start="startOfflineFromDetail"
-        @close="closeOfflineDetail"
-    />
-
-    <OfflineSessionPanel
-        v-if="showOfflineSessionPanel"
-        :workout-name="offlineWorkoutDetail.name"
-        :exercises="offlineSession.sortedExercises.value"
-        :current-index="offlineSession.currentIndex.value"
-        :current-exercise="offlineSession.currentExercise.value"
-        :set-inputs="offlineSession.currentSetInputs.value"
-        :sets="offlineSession.currentSets.value"
-        :done-sets-count="offlineSession.doneSetsCount.value"
-        :finished="offlineSession.finished.value"
-        :finishing="offlineSession.finishing.value"
-        @go-to-exercise="offlineSession.goToExercise"
-        @update-weight="(n, v) => offlineSession.updateSetField(n, 'weight', v)"
-        @update-reps="(n, v) => offlineSession.updateSetField(n, 'reps', v)"
-        @save-set="offlineSession.saveSet"
-        @finish="offlineSession.finishOffline"
-        @close="closeOfflineSessionPanel"
-    />
 </template>
