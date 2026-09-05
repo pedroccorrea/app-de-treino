@@ -575,3 +575,71 @@
 2. `php artisan test` passa em 100% de toda a suíte.
 3. `tests/Architecture/ArchitecturalRulesTest.php` passa sem violações.
 4. `npm run build` compila com zero erros.
+
+# Phase 26: Login Persistente, Toasts com Gesto de Deslizar e Auto-Preenchimento Sequencial de Séries
+## Tasks
+1. **Sessão Persistente de Longa Duração:**
+   - Em `config/session.php` e `.env`: definir `lifetime` para 525600 minutos (1 ano) por padrão.
+   - Em `resources/js/Pages/Auth/Login.vue`: manter a opção "Lembrar de mim" (`remember`) ativada como `true` por padrão no formulário para evitar deslogar no celular.
+
+2. **Toasts Deslizáveis (Swipe to Dismiss) e Auto-Fechamento:**
+   - No componente de notificação global / flash message:
+     * Implementar gestos de toque (`touchstart`, `touchmove`, `touchend`) permitindo arrastar o toast horizontalmente para descartá-lo instantaneamente.
+     * Incluir botão visível de fechar (`✕`).
+     * Adicionar temporizador de auto-fechamento após 3.5 segundos para liberar os cliques no menu e no topo da tela.
+
+3. **Auto-Preenchimento Inteligente de Séries:**
+   - Em `resources/js/Pages/WorkoutSessions/Active.vue`:
+     * Série 1: inicializar os inputs com a carga e repetições da última série realizada no treino anterior do mesmo exercício (se houver histórico). Se for treino novo, inicializar com 0kg e a meta de repetições.
+     * Séries 2, 3 e seguintes: ao concluir a série anterior, pré-preencher automaticamente os inputs da próxima série com os valores reais (peso e repetições) registrados na série imediatamente anterior da sessão atual.
+
+## Acceptance Criteria
+1. `tests/Feature/PersistentSessionTest.php` valida que a sessão é configurada para longa duração.
+2. Em `Active.vue`, as séries seguintes herdam os dados de peso e reps da série anterior concluída.
+3. `php artisan test` passa em 100% de toda a suíte.
+4. `tests/Architecture/ArchitecturalRulesTest.php` passa sem violações.
+5. `npm run build` compila com zero erros.
+
+# Phase 27: Cronômetros Resilientes a Segundo Plano, Wake Lock de Tela e Áudio em Hardware Clock
+## Tasks
+1. **Timers Baseados em Timestamp Delta:**
+   - Em `resources/js/Pages/WorkoutSessions/Active.vue` e componentes de cronômetro:
+     * Eliminar contadores baseados exclusivamente em `setInterval` incremental.
+     * Armazenar o `startTimestamp` (`Date.now()`) e recalcular o tempo decorrido dinamicamente.
+     * No cronômetro de descanso, calcular o tempo restante contra um `targetEndTimestamp`.
+     * Ouvir os eventos `document.addEventListener('visibilitychange')` e `window.addEventListener('focus')` para atualizar a interface imediatamente ao ligar a tela do aparelho.
+
+2. **Prevenção de Bloqueio de Tela no Banco (Screen Wake Lock API):**
+   - Utilizar a API `navigator.wakeLock.request('screen')` durante a contagem regressiva de descanso ou sessão ativa quando a tela estiver visível, evitando que o aparelho apague sozinho por inatividade.
+
+3. **Alerta Sonoro via Relógio de Hardware (Web Audio API):**
+   - No helper de áudio, agendar a execução do bipe sonoro diretamente na linha do tempo de hardware da Web Audio API (`audioContext.currentTime + tempoRestante`).
+   - O bipe deve ser acionado pontualmente no segundo zero mesmo se a tela for bloqueada no botão físico ou o app for minimizado.
+
+## Acceptance Criteria
+1. Os cronômetros utilizam deltas de `Date.now()` ao retornar da visibilidade oculta.
+2. O alerta sonoro agenda o nó de áudio no `AudioContext` sem depender de execução contínua da thread principal de UI.
+3. `php artisan test` passa em 100% de toda a suíte.
+4. `npm run build` compila com zero erros.
+
+# Phase 28: Modo Offline-First com Cache Local e Fila de Sincronização (IndexedDB)
+## Tasks
+1. **Armazenamento Offline com IndexedDB:**
+   - Criar módulo `resources/js/Utils/offlineStorage.js` para persistir localmente no dispositivo:
+     * Programas de treino e fichas ativas (`cached_workouts`).
+     * Catálogo mestre de exercícios (`cached_exercises`).
+     * Histórico de cargas recentes (`cached_last_logs`).
+   - Permitir navegação e abertura de treinos existentes mesmo sem conexão com a internet (`!navigator.onLine`).
+
+2. **Fila de Sincronização (Outbox Queue):**
+   - Permitir iniciar sessão, registrar séries e finalizar treino em modo offline.
+   - Gravar as mutações offline na fila de espera do IndexedDB (`sync_queue`).
+   - Criar rota e endpoint em lote `POST /api/sync/workout-sessions` no Laravel para processar a fila recebida.
+   - Adicionar listener para `window.addEventListener('online')` para sincronizar automaticamente as ações pendentes assim que a conexão for restabelecida.
+
+## Acceptance Criteria
+1. Teste de Feature valida que `POST /api/sync/workout-sessions` processa e persiste as sessões e séries criadas offline na ordem cronológica correta.
+2. O aplicativo carrega os treinos cacheados no IndexedDB quando desconectado da rede.
+3. `php artisan test` passa em 100% de toda a suíte.
+4. `tests/Architecture/ArchitecturalRulesTest.php` passa sem violações.
+5. `npm run build` compila com zero erros.
