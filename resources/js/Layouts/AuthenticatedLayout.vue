@@ -3,6 +3,7 @@ import { ref, watch } from 'vue';
 import SetwaveLogo from '@/Components/Brand/SetwaveLogo.vue';
 import ActiveSessionBanner from '@/Components/Navigation/ActiveSessionBanner.vue';
 import Sidebar from '@/Components/Navigation/Sidebar.vue';
+import Toast from '@/Components/Notifications/Toast.vue';
 import { router, usePage } from '@inertiajs/vue3';
 
 const sidebarOpen = ref(false);
@@ -14,21 +15,17 @@ const logout = () => {
 // ─── Success / error toasts ─────────────────────────────────────────────────
 // Whenever a redirect carries a `flash.success` or `flash.error` message,
 // show it as a self-dismissing toast on top of whatever page the redirect
-// landed on.
+// landed on. The Toast component owns its own auto-dismiss timer and swipe
+// gesture; this layout only tracks which message/variant is currently shown.
 const page = usePage();
 const toastMessage = ref(null);
 const toastVariant = ref('success');
-let toastTimeout = null;
 
 const showToast = (message, variant) => {
     if (!message) return;
 
     toastMessage.value = message;
     toastVariant.value = variant;
-    clearTimeout(toastTimeout);
-    toastTimeout = setTimeout(() => {
-        toastMessage.value = null;
-    }, 4000);
 };
 
 watch(
@@ -104,34 +101,11 @@ watch(
                 leave-from-class="opacity-100 translate-y-0 translate-x-0"
                 leave-to-class="opacity-0 -translate-y-2 sm:translate-y-0 sm:translate-x-4"
             >
-                <div
-                    v-if="toastMessage"
-                    class="fixed inset-x-4 top-4 z-[100] flex justify-center sm:inset-x-auto sm:right-6 sm:justify-end"
-                >
-                    <div
-                        :class="[
-                            'flex w-full max-w-sm items-center gap-3 rounded-radius-lg border bg-surface-overlay px-4 py-3.5 shadow-xl backdrop-blur',
-                            toastVariant === 'error' ? 'border-danger/30' : 'border-border-accent',
-                        ]"
-                    >
-                        <span
-                            :class="[
-                                'flex h-8 w-8 shrink-0 items-center justify-center rounded-radius-full',
-                                toastVariant === 'error' ? 'bg-danger/15 text-danger' : 'bg-accent-muted text-accent-text-soft',
-                            ]"
-                        >
-                            <svg v-if="toastVariant === 'error'" class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 9v3.75m0 3.75h.008v.008H12v-.008zM21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            <svg v-else class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
-                            </svg>
-                        </span>
-                        <p class="text-sm font-semibold text-text-primary">
-                            {{ toastMessage }}
-                        </p>
-                    </div>
-                </div>
+                <Toast
+                    :message="toastMessage"
+                    :variant="toastVariant"
+                    @close="toastMessage = null"
+                />
             </Transition>
         </Teleport>
     </div>

@@ -177,12 +177,28 @@ const initSetsForExercise = (exercise) => {
         setStates.value[exId][log.set_number] = 'done';
     }
 
-    // Init remaining sets
-    for (let n = 1; n <= targetSets; n++) {
+    // Série 1: herda carga/reps da última vez que o exercício foi feito.
+    // Sem histórico (exercício novo), começa zerada na meta de repetições.
+    if (!setInputs.value[exId][1]) {
+        setInputs.value[exId][1] = {
+            weight: last?.weight ?? 0,
+            reps: last?.reps ?? exercise.target_reps ?? '',
+        };
+    }
+    if (!setStates.value[exId][1]) {
+        setStates.value[exId][1] = 'waiting';
+    }
+
+    // Séries seguintes: herdam da série imediatamente anterior desta mesma
+    // sessão. Aqui é só o valor inicial (o histórico); completeSet() reescreve
+    // esse valor com o que foi de fato registrado assim que a série anterior
+    // é concluída.
+    for (let n = 2; n <= targetSets; n++) {
         if (!setInputs.value[exId][n]) {
+            const previous = setInputs.value[exId][n - 1];
             setInputs.value[exId][n] = {
-                weight: last?.weight ?? '',
-                reps: last?.reps ?? '',
+                weight: previous?.weight ?? last?.weight ?? 0,
+                reps: previous?.reps ?? last?.reps ?? exercise.target_reps ?? '',
             };
         }
         if (!setStates.value[exId][n]) {
@@ -339,6 +355,17 @@ const completeSet = (exercise, setNumber) => {
                 setStates.value[exId][setNumber] = 'done';
                 savingSet.value = null;
 
+                // Auto-preenchimento sequencial: a próxima série herda os
+                // valores reais (peso e reps) registrados nesta, desde que
+                // ainda não tenha sido concluída.
+                const nextSetNumber = setNumber + 1;
+                if (!isSetSaved(exId, nextSetNumber)) {
+                    setInputs.value[exId][nextSetNumber] = {
+                        weight: inputs.weight !== '' && inputs.weight !== null ? inputs.weight : 0,
+                        reps: inputs.reps,
+                    };
+                }
+
                 // Stop exercise timer and start rest
                 stopExerciseTimer();
                 exerciseTimerSeconds.value = 0;
@@ -381,8 +408,12 @@ const addExtraSet = (exercise) => {
     const exId = exercise.id;
     extraSets.value[exId] = (extraSets.value[exId] ?? 0) + 1;
     const newSetNum = totalSetsForExercise(exercise);
+    const previous = setInputs.value[exId]?.[newSetNum - 1];
     const last = props.lastLogs?.[exId];
-    setInputs.value[exId][newSetNum] = { weight: last?.weight ?? '', reps: last?.reps ?? '' };
+    setInputs.value[exId][newSetNum] = {
+        weight: previous?.weight ?? last?.weight ?? 0,
+        reps: previous?.reps ?? last?.reps ?? exercise.target_reps ?? '',
+    };
     setStates.value[exId][newSetNum] = 'waiting';
     autoStartNextSet(exercise);
 };

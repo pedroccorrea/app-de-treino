@@ -16,10 +16,12 @@ defineProps({
     },
 });
 
+// "Lembrar de mim" ativado por padrão: no celular, o esperado é permanecer
+// logado — deslogar sozinho é a exceção, não a regra.
 const form = useForm({
     email: '',
     password: '',
-    remember: false,
+    remember: true,
 });
 
 const submit = () => {
