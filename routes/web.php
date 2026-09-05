@@ -3,6 +3,7 @@
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ExerciseHistoryController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\SyncController;
 use App\Http\Controllers\WorkoutController;
 use App\Http\Controllers\WorkoutProgramController;
 use App\Http\Controllers\WorkoutScannerController;
@@ -60,6 +61,8 @@ Route::middleware('auth')->group(function () {
     Route::post('/workout-sessions/{session}/finish', [WorkoutSessionController::class, 'finish'])->name('workout-sessions.finish');
 
     Route::get('/exercises/{exercise}/history', [ExerciseHistoryController::class, 'show'])->name('exercises.history');
+
+    Route::post('/api/sync/workout-sessions', [SyncController::class, 'workoutSessions'])->name('sync.workout-sessions');
 
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');

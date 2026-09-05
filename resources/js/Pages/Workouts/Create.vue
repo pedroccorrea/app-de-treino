@@ -1,14 +1,19 @@
 <script setup>
 import WorkoutForm from '@/Components/Workouts/WorkoutForm.vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import { cacheExercisesCatalog } from '@/Utils/offlineStorage';
 import { Head, Link, useForm } from '@inertiajs/vue3';
+import { onMounted } from 'vue';
 
-defineProps({
+const props = defineProps({
     exercisesCatalog: {
         type: Array,
         default: () => [],
     },
 });
+
+// Cacheia o catálogo mestre de exercícios no IndexedDB para uso offline.
+onMounted(() => cacheExercisesCatalog(props.exercisesCatalog));
 
 const form = useForm({
     name: '',

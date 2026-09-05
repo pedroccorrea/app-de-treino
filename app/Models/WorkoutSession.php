@@ -8,10 +8,11 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['user_id', 'workout_id', 'started_at', 'completed_at', 'notes'])]
+#[Fillable(['user_id', 'workout_id', 'client_uuid', 'started_at', 'completed_at', 'notes'])]
 class WorkoutSession extends Model
 {
     use HasFactory;
+
     protected function casts(): array
     {
         return [

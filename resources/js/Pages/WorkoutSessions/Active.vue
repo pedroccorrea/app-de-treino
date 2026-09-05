@@ -9,7 +9,9 @@ import RestTimerOverlay from '@/Components/WorkoutSessions/RestTimerOverlay.vue'
 import SessionHeader from '@/Components/WorkoutSessions/SessionHeader.vue';
 import { useAudioChime } from '@/Composables/useAudioChime';
 import { useNowTicker } from '@/Composables/useNowTicker';
+import { useOfflineSync } from '@/Composables/useOfflineSync';
 import { useWakeLock } from '@/Composables/useWakeLock';
+import { cacheLastLogs, cacheWorkout } from '@/Utils/offlineStorage';
 import { Head, router } from '@inertiajs/vue3';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 
@@ -17,6 +19,10 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 const { now } = useNowTicker();
 const { requestWakeLock, releaseWakeLock } = useWakeLock();
 const { scheduleChime, cancelChime } = useAudioChime();
+// Agrupa esta sessão (já real no banco) na fila de sincronização caso a
+// conexão caia no meio do treino — nesse cenário `client_session_id` é só
+// uma etiqueta de agrupamento, já que `session_id` real é sempre enviado.
+const { isOnline, queueAction } = useOfflineSync();
 
 // ─── Menu lateral (navegação livre sem interromper a sessão) ──────────────────
 const sidebarOpen = ref(false);
@@ -99,6 +105,7 @@ const pendingNavIndex = ref(null);
 // ─── Finish modal ─────────────────────────────────────────────────────────────
 const showFinishModal = ref(false);
 const finishing = ref(false);
+const finishedOffline = ref(false);
 
 // ─── Exercise timer (runs while a set is "executing") ─────────────────────────
 // Timer starts when user clicks "▶ Iniciar Série X", stops when set is saved.
@@ -345,10 +352,47 @@ const startSet = (exercise, setNumber) => {
 // ─── Complete a set (running → done) ─────────────────────────────────────────
 const savingSet = ref(null);
 
-const completeSet = (exercise, setNumber) => {
+// Marca a série como concluída na UI local e agenda o descanso — usado tanto
+// pelo caminho online (após confirmação do servidor) quanto pelo offline
+// (otimista, já que a mutação só será confirmada quando a fila sincronizar).
+const markSetCompleteLocally = (exercise, setNumber, inputs) => {
+    const exId = exercise.id;
+    if (!savedSets.value[exId]) savedSets.value[exId] = new Set();
+    savedSets.value[exId].add(setNumber);
+    setStates.value[exId][setNumber] = 'done';
+
+    const nextSetNumber = setNumber + 1;
+    if (!isSetSaved(exId, nextSetNumber)) {
+        setInputs.value[exId][nextSetNumber] = {
+            weight: inputs.weight !== '' && inputs.weight !== null ? inputs.weight : 0,
+            reps: inputs.reps,
+        };
+    }
+
+    stopExerciseTimer();
+    startRest(exercise.rest_seconds ?? 60);
+};
+
+const completeSet = async (exercise, setNumber) => {
     const exId = exercise.id;
     const inputs = setInputs.value[exId]?.[setNumber] ?? {};
     savingSet.value = `${exId}-${setNumber}`;
+
+    if (!isOnline.value) {
+        await queueAction({
+            type: 'log_set',
+            client_session_id: `session-${props.session.id}`,
+            session_id: props.session.id,
+            occurred_at: new Date().toISOString(),
+            exercise_id: exId,
+            set_number: setNumber,
+            weight: inputs.weight !== '' ? inputs.weight : null,
+            reps: inputs.reps,
+        });
+        markSetCompleteLocally(exercise, setNumber, inputs);
+        savingSet.value = null;
+        return;
+    }
 
     router.post(
         route('workout-sessions.sets.store', props.session.id),
@@ -362,26 +406,8 @@ const completeSet = (exercise, setNumber) => {
             preserveScroll: true,
             preserveState: true,
             onSuccess: () => {
-                if (!savedSets.value[exId]) savedSets.value[exId] = new Set();
-                savedSets.value[exId].add(setNumber);
-                setStates.value[exId][setNumber] = 'done';
+                markSetCompleteLocally(exercise, setNumber, inputs);
                 savingSet.value = null;
-
-                // Auto-preenchimento sequencial: a próxima série herda os
-                // valores reais (peso e reps) registrados nesta, desde que
-                // ainda não tenha sido concluída.
-                const nextSetNumber = setNumber + 1;
-                if (!isSetSaved(exId, nextSetNumber)) {
-                    setInputs.value[exId][nextSetNumber] = {
-                        weight: inputs.weight !== '' && inputs.weight !== null ? inputs.weight : 0,
-                        reps: inputs.reps,
-                    };
-                }
-
-                // Stop exercise timer and start rest
-                stopExerciseTimer();
-                const restSecs = exercise.rest_seconds ?? 60;
-                startRest(restSecs);
             },
             onError: () => {
                 savingSet.value = null;
@@ -517,8 +543,26 @@ watch(restRemaining, (seconds) => {
 });
 
 // ─── Finish workout ───────────────────────────────────────────────────────────
-const finishWorkout = () => {
+// Offline: navegar de volta ao dashboard exigiria uma nova requisição
+// Inertia (que falharia sem rede), então a finalização apenas fica marcada
+// localmente — o servidor confirmará `completed_at` quando a fila
+// sincronizar automaticamente com a volta da conexão.
+const finishWorkout = async () => {
     finishing.value = true;
+
+    if (!isOnline.value) {
+        await queueAction({
+            type: 'finish_session',
+            client_session_id: `session-${props.session.id}`,
+            session_id: props.session.id,
+            occurred_at: new Date().toISOString(),
+        });
+        finishing.value = false;
+        showFinishModal.value = false;
+        finishedOffline.value = true;
+        return;
+    }
+
     router.post(
         route('workout-sessions.finish', props.session.id),
         {},
@@ -532,6 +576,23 @@ onMounted(() => {
     autoStartNextSet(currentExercise.value);
     fetchOverloadSuggestions();
     requestWakeLock();
+
+    // Cacheia treino e histórico recente no IndexedDB para uso offline
+    // (permite reabrir/continuar esta ficha sem conexão em uma próxima vez).
+    if (props.workout) {
+        cacheWorkout({ ...props.workout, exercises: props.exercises });
+    }
+    cacheLastLogs(props.lastLogs);
+});
+
+// Assim que a conexão volta após uma finalização feita offline, a página
+// segue automaticamente para o dashboard — nesse ponto a fila já sincroniza
+// via `useOfflineSync`, então a navegação real ao dashboard só depende de
+// rede, não do resultado da sincronização.
+watch(isOnline, (online) => {
+    if (online && finishedOffline.value) {
+        router.visit(route('dashboard'));
+    }
 });
 
 onUnmounted(() => {
@@ -557,7 +618,19 @@ watch(
 <template>
     <Head :title="`🔥 ${workout.name}`" />
 
-    <div class="fixed inset-0 flex flex-col bg-gray-950 text-white" style="z-index: 50">
+    <div v-if="finishedOffline" class="fixed inset-0 flex flex-col items-center justify-center gap-3 bg-surface-base px-6 text-center text-text-primary" style="z-index: 50">
+        <div class="flex h-16 w-16 items-center justify-center rounded-full bg-success/10 text-3xl">✓</div>
+        <h3 class="text-lg font-bold">Treino finalizado offline!</h3>
+        <p class="max-w-xs text-sm text-text-secondary">
+            Este treino será sincronizado com o servidor automaticamente assim que a internet voltar.
+        </p>
+    </div>
+
+    <div v-else class="fixed inset-0 flex flex-col bg-gray-950 text-white" style="z-index: 50">
+        <p v-if="!isOnline" class="bg-warning/10 px-4 py-1.5 text-center text-xs text-warning">
+            Sem conexão — suas séries estão sendo salvas neste dispositivo.
+        </p>
+
         <SessionHeader
             :workout-name="workout.name"
             :elapsed-display="elapsedDisplay"

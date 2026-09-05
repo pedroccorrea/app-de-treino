@@ -74,9 +74,12 @@ class WorkoutSessionService
     /**
      * Encerra todas as sessões abertas (`completed_at is null`) do usuário,
      * opcionalmente ignorando uma sessão específica. Usado tanto ao iniciar
-     * quanto ao finalizar uma sessão, para eliminar sessões fantasmas.
+     * quanto ao finalizar uma sessão, para eliminar sessões fantasmas — e
+     * reaproveitado por `SyncService` para que o mesmo invariante (nunca mais
+     * de uma sessão ativa por usuário) valha também para sessões abertas
+     * offline e sincronizadas depois em lote.
      */
-    private function closeOpenSessionsForUser(User $user, ?int $exceptSessionId = null): void
+    public function closeOpenSessionsForUser(User $user, ?int $exceptSessionId = null): void
     {
         $user->workoutSessions()
             ->whereNull('completed_at')

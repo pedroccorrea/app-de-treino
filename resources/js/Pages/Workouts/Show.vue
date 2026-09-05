@@ -3,9 +3,12 @@ import BaseBadge from '@/Components/UI/BaseBadge.vue';
 import BaseButton from '@/Components/UI/BaseButton.vue';
 import BaseCard from '@/Components/UI/BaseCard.vue';
 import SectionLabel from '@/Components/UI/SectionLabel.vue';
+import OfflineSessionPanel from '@/Components/WorkoutSessions/OfflineSessionPanel.vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import { useOfflineWorkoutSession } from '@/Composables/useOfflineWorkoutSession';
+import { cacheWorkout } from '@/Utils/offlineStorage';
 import { Head, Link, router } from '@inertiajs/vue3';
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 
 const props = defineProps({
     workout: {
@@ -13,6 +16,10 @@ const props = defineProps({
         required: true,
     },
 });
+
+// Grava o detalhe deste treino (com exercícios) no IndexedDB para que ele
+// possa ser reaberto e uma sessão iniciada mesmo sem conexão de internet.
+onMounted(() => cacheWorkout(props.workout));
 
 // If this page was itself opened from another page (e.g. a program's page)
 // via ?return_to=..., the back button and the edit link (which carries
@@ -110,14 +117,28 @@ const persistOrder = () => {
 };
 
 const starting = ref(false);
+const showOfflinePanel = ref(false);
+
+const offlineSession = useOfflineWorkoutSession();
 
 const startWorkout = () => {
+    if (!navigator.onLine) {
+        showOfflinePanel.value = true;
+        offlineSession.start(props.workout);
+        return;
+    }
+
     starting.value = true;
     router.post(
         route('workouts.start', props.workout.id),
         {},
         { onFinish: () => { starting.value = false; } },
     );
+};
+
+const closeOfflinePanel = () => {
+    showOfflinePanel.value = false;
+    offlineSession.reset();
 };
 </script>
 
@@ -271,10 +292,30 @@ const startWorkout = () => {
                         </BaseButton>
                         <p class="mt-2 text-center text-xs text-text-secondary">
                             Registre suas séries, repetições, pesos e tempo de descanso em tempo real.
+                            Sem internet? O treino pode ser iniciado offline e sincroniza sozinho depois.
                         </p>
                     </div>
                 </BaseCard>
             </div>
         </div>
     </AuthenticatedLayout>
+
+    <OfflineSessionPanel
+        v-if="showOfflinePanel"
+        :workout-name="workout.name"
+        :exercises="offlineSession.sortedExercises.value"
+        :current-index="offlineSession.currentIndex.value"
+        :current-exercise="offlineSession.currentExercise.value"
+        :set-inputs="offlineSession.currentSetInputs.value"
+        :sets="offlineSession.currentSets.value"
+        :done-sets-count="offlineSession.doneSetsCount.value"
+        :finished="offlineSession.finished.value"
+        :finishing="offlineSession.finishing.value"
+        @go-to-exercise="offlineSession.goToExercise"
+        @update-weight="(n, v) => offlineSession.updateSetField(n, 'weight', v)"
+        @update-reps="(n, v) => offlineSession.updateSetField(n, 'reps', v)"
+        @save-set="offlineSession.saveSet"
+        @finish="offlineSession.finishOffline"
+        @close="closeOfflinePanel"
+    />
 </template>

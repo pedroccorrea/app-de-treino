@@ -4,12 +4,16 @@ import BaseButton from '@/Components/UI/BaseButton.vue';
 import BaseCard from '@/Components/UI/BaseCard.vue';
 import ProgramHeader from '@/Components/Programs/ProgramHeader.vue';
 import ConfirmationModal from '@/Components/ConfirmationModal.vue';
+import OfflineSessionPanel from '@/Components/WorkoutSessions/OfflineSessionPanel.vue';
+import OfflineWorkoutDetailPanel from '@/Components/Workouts/OfflineWorkoutDetailPanel.vue';
 import ScanWorkoutModal from '@/Components/Workouts/ScanWorkoutModal.vue';
 import WorkoutCard from '@/Components/Workouts/WorkoutCard.vue';
 import WorkoutsIndexHeader from '@/Components/Workouts/WorkoutsIndexHeader.vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import { useOfflineWorkoutSession } from '@/Composables/useOfflineWorkoutSession';
 import { Head, router, useForm } from '@inertiajs/vue3';
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
+import { cacheWorkoutsList, getCachedWorkoutById, getCachedWorkoutsList, isOffline } from '@/Utils/offlineStorage';
 
 const props = defineProps({
     workouts: {
@@ -30,14 +34,73 @@ const props = defineProps({
     },
 });
 
+// ─── Modo offline: usa a última lista de treinos cacheada no IndexedDB ───────
+// quando o dispositivo está sem conexão (ex.: a página foi reaberta a partir
+// do cache do app/service worker enquanto offline). Enquanto online, cada
+// carregamento desta tela grava a lista mais recente para uso futuro offline.
+const offlineWorkouts = ref(null);
+
+const displayedWorkouts = computed(() => offlineWorkouts.value ?? props.workouts);
+
+onMounted(async () => {
+    if (isOffline()) {
+        offlineWorkouts.value = await getCachedWorkoutsList();
+        return;
+    }
+
+    cacheWorkoutsList(props.workouts);
+});
+
 // ─── Fichas do programa ativo ────────────────────────────────────────────────
 const activeProgramWorkouts = computed(() =>
     props.activeProgram
-        ? props.workouts.filter((w) => w.program_ids.includes(props.activeProgram.id))
-        : props.workouts.filter((w) => w.program_ids.length === 0),
+        ? displayedWorkouts.value.filter((w) => w.program_ids.includes(props.activeProgram.id))
+        : displayedWorkouts.value.filter((w) => w.program_ids.length === 0),
 );
 
 const hasWorkouts = computed(() => activeProgramWorkouts.value.length > 0);
+
+// ─── Abertura de treino (offline-first) ──────────────────────────────────────
+// Sem conexão, um `router.visit` para `workouts.show` falharia (é uma
+// requisição de rede real). Nesse caso, abrimos o detalhe a partir do
+// próprio cache do IndexedDB e, dali, uma sessão pode ser iniciada offline
+// diretamente — sem depender da página `Workouts/Show` nunca ter sido aberta.
+const offlineWorkoutDetail = ref(null);
+const offlineOpenError = ref(false);
+const showOfflineSessionPanel = ref(false);
+const offlineSession = useOfflineWorkoutSession();
+
+const openWorkout = async (workout) => {
+    if (isOffline()) {
+        const cached = await getCachedWorkoutById(workout.id);
+
+        if (!cached) {
+            offlineOpenError.value = true;
+            setTimeout(() => { offlineOpenError.value = false; }, 4000);
+            return;
+        }
+
+        offlineWorkoutDetail.value = cached;
+        return;
+    }
+
+    router.visit(route('workouts.show', { workout: workout.id, return_to: route('workouts.index') }));
+};
+
+const closeOfflineDetail = () => {
+    offlineWorkoutDetail.value = null;
+};
+
+const startOfflineFromDetail = () => {
+    showOfflineSessionPanel.value = true;
+    offlineSession.start(offlineWorkoutDetail.value);
+};
+
+const closeOfflineSessionPanel = () => {
+    showOfflineSessionPanel.value = false;
+    offlineWorkoutDetail.value = null;
+    offlineSession.reset();
+};
 
 // ─── Archive / reactivate ───────────────────────────────────────────────────
 const toggleArchive = (workout) => {
@@ -135,6 +198,13 @@ const submitScan = () => {
                     class="mb-5"
                 />
 
+                <p
+                    v-if="offlineOpenError"
+                    class="mb-5 rounded-radius-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning"
+                >
+                    Este treino ainda não foi aberto neste dispositivo, então não está disponível offline.
+                </p>
+
                 <BaseCard
                     v-if="!hasWorkouts"
                     class="border-dashed px-6 py-16 text-center"
@@ -172,7 +242,7 @@ const submitScan = () => {
                         :key="workout.id"
                         :workout="workout"
                         :current-path="currentPath"
-                        @open="(w) => router.visit(route('workouts.show', { workout: w.id, return_to: route('workouts.index') }))"
+                        @open="openWorkout"
                         @toggle-archive="toggleArchive"
                         @delete="confirmDelete"
                     />
@@ -180,4 +250,30 @@ const submitScan = () => {
             </div>
         </div>
     </AuthenticatedLayout>
+
+    <OfflineWorkoutDetailPanel
+        v-if="offlineWorkoutDetail && !showOfflineSessionPanel"
+        :workout="offlineWorkoutDetail"
+        @start="startOfflineFromDetail"
+        @close="closeOfflineDetail"
+    />
+
+    <OfflineSessionPanel
+        v-if="showOfflineSessionPanel"
+        :workout-name="offlineWorkoutDetail.name"
+        :exercises="offlineSession.sortedExercises.value"
+        :current-index="offlineSession.currentIndex.value"
+        :current-exercise="offlineSession.currentExercise.value"
+        :set-inputs="offlineSession.currentSetInputs.value"
+        :sets="offlineSession.currentSets.value"
+        :done-sets-count="offlineSession.doneSetsCount.value"
+        :finished="offlineSession.finished.value"
+        :finishing="offlineSession.finishing.value"
+        @go-to-exercise="offlineSession.goToExercise"
+        @update-weight="(n, v) => offlineSession.updateSetField(n, 'weight', v)"
+        @update-reps="(n, v) => offlineSession.updateSetField(n, 'reps', v)"
+        @save-set="offlineSession.saveSet"
+        @finish="offlineSession.finishOffline"
+        @close="closeOfflineSessionPanel"
+    />
 </template>
