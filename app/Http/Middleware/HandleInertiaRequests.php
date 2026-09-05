@@ -39,7 +39,26 @@ class HandleInertiaRequests extends Middleware
                 'error' => fn () => $request->session()->get('error'),
             ],
             'activeWorkoutSession' => fn () => $this->formatActiveWorkoutSession($request),
+            'userWorkoutIds' => fn () => $this->userWorkoutIds($request),
         ];
+    }
+
+    /**
+     * The authenticated user's active workout IDs, shared globally so the
+     * Cache Warming utility can pre-fetch every `workouts.show` page in the
+     * background from any authenticated screen, not just `Workouts/Index`.
+     *
+     * @return array<int, int>
+     */
+    private function userWorkoutIds(Request $request): array
+    {
+        $user = $request->user();
+
+        if (! $user) {
+            return [];
+        }
+
+        return $user->workouts()->active()->pluck('id')->all();
     }
 
     /**

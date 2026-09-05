@@ -61,12 +61,13 @@ const activeProgramWorkouts = computed(() =>
 const hasWorkouts = computed(() => activeProgramWorkouts.value.length > 0);
 
 // ─── Abertura de treino (offline-first) ──────────────────────────────────────
-// Sem conexão, um `router.visit` para `workouts.show` falharia (é uma
-// requisição de rede real). Nesse caso, abrimos o detalhe a partir do
-// próprio cache do IndexedDB e, dali, uma sessão pode ser iniciada offline
-// diretamente — sem depender da página `Workouts/Show` nunca ter sido aberta.
+// Sem conexão, tentamos primeiro o detalhe já salvo no IndexedDB (abre
+// instantâneo, sem depender de rede). Se ainda não houver essa cópia local,
+// confiamos no Cache Warming: o Service Worker já deve ter o JSON do Inertia
+// para `workouts.show` no `INERTIA_CACHE` (populado em segundo plano por
+// `warmWorkoutsCache`), então um `router.visit` normal tende a funcionar
+// mesmo offline — sem exibir nenhum bloqueio manual para o usuário.
 const offlineWorkoutDetail = ref(null);
-const offlineOpenError = ref(false);
 const showOfflineSessionPanel = ref(false);
 const offlineSession = useOfflineWorkoutSession();
 
@@ -74,14 +75,10 @@ const openWorkout = async (workout) => {
     if (isOffline()) {
         const cached = await getCachedWorkoutById(workout.id);
 
-        if (!cached) {
-            offlineOpenError.value = true;
-            setTimeout(() => { offlineOpenError.value = false; }, 4000);
+        if (cached) {
+            offlineWorkoutDetail.value = cached;
             return;
         }
-
-        offlineWorkoutDetail.value = cached;
-        return;
     }
 
     router.visit(route('workouts.show', { workout: workout.id, return_to: route('workouts.index') }));
@@ -197,13 +194,6 @@ const submitScan = () => {
                     :active-program="activeProgram"
                     class="mb-5"
                 />
-
-                <p
-                    v-if="offlineOpenError"
-                    class="mb-5 rounded-radius-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning"
-                >
-                    Este treino ainda não foi aberto neste dispositivo, então não está disponível offline.
-                </p>
 
                 <BaseCard
                     v-if="!hasWorkouts"

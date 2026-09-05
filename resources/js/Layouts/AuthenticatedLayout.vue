@@ -1,10 +1,11 @@
 <script setup>
-import { ref, watch } from 'vue';
+import { onMounted, ref, watch } from 'vue';
 import SetwaveLogo from '@/Components/Brand/SetwaveLogo.vue';
 import ActiveSessionBanner from '@/Components/Navigation/ActiveSessionBanner.vue';
 import Sidebar from '@/Components/Navigation/Sidebar.vue';
 import Toast from '@/Components/Notifications/Toast.vue';
 import { router, usePage } from '@inertiajs/vue3';
+import { warmWorkoutsCache } from '@/Utils/cacheWarming';
 
 const sidebarOpen = ref(false);
 
@@ -39,6 +40,18 @@ watch(
     (message) => showToast(message, 'error'),
     { immediate: true },
 );
+
+// ─── Cache Warming ──────────────────────────────────────────────────────────
+// Assim que o layout monta (ou seja, em qualquer página autenticada), aquece
+// silenciosamente o cache offline com o JSON do Inertia de todas as fichas
+// do usuário — assim abrir qualquer treino depois, mesmo sem conexão, tende
+// a funcionar mesmo que aquele dispositivo nunca tenha visitado aquela
+// página antes.
+onMounted(() => {
+    if (navigator.onLine) {
+        warmWorkoutsCache(page.props.userWorkoutIds, page.version);
+    }
+});
 </script>
 
 <template>
