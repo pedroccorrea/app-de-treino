@@ -7,6 +7,13 @@
 // executado pela thread de áudio do navegador, independente da thread
 // principal de UI, então o som toca no segundo exato mesmo com o app
 // minimizado.
+//
+// Isso só funciona, porém, se o sistema operacional não suspender o
+// processamento de áudio da página enquanto a tela está apagada — por
+// isso, junto do agendamento, mantemos uma sessão de áudio contínua
+// (ver `audioAlert.js`) tocando em loop até o apito soar.
+import { startAudioKeepAlive, stopAudioKeepAlive } from '@/Utils/audioAlert';
+
 let sharedContext = null;
 
 function getAudioContext() {
@@ -21,6 +28,14 @@ function getAudioContext() {
 
 export function useAudioChime() {
     let scheduledNodes = [];
+    let keepAliveTimeoutId = null;
+
+    const clearKeepAliveTimeout = () => {
+        if (keepAliveTimeoutId !== null) {
+            clearTimeout(keepAliveTimeoutId);
+            keepAliveTimeoutId = null;
+        }
+    };
 
     const cancelChime = () => {
         scheduledNodes.forEach(({ osc, gain }) => {
@@ -31,6 +46,9 @@ export function useAudioChime() {
             } catch (_) {}
         });
         scheduledNodes = [];
+
+        clearKeepAliveTimeout();
+        stopAudioKeepAlive();
     };
 
     // Agenda o bipe de 3 notas para tocar daqui a `secondsFromNow` segundos,
@@ -39,6 +57,11 @@ export function useAudioChime() {
     // ganha tempo extra).
     const scheduleChime = (secondsFromNow = 0) => {
         cancelChime();
+
+        // Mantém o canal de áudio acordado (loop de silêncio + Media Session)
+        // durante toda a espera, para que o agendamento abaixo realmente
+        // chegue a tocar mesmo com a tela apagada ou o app minimizado.
+        startAudioKeepAlive();
 
         try {
             const ctx = getAudioContext();
@@ -60,7 +83,19 @@ export function useAudioChime() {
 
                 scheduledNodes.push({ osc, gain });
             });
-        } catch (_) {}
+
+            // Assim que a última nota do apito termina de tocar, o canal de
+            // áudio pode voltar a ficar em silêncio — não é preciso manter o
+            // loop de keep-alive além disso.
+            const lastNoteEnd = startAt + 2 * 0.15 + 0.5;
+            const delayMs = Math.max(0, (lastNoteEnd - ctx.currentTime) * 1000);
+            keepAliveTimeoutId = setTimeout(() => {
+                keepAliveTimeoutId = null;
+                stopAudioKeepAlive();
+            }, delayMs);
+        } catch (_) {
+            stopAudioKeepAlive();
+        }
     };
 
     return { scheduleChime, cancelChime };

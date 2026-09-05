@@ -28,3 +28,23 @@ test('sw.js is publicly accessible with the correct content-type', function () {
     $response->assertHeader('Content-Type', 'application/javascript');
     expect($response->getContent())->toContain("addEventListener('install'");
 });
+
+test('sw.js intercepts Inertia requests and caches build assets for offline use', function () {
+    $response = $this->get('/sw.js');
+
+    $content = $response->getContent();
+
+    // Requisições do Inertia devem ser reconhecidas pelo cabeçalho X-Inertia
+    // e ter um fallback de cache quando a rede falhar.
+    expect($content)->toContain("request.headers.get('X-Inertia')");
+    expect($content)->toContain('networkFirst');
+
+    // Pacotes compilados pelo Vite (hash no nome do arquivo) ficam em cache
+    // permanente (estratégia cache-first).
+    expect($content)->toContain('/build/assets/');
+    expect($content)->toContain('cacheFirst');
+
+    // Navegação de documento completo (F5 sem internet) cai para o app shell
+    // em cache em vez do erro nativo de conexão do navegador.
+    expect($content)->toContain("request.mode === 'navigate'");
+});
