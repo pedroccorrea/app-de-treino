@@ -667,3 +667,39 @@
 3. `php artisan test` passa em 100% de toda a suíte.
 4. `tests/Architecture/ArchitecturalRulesTest.php` passa sem violações.
 5. `npm run build` compila com zero erros.
+
+# Phase 30: Correção de PWA, Clone de Proxies no IndexedDB e Interceptação do Inertia
+## Tasks
+1. **Correção do DataCloneError no IndexedDB (`resources/js/Utils/offlineStorage.js`):**
+   - Ao salvar qualquer dado no IndexedDB, o sistema não pode enviar objetos reativos (Proxies) do Vue.
+   - OBRIGATORIAMENTE, antes de executar qualquer `put` ou `add` no banco de dados local, os dados devem ser convertidos para objetos JS puros utilizando `JSON.parse(JSON.stringify(data))` (ou `toRaw()`), garantindo que sejam serializáveis pelo algoritmo do navegador.
+
+2. **Correção da Interceptação de Rede do Inertia (`public/sw.js`):**
+   - O Service Worker deve explicitamente interceptar as requisições `fetch` geradas pelo Inertia.
+   - Adicione lógica no `sw.js` no evento `fetch` para verificar se a requisição possui o cabeçalho `X-Inertia` ou se é para rotas de GET json.
+   - Aplique a estratégia **Network First**: tente realizar o `fetch`. Se der sucesso, clone a resposta e grave no cache.
+   - Se ocorrer exceção (offline ou timeout), capture o erro e DEVOLVA a resposta armazenada no cache usando `caches.match(event.request)`. 
+
+## Acceptance Criteria
+1. O comando `npm run build` passa sem erros.
+2. O código de `offlineStorage.js` utiliza conversão para objeto puro antes das operações de IndexedDB.
+3. `php artisan test` passa em 100%.
+
+# Phase 31: Eager Caching (Cache Warming) para Disponibilidade 100% Offline
+## Tasks
+1. **Remoção de Mensagens de Bloqueio Offline:**
+   - Remover qualquer bloqueio ou mensagem impeditiva (ex: "Este treino ainda não foi aberto neste dispositivo") nas views que tentam prevenir acesso offline a rotas não cacheadas. Confiar na estratégia de Cache Warming e Fallback.
+
+2. **Cache Warming Silencioso em Segundo Plano (`resources/js/Utils/cacheWarming.js`):**
+   - Criar um utilitário que busca a lista de todos os treinos ativos do usuário (através de um endpoint leve ou mapeando os dados globais disponíveis).
+   - O utilitário deve iterar sobre as rotas de visualização de cada treino (`/workouts/{id}`) e realizar uma requisição `fetch` silenciosa com o header `X-Inertia: true`.
+   - Essas requisições devem ocorrer em prioridade baixa (usando `requestIdleCallback` ou um `setTimeout` de alguns segundos após o carregamento) para não competir com a performance inicial da tela.
+
+3. **Gatilho de Sincronização de Cache (`resources/js/Layouts/AuthenticatedLayout.vue`):**
+   - No `onMounted` do layout principal, se `navigator.onLine` for verdadeiro, disparar o utilitário de Cache Warming.
+   - Isso garantirá que o Service Worker intercepte essas chamadas silenciosas e popule o cache do aparelho com o JSON de todas as fichas.
+
+## Acceptance Criteria
+1. O comando `npm run build` passa com zero erros.
+2. O Cache Warming é invocado corretamente e existe no projeto.
+3. `php artisan test` passa em 100%.
