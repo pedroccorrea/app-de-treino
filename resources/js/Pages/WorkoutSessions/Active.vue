@@ -7,8 +7,16 @@ import FinishWorkoutModal from '@/Components/WorkoutSessions/FinishWorkoutModal.
 import NavigationGuardModal from '@/Components/WorkoutSessions/NavigationGuardModal.vue';
 import RestTimerOverlay from '@/Components/WorkoutSessions/RestTimerOverlay.vue';
 import SessionHeader from '@/Components/WorkoutSessions/SessionHeader.vue';
+import { useAudioChime } from '@/Composables/useAudioChime';
+import { useNowTicker } from '@/Composables/useNowTicker';
+import { useWakeLock } from '@/Composables/useWakeLock';
 import { Head, router } from '@inertiajs/vue3';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+
+// ─── Relógio compartilhado (delta de Date.now(), resiliente a segundo plano) ──
+const { now } = useNowTicker();
+const { requestWakeLock, releaseWakeLock } = useWakeLock();
+const { scheduleChime, cancelChime } = useAudioChime();
 
 // ─── Menu lateral (navegação livre sem interromper a sessão) ──────────────────
 const sidebarOpen = ref(false);
@@ -94,28 +102,30 @@ const finishing = ref(false);
 
 // ─── Exercise timer (runs while a set is "executing") ─────────────────────────
 // Timer starts when user clicks "▶ Iniciar Série X", stops when set is saved.
+// Baseado em delta de timestamp: guardamos apenas o instante de início e
+// recalculamos os segundos decorridos a cada tick do relógio compartilhado,
+// em vez de incrementar um contador (que atrasa em segundo plano).
 const exerciseTimerActive = ref(false);
-const exerciseTimerSeconds = ref(0);
-let exerciseTimerInterval = null;
+const exerciseTimerStartedAt = ref(null);
 
 const startExerciseTimer = () => {
     exerciseTimerActive.value = true;
-    exerciseTimerSeconds.value = 0;
-    clearInterval(exerciseTimerInterval);
-    exerciseTimerInterval = setInterval(() => {
-        exerciseTimerSeconds.value++;
-    }, 1000);
+    exerciseTimerStartedAt.value = Date.now();
 };
 
 const stopExerciseTimer = () => {
     exerciseTimerActive.value = false;
-    clearInterval(exerciseTimerInterval);
 };
 
 const resetExerciseTimer = () => {
     stopExerciseTimer();
-    exerciseTimerSeconds.value = 0;
+    exerciseTimerStartedAt.value = null;
 };
+
+const exerciseTimerSeconds = computed(() => {
+    if (!exerciseTimerActive.value || !exerciseTimerStartedAt.value) return 0;
+    return Math.max(0, Math.floor((now.value - exerciseTimerStartedAt.value) / 1000));
+});
 
 const exerciseTimerDisplay = computed(() => {
     const s = exerciseTimerSeconds.value;
@@ -125,13 +135,15 @@ const exerciseTimerDisplay = computed(() => {
 });
 
 // ─── Workout elapsed timer ────────────────────────────────────────────────────
-const elapsedSeconds = ref(0);
-let workoutTimerInterval = null;
+// Também baseado em delta: recalculado a cada tick contra `session.started_at`,
+// então nunca atrasa mesmo que o app fique minutos em segundo plano.
+const sessionStartedAtMs = props.session.started_at
+    ? new Date(props.session.started_at).getTime()
+    : Date.now();
 
-const calculateInitialElapsed = () => {
-    if (!props.session.started_at) return 0;
-    return Math.floor((Date.now() - new Date(props.session.started_at).getTime()) / 1000);
-};
+const elapsedSeconds = computed(() =>
+    Math.max(0, Math.floor((now.value - sessionStartedAtMs) / 1000)),
+);
 
 const elapsedDisplay = computed(() => {
     const s = elapsedSeconds.value;
@@ -368,7 +380,6 @@ const completeSet = (exercise, setNumber) => {
 
                 // Stop exercise timer and start rest
                 stopExerciseTimer();
-                exerciseTimerSeconds.value = 0;
                 const restSecs = exercise.rest_seconds ?? 60;
                 startRest(restSecs);
             },
@@ -447,41 +458,43 @@ const confirmNavigation = () => {
 };
 
 // ─── Rest timer (full-screen overlay) ────────────────────────────────────────
+// Baseado em delta contra um `targetEndTimestamp`: o tempo restante é sempre
+// recalculado a partir de Date.now(), então volta correto instantaneamente
+// ao ligar a tela. O bipe sonoro é agendado à parte, direto no relógio de
+// hardware do AudioContext (ver useAudioChime), então toca no segundo exato
+// mesmo que este timer de UI atrase ou fique pausado em segundo plano.
 const restActive = ref(false);
 const restTotal = ref(60);
-const restRemaining = ref(60);
-let restInterval = null;
+const restTargetEnd = ref(null);
+let restEndHandled = false;
+
+const restRemaining = computed(() => {
+    if (!restActive.value || !restTargetEnd.value) return 0;
+    return Math.max(0, Math.ceil((restTargetEnd.value - now.value) / 1000));
+});
 
 const restPercent = computed(() =>
     restTotal.value > 0 ? (restRemaining.value / restTotal.value) * 100 : 0,
 );
 
 const startRest = (seconds = 60) => {
-    clearInterval(restInterval);
     restTotal.value = seconds;
-    restRemaining.value = seconds;
+    restTargetEnd.value = Date.now() + seconds * 1000;
     restActive.value = true;
-
-    restInterval = setInterval(() => {
-        restRemaining.value--;
-        if (restRemaining.value <= 0) {
-            clearInterval(restInterval);
-            playChime();
-            if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-            // Auto-close after chime, same as clicking "Encerrar Descanso"
-            setTimeout(() => { endRest(); }, 800);
-        }
-    }, 1000);
+    restEndHandled = false;
+    scheduleChime(seconds);
 };
 
 const addRestTime = (secs) => {
-    restRemaining.value += secs;
     restTotal.value += secs;
+    restTargetEnd.value += secs * 1000;
+    scheduleChime(Math.max(0, (restTargetEnd.value - Date.now()) / 1000));
 };
 
 const endRest = () => {
-    clearInterval(restInterval);
+    cancelChime();
     restActive.value = false;
+    restTargetEnd.value = null;
     autoStartNextSet(currentExercise.value);
 };
 
@@ -492,23 +505,16 @@ const restDisplay = computed(() => {
     return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
 });
 
-const playChime = () => {
-    try {
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        [523, 659, 784].forEach((freq, i) => {
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-            osc.frequency.value = freq;
-            osc.type = 'sine';
-            gain.gain.setValueAtTime(0.3, ctx.currentTime + i * 0.15);
-            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + i * 0.15 + 0.4);
-            osc.start(ctx.currentTime + i * 0.15);
-            osc.stop(ctx.currentTime + i * 0.15 + 0.5);
-        });
-    } catch (_) {}
-};
+// Assim que o tempo restante chega a zero (recalculado a cada tick do
+// relógio compartilhado, inclusive ao voltar da visibilidade oculta),
+// dispara a vibração e fecha o overlay — o áudio já foi agendado à parte.
+watch(restRemaining, (seconds) => {
+    if (restActive.value && seconds <= 0 && !restEndHandled) {
+        restEndHandled = true;
+        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+        setTimeout(() => { endRest(); }, 800);
+    }
+});
 
 // ─── Finish workout ───────────────────────────────────────────────────────────
 const finishWorkout = () => {
@@ -522,17 +528,15 @@ const finishWorkout = () => {
 
 // ─── Lifecycle ────────────────────────────────────────────────────────────────
 onMounted(() => {
-    elapsedSeconds.value = calculateInitialElapsed();
-    workoutTimerInterval = setInterval(() => { elapsedSeconds.value++; }, 1000);
     sortedExercises.value.forEach((ex) => initSetsForExercise(ex));
     autoStartNextSet(currentExercise.value);
     fetchOverloadSuggestions();
+    requestWakeLock();
 });
 
 onUnmounted(() => {
-    clearInterval(workoutTimerInterval);
-    clearInterval(exerciseTimerInterval);
-    clearInterval(restInterval);
+    releaseWakeLock();
+    cancelChime();
 });
 
 watch(
