@@ -643,3 +643,27 @@
 3. `php artisan test` passa em 100% de toda a suíte.
 4. `tests/Architecture/ArchitecturalRulesTest.php` passa sem violações.
 5. `npm run build` compila com zero erros.
+
+# Phase 29: Correção de Áudio com Tela Apagada e Service Worker para Inertia 100% Offline
+## Tasks
+1. **Sessão de Áudio Contínua para Manter o Canal Ativo no Bolso:**
+   - Em `resources/js/Utils/audioAlert.js` (ou componente de áudio):
+     * Ao iniciar a contagem regressiva de descanso, iniciar a reprodução em loop de uma faixa de áudio de silêncio contínuo através de um elemento HTML5 `<audio loop>` com suporte à Media Session API.
+     * Isso impede que o Android e o iOS congelem o processador de som quando a tela do celular for apagada no botão físico ou o app for minimizado.
+     * Ao atingir o segundo zero, disparar o apito sonoro de alerta no mesmo canal de áudio que já está acordado e, em seguida, pausar o áudio silencioso.
+
+2. **Interceptação de Requisições do Inertia no Service Worker (`public/sw.js`):**
+   - Atualizar o Service Worker para tratar requisições do Inertia (`headers.get('X-Inertia') === 'true'`):
+     * Estratégia Network-First: quando online, salvar uma cópia em cache das respostas JSON das rotas acessadas (`/dashboard`, `/workouts`, `/programs`, `/workouts/{id}`).
+     * Se a rede falhar ou estiver sem internet (`!navigator.onLine`), o Service Worker intercepta o pedido do Inertia e entrega o JSON em cache, permitindo navegar pelos menus sem erro de conexão.
+     * Para navegação de documento completo (F5 sem internet), entregar o HTML base do App Shell em cache.
+
+3. **Cache de Assets Estáticos:**
+   - Garantir que todos os pacotes compilados em `/build/assets/*` fiquem armazenados em cache permanente para que a interface carregue sem conexão.
+
+## Acceptance Criteria
+1. `public/sw.js` intercepta requisições com cabeçalho `X-Inertia` e entrega fallback de cache em falhas de rede.
+2. O alerta sonoro utiliza sessão de áudio contínua para tocar no segundo zero mesmo com a tela bloqueada.
+3. `php artisan test` passa em 100% de toda a suíte.
+4. `tests/Architecture/ArchitecturalRulesTest.php` passa sem violações.
+5. `npm run build` compila com zero erros.
