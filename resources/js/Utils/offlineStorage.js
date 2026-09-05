@@ -85,6 +85,15 @@ function requestToPromise(request) {
     });
 }
 
+// O Vue entrega dados reativos (Proxies) para dentro dos componentes. O
+// algoritmo de clonagem estruturada usado pelo IndexedDB não sabe lidar com
+// Proxies e lança `DataCloneError` ao tentar gravá-los. Por isso, TODO dado
+// passado a `store.put()`/`store.add()` precisa antes passar por esta função,
+// que produz um objeto JS puro (sem Proxy, sem referências reativas).
+function toPlainObject(data) {
+    return JSON.parse(JSON.stringify(data));
+}
+
 function generateUuid() {
     if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
         return crypto.randomUUID();
@@ -105,8 +114,10 @@ function generateUuid() {
  * navegação offline.
  */
 export async function cacheWorkoutsList(workouts) {
+    const record = toPlainObject({ id: WORKOUTS_LIST_KEY, items: workouts, cachedAt: new Date().toISOString() });
+
     return withStore(STORE_WORKOUTS, 'readwrite', (store) => {
-        store.put({ id: WORKOUTS_LIST_KEY, items: workouts, cachedAt: new Date().toISOString() });
+        store.put(record);
     });
 }
 
@@ -123,8 +134,10 @@ export async function getCachedWorkoutsList() {
 export async function cacheWorkout(workout) {
     if (!workout?.id) return;
 
+    const record = toPlainObject({ ...workout, cachedAt: new Date().toISOString() });
+
     return withStore(STORE_WORKOUTS, 'readwrite', (store) => {
-        store.put({ ...workout, cachedAt: new Date().toISOString() });
+        store.put(record);
     });
 }
 
@@ -155,8 +168,10 @@ export async function getCachedWorkoutById(id) {
  * formato retornado por `WorkoutService::getAvailableExercises()`).
  */
 export async function cacheExercisesCatalog(catalog) {
+    const record = toPlainObject({ id: EXERCISES_CATALOG_KEY, groups: catalog, cachedAt: new Date().toISOString() });
+
     return withStore(STORE_EXERCISES, 'readwrite', (store) => {
-        store.put({ id: EXERCISES_CATALOG_KEY, groups: catalog, cachedAt: new Date().toISOString() });
+        store.put(record);
     });
 }
 
@@ -172,8 +187,10 @@ export async function getCachedExercisesCatalog() {
  * (mesmo formato de `lastLogs` retornado para a tela `WorkoutSessions/Active`).
  */
 export async function cacheLastLogs(lastLogsByExerciseId) {
+    const plainLogs = toPlainObject(lastLogsByExerciseId ?? {});
+
     return withStore(STORE_LAST_LOGS, 'readwrite', (store) => {
-        for (const [exerciseId, log] of Object.entries(lastLogsByExerciseId ?? {})) {
+        for (const [exerciseId, log] of Object.entries(plainLogs)) {
             store.put({ ...log, exercise_id: Number(exerciseId) });
         }
     });
@@ -197,12 +214,12 @@ export async function getCachedLastLogs() {
  * ordem cronológica correta ao sincronizar.
  */
 export async function enqueueSyncAction(action) {
-    const record = {
+    const record = toPlainObject({
         uuid: action.uuid ?? generateUuid(),
         occurred_at: action.occurred_at ?? new Date().toISOString(),
         queued_at: new Date().toISOString(),
         ...action,
-    };
+    });
 
     await withStore(STORE_SYNC_QUEUE, 'readwrite', (store) => {
         store.put(record);

@@ -66,8 +66,15 @@ async function networkFirst(request, cacheName) {
         cache.put(request, networkResponse.clone());
         return networkResponse;
     } catch (error) {
+        // Offline ou timeout: cai para a última resposta conhecida daquela
+        // requisição. Primeiro no cache específico da estratégia e, na falta
+        // dele, em qualquer cache do Service Worker (`caches.match` global).
         const cachedResponse = await cache.match(request);
         if (cachedResponse) return cachedResponse;
+
+        const fallbackResponse = await caches.match(request);
+        if (fallbackResponse) return fallbackResponse;
+
         throw error;
     }
 }
@@ -124,11 +131,15 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // Requisições XHR do Inertia (navegação entre páginas do SPA sem reload):
+    // Requisições XHR do Inertia (navegação entre páginas do SPA sem reload)
+    // ou qualquer outra chamada GET que espera JSON como resposta:
     // network-first, com fallback para o JSON da última visita bem-sucedida
     // àquela rota — é o que permite navegar pelos menus (/dashboard,
     // /workouts, /programs, /workouts/{id}, ...) sem erro de conexão.
-    if (request.headers.get('X-Inertia') === 'true') {
+    const isInertiaRequest = request.headers.get('X-Inertia') === 'true';
+    const isJsonRequest = (request.headers.get('Accept') ?? '').includes('application/json');
+
+    if (isInertiaRequest || isJsonRequest) {
         event.respondWith(networkFirst(request, INERTIA_CACHE));
         return;
     }
