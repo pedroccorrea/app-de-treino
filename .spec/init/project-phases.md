@@ -703,3 +703,24 @@
 1. O comando `npm run build` passa com zero erros.
 2. O Cache Warming é invocado corretamente e existe no projeto.
 3. `php artisan test` passa em 100%.
+
+# Phase 32: Paridade Visual 100% (Offline = Online) e Correção de Roteamento SW
+## Tasks
+1. **Paridade UI Absoluta e Erradicação de Poluição Visual:**
+   - Inspecionar rigorosamente `resources/js/Pages/WorkoutSessions/Active.vue` e `resources/js/Pages/Workouts/Index.vue`.
+   - REMOVER QUALQUER condicional do tipo `v-if="!isOnline"` que altere o design, insira mensagens amareladas, banners ou mude textos de botões (como "Finalizar Treino (offline)").
+   - A tela offline DEVE SER **EXATAMENTE IGUAL** à tela online. Os mesmos botões, as mesmas cores, a mesma posição. A transição para offline deve ser imperceptível para o usuário.
+   - Remover alertas de "Sincronizando..." ou "Sincronizado com sucesso" disparados pelo evento `online`. O processo deve ser 100% invisível (backgroud sync real).
+
+2. **Correção do Interceptador de Rede no Service Worker (`public/sw.js` ou equivalente):**
+   - O Service Worker atual está vazando requisições, causando `ERR_INTERNET_DISCONNECTED` (tela branca) ao recarregar a página (F5) ou navegar pelo menu.
+   - O evento `fetch` deve ser refatorado para NUNCA permitir falha de rede sem resposta de cache:
+     * Assets (`/build/assets/`): Usar `Cache First`.
+     * Navegação raiz/HTML (`request.mode === 'navigate'`): Usar `Network First` caindo para o HTML do cache se offline.
+     * Requisições Inertia (`request.headers.has('X-Inertia')`): Usar `Network First` caindo para o cache de JSON daquela URL exata.
+   - Se a requisição Inertia falhar e não estiver no cache, devolver um JSON válido de fallback (ex: `window.location.reload()`) em vez de deixar a promessa do Axios estourar erro vermelho no console.
+
+## Acceptance Criteria
+1. Nenhum arquivo `.vue` no projeto possui textos hardcoded como "offline" ou modificações de classe baseadas no estado de conexão de rede.
+2. O comando `npm run build` passa sem erros.
+3. `php artisan test` passa em 100% da suíte.
