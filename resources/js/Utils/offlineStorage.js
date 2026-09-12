@@ -19,6 +19,8 @@
 // de acesso ao IndexedDB. `DB_NAME`, `DB_VERSION` e os nomes das stores
 // abaixo precisam continuar idênticos aos definidos lá.
 
+import { isProxy, isRef, toRaw } from 'vue';
+
 const DB_NAME = 'ia-lift-offline';
 const DB_VERSION = 2;
 
@@ -106,11 +108,70 @@ function requestToPromise(request) {
 
 // O Vue entrega dados reativos (Proxies) para dentro dos componentes. O
 // algoritmo de clonagem estruturada usado pelo IndexedDB não sabe lidar com
-// Proxies e lança `DataCloneError` ao tentar gravá-los. Por isso, TODO dado
-// passado a `store.put()`/`store.add()` precisa antes passar por esta função,
-// que produz um objeto JS puro (sem Proxy, sem referências reativas).
+// Proxies (nem com Refs, Maps/Sets reativos ou referências circulares que a
+// reatividade do Vue pode introduzir) e lança `DataCloneError` ao tentar
+// gravá-los. `toRaw()` sozinho só remove UM nível de Proxy — propriedades
+// aninhadas de um objeto reativo continuam sendo Proxies quando acessadas.
+// Por isso `deepToRaw` percorre a estrutura inteira recursivamente, chamando
+// `toRaw()`/desembrulhando Refs em cada nível, até sobrar apenas dados
+// nativos (objetos, arrays, primitivos) seguros para `store.put()`/`add()`.
+function deepToRaw(value, seen = new WeakMap()) {
+    if (isRef(value)) {
+        return deepToRaw(value.value, seen);
+    }
+
+    if (typeof value === 'function' || typeof value === 'symbol') {
+        return undefined;
+    }
+
+    if (value === null || typeof value !== 'object') {
+        return value;
+    }
+
+    if (value instanceof Date) {
+        return value.toISOString();
+    }
+
+    const raw = isProxy(value) ? toRaw(value) : value;
+
+    if (seen.has(raw)) {
+        return seen.get(raw);
+    }
+
+    if (Array.isArray(raw)) {
+        const cloned = [];
+        seen.set(raw, cloned);
+        raw.forEach((item, index) => { cloned[index] = deepToRaw(item, seen); });
+        return cloned;
+    }
+
+    if (raw instanceof Map) {
+        const cloned = {};
+        seen.set(raw, cloned);
+        raw.forEach((entryValue, key) => { cloned[key] = deepToRaw(entryValue, seen); });
+        return cloned;
+    }
+
+    if (raw instanceof Set) {
+        const cloned = [];
+        seen.set(raw, cloned);
+        raw.forEach((entryValue) => cloned.push(deepToRaw(entryValue, seen)));
+        return cloned;
+    }
+
+    const cloned = {};
+    seen.set(raw, cloned);
+    for (const key of Object.keys(raw)) {
+        const propValue = deepToRaw(raw[key], seen);
+        if (propValue !== undefined) {
+            cloned[key] = propValue;
+        }
+    }
+    return cloned;
+}
+
 function toPlainObject(data) {
-    return JSON.parse(JSON.stringify(data));
+    return deepToRaw(data);
 }
 
 // IDs de registros criados offline (ainda não sincronizados) usam o prefixo

@@ -39,14 +39,31 @@ test('sw.js intercepts Inertia requests and caches build assets for offline use'
     expect($content)->toContain("request.headers.get('X-Inertia')");
     expect($content)->toContain('networkFirst');
 
-    // Pacotes compilados pelo Vite (hash no nome do arquivo) ficam em cache
-    // permanente (estratégia cache-first).
+    // Pacotes compilados pelo Vite (nome do chunk muda a cada build) usam
+    // stale-while-revalidate: a resposta em cache é servida imediatamente e a
+    // rede é consultada em paralelo apenas para atualizar o cache.
     expect($content)->toContain('/build/assets/');
-    expect($content)->toContain('cacheFirst');
+    expect($content)->toContain('staleWhileRevalidate');
 
     // Navegação de documento completo (F5 sem internet) cai para o app shell
     // em cache em vez do erro nativo de conexão do navegador.
     expect($content)->toContain("request.mode === 'navigate'");
+});
+
+test('sw.js ignores cross-origin requests (browser extensions) and never lets an asset fetch reject uncaught', function () {
+    $response = $this->get('/sw.js');
+
+    $content = $response->getContent();
+
+    // Requisições de outra origem (ex: `chrome-extension://`) não podem cair
+    // nas estratégias de cache do app — o listener de fetch precisa devolver
+    // cedo, deixando o navegador tratá-las normalmente.
+    expect($content)->toContain('requestUrl.origin !== self.location.origin');
+
+    // A revalidação em segundo plano do stale-while-revalidate nunca pode
+    // deixar uma rejeição de rede escapar sem tratamento (isso é o que gerava
+    // `ERR_INTERNET_DISCONNECTED` no console ao ficar offline).
+    expect($content)->toContain('.catch(() => null)');
 });
 
 test('sw.js implements the offline mini-server (Phase 33): synthesizes Inertia pages and queues mutations from IndexedDB', function () {

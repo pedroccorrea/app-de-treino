@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'v3';
+const CACHE_VERSION = 'v4';
 const APP_SHELL_CACHE = `setwave-shell-${CACHE_VERSION}`;
 const STATIC_ASSETS_CACHE = `setwave-assets-${CACHE_VERSION}`;
 const INERTIA_CACHE = `setwave-inertia-${CACHE_VERSION}`;
@@ -712,9 +712,8 @@ async function networkFirst(request, cacheName) {
     }
 }
 
-// Cache-first: usada para os pacotes compilados pelo Vite (`/build/assets/*`),
-// cujo nome de arquivo já contém um hash do conteúdo — uma vez em cache, o
-// arquivo nunca muda e não precisa ser revalidado contra a rede.
+// Cache-first: usada para os assets fixos do app shell (manifest, ícones),
+// cujo caminho nunca muda entre deploys.
 async function cacheFirst(request, cacheName) {
     const cache = await caches.open(cacheName);
     const cachedResponse = await cache.match(request);
@@ -723,6 +722,44 @@ async function cacheFirst(request, cacheName) {
     const networkResponse = await fetch(request);
     cache.put(request, networkResponse.clone());
     return networkResponse;
+}
+
+// Stale-while-revalidate: usada para os pacotes compilados pelo Vite
+// (`/build/assets/*`). O nome de cada chunk muda a cada build (hash de
+// conteúdo no nome do arquivo), então um cache-first "cego" falha sempre que
+// o app é atualizado e o Service Worker antigo ainda está ativo pedindo um
+// chunk que já não existe mais no cache — a resposta em cache (quando existe)
+// é devolvida imediatamente, e a rede só é consultada em paralelo, em
+// segundo plano, para manter o cache atualizado. Se a rede falhar (offline),
+// o erro nunca escapa como rejeição não tratada — é exatamente isso que
+// produzia `ERR_INTERNET_DISCONNECTED` no console antes desta mudança.
+async function staleWhileRevalidate(request, cacheName) {
+    const cache = await caches.open(cacheName);
+    const cachedResponse = await cache.match(request);
+
+    const revalidate = fetch(request)
+        .then((networkResponse) => {
+            if (networkResponse && networkResponse.ok) {
+                cache.put(request, networkResponse.clone());
+            }
+            return networkResponse;
+        })
+        .catch(() => null);
+
+    if (cachedResponse) {
+        return cachedResponse;
+    }
+
+    const networkResponse = await revalidate;
+    if (networkResponse) {
+        return networkResponse;
+    }
+
+    // Nunca esteve em cache e a rede falhou: não há nada para servir, mas a
+    // resposta precisa ser uma `Response` sintética controlada — nunca a
+    // rejeição crua do `fetch()` — para que o carregamento do chunk falhe de
+    // forma previsível em vez de estourar um erro de rede no console.
+    return new Response(null, { status: 504, statusText: 'Asset indisponível offline' });
 }
 
 // Navegação de documento completo (F5, digitar a URL, abrir um link externo):
@@ -785,6 +822,12 @@ async function handleInertiaRequest(request, requestUrl) {
 self.addEventListener('fetch', (event) => {
     const { request } = event;
     const requestUrl = new URL(request.url);
+
+    // Extensões do Chrome injetam scripts que disparam suas próprias
+    // requisições (`chrome-extension://...`, CDNs de terceiros etc.). Sem
+    // este bypass, esse tráfego cairia nas estratégias abaixo e poderia
+    // quebrar o carregamento do app; ignorando aqui, o navegador trata a
+    // requisição normalmente, fora do escopo deste Service Worker.
     if (requestUrl.origin !== self.location.origin) {
         return;
     }
@@ -801,9 +844,10 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // Pacotes compilados do Vite: cache-first e permanente.
+    // Pacotes compilados do Vite: stale-while-revalidate (ver comentário na
+    // definição da função acima).
     if (requestUrl.pathname.startsWith('/build/assets/')) {
-        event.respondWith(cacheFirst(request, STATIC_ASSETS_CACHE));
+        event.respondWith(staleWhileRevalidate(request, STATIC_ASSETS_CACHE));
         return;
     }
 
