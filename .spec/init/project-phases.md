@@ -724,3 +724,24 @@
 1. Nenhum arquivo `.vue` no projeto possui textos hardcoded como "offline" ou modificações de classe baseadas no estado de conexão de rede.
 2. O comando `npm run build` passa sem erros.
 3. `php artisan test` passa em 100% da suíte.
+
+# Phase 33: Arquitetura Local-First, CRUD Offline e Mini-Servidor no Service Worker
+## Tasks
+1. **Download Inicial do Estado Global (Full Sync):**
+   - Criar rota/endpoint `GET /api/sync/state` no Laravel que retorna todo o estado do usuário de uma vez: programas, treinos, relação N:N, catálogo de exercícios e histórico.
+   - No frontend, ao fazer login ou carregar a aplicação online, buscar esse endpoint e sobrescrever os dados no IndexedDB (`resources/js/Utils/offlineStorage.js`).
+
+2. **Mini-Servidor no Service Worker (`public/sw.js`):**
+   - Refatorar drasticamente a interceptação de requisições `fetch` no SW.
+   - **Navegação (GET):** Se o usuário acessar `/programs`, `/workouts` ou a raiz offline, o SW DEVE ler o IndexedDB, montar um payload JSON válido no formato do Inertia (com as props esperadas pela página) e retornar um `new Response(...)` com status 200. O Vue nunca deve saber que a rede caiu.
+   - **Mutações Offline (POST/PUT/DELETE):** Interceptar rotas de criação/edição. Se offline, salvar o payload na `sync_queue` do IndexedDB, aplicar a mudança no banco local (ex: inserir na tabela `cached_programs` com um ID temporário UUID) e retornar um redirecionamento 303 forjado ou resposta JSON 200 válida para o Inertia prosseguir sem erro.
+
+3. **Optimistic UI e Sincronização Transparente:**
+   - Em telas de listagem (`Programs/Show`, `Workouts/Index`), mesclar os dados vindos como props do Inertia com os dados que estão pendentes na fila local do IndexedDB (para que um programa criado offline apareça imediatamente na tela).
+   - O listener de evento `online` do navegador deve processar a fila `sync_queue`, substituindo os IDs temporários pelos IDs reais retornados pelo Laravel, em total silêncio (background sync).
+
+## Acceptance Criteria
+1. Com a rede devtools em 'Offline', navegar entre os menus Dashboard, Treinos e Programas carrega as telas imediatamente sem `ERR_INTERNET_DISCONNECTED`.
+2. Criar um programa de treino offline não gera erro no console e o novo programa aparece na lista.
+3. `php artisan test` passa em 100% de toda a suíte.
+4. `npm run build` compila com zero erros.
