@@ -7,13 +7,39 @@ import CreateProgramModal from '@/Components/Programs/CreateProgramModal.vue';
 import ConfirmationModal from '@/Components/ConfirmationModal.vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, router, useForm } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
+import { cachePrograms, getCachedProgramsList } from '@/Utils/offlineStorage';
 
-defineProps({
+const props = defineProps({
     programs: {
         type: Array,
         default: () => [],
     },
+});
+
+// ─── Optimistic UI: programas criados offline, ainda não sincronizados ─────
+// O Service Worker (`resources/pwa/sw.js`) já resolve a navegação puramente
+// offline sozinho (ele monta esta mesma lista a partir do IndexedDB). Esta
+// mesclagem cobre a janela intermediária: a conexão já voltou, esta página
+// carregou com os dados reais do servidor, mas a fila de sincronização
+// (`sync_queue`) ainda não terminou de enviar um programa criado enquanto
+// offline — sem isso, ele "sumiria" da lista até o próximo sync terminar.
+const pendingPrograms = ref([]);
+
+const displayedPrograms = computed(() => {
+    const alreadySynced = new Set(props.programs.map((program) => program.id));
+    const stillPending = pendingPrograms.value.filter((program) => !alreadySynced.has(program.id));
+
+    return [...stillPending, ...props.programs];
+});
+
+onMounted(async () => {
+    const cached = await getCachedProgramsList();
+    pendingPrograms.value = cached.filter((program) => typeof program.id === 'string' && program.id.startsWith('tmp_'));
+
+    // Mantém o cache offline atualizado sem descartar programas ainda
+    // pendentes de sincronização (por isso mescla em vez de sobrescrever).
+    cachePrograms([...pendingPrograms.value, ...props.programs]);
 });
 
 const showCreateProgramModal = ref(false);
@@ -109,7 +135,7 @@ const deleteProgram = () => {
 
         <div class="py-6 sm:py-8">
             <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-                <BaseCard v-if="!programs.length" class="border-dashed px-6 py-16 text-center">
+                <BaseCard v-if="!displayedPrograms.length" class="border-dashed px-6 py-16 text-center">
                     <div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-radius-lg bg-accent-muted">
                         <SetwaveLogo :size="32" variant="mark" />
                     </div>
@@ -122,7 +148,7 @@ const deleteProgram = () => {
 
                 <div v-else class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                     <BaseCard
-                        v-for="program in programs"
+                        v-for="program in displayedPrograms"
                         :key="program.id"
                         role="button"
                         tabindex="0"

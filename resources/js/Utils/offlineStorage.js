@@ -1,27 +1,40 @@
 // Camada de persistência local (IndexedDB) para o modo offline-first.
 //
-// Guarda quatro "gavetas" de dados no dispositivo:
+// Guarda seis "gavetas" de dados no dispositivo:
 //   - cached_workouts:   fichas de treino (lista + detalhe com exercícios)
+//   - cached_programs:   programas de treino (lista + detalhe com fichas)
 //   - cached_exercises:  catálogo mestre de exercícios
 //   - cached_last_logs:  último desempenho registrado por exercício
 //   - sync_queue:        mutações feitas offline, pendentes de sincronização
+//   - meta:              pares chave/valor avulsos (versão do Inertia, data
+//                         do último full sync) usados pelo mini-servidor do
+//                         Service Worker (`resources/pwa/sw.js`)
 //
 // Toda a API é baseada em Promises para poder ser usada com async/await nos
 // componentes Vue sem expor os callbacks nativos do IndexedDB.
+//
+// IMPORTANTE: o Service Worker (`resources/pwa/sw.js`) é registrado como
+// script clássico (não como módulo ES), então ele não pode importar este
+// arquivo — ele mantém sua própria cópia mínima, em JS puro, da mesma lógica
+// de acesso ao IndexedDB. `DB_NAME`, `DB_VERSION` e os nomes das stores
+// abaixo precisam continuar idênticos aos definidos lá.
 
 const DB_NAME = 'ia-lift-offline';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 const STORE_WORKOUTS = 'cached_workouts';
+const STORE_PROGRAMS = 'cached_programs';
 const STORE_EXERCISES = 'cached_exercises';
 const STORE_LAST_LOGS = 'cached_last_logs';
 const STORE_SYNC_QUEUE = 'sync_queue';
+const STORE_META = 'meta';
 
 // Chaves fixas usadas para guardar "instantâneos" de listas inteiras dentro
 // de stores cujo keyPath é `id` (o mesmo store também guarda registros
 // individuais, então essas chaves precisam ser valores que nunca colidem
 // com um ID numérico de banco de dados).
 const WORKOUTS_LIST_KEY = '__workouts_list__';
+const PROGRAMS_LIST_KEY = '__programs_list__';
 const EXERCISES_CATALOG_KEY = '__exercises_catalog__';
 
 let dbPromise = null;
@@ -41,6 +54,9 @@ function openDatabase() {
                 if (!db.objectStoreNames.contains(STORE_WORKOUTS)) {
                     db.createObjectStore(STORE_WORKOUTS, { keyPath: 'id' });
                 }
+                if (!db.objectStoreNames.contains(STORE_PROGRAMS)) {
+                    db.createObjectStore(STORE_PROGRAMS, { keyPath: 'id' });
+                }
                 if (!db.objectStoreNames.contains(STORE_EXERCISES)) {
                     db.createObjectStore(STORE_EXERCISES, { keyPath: 'id' });
                 }
@@ -49,6 +65,9 @@ function openDatabase() {
                 }
                 if (!db.objectStoreNames.contains(STORE_SYNC_QUEUE)) {
                     db.createObjectStore(STORE_SYNC_QUEUE, { keyPath: 'uuid' });
+                }
+                if (!db.objectStoreNames.contains(STORE_META)) {
+                    db.createObjectStore(STORE_META, { keyPath: 'key' });
                 }
             };
 
@@ -92,6 +111,19 @@ function requestToPromise(request) {
 // que produz um objeto JS puro (sem Proxy, sem referências reativas).
 function toPlainObject(data) {
     return JSON.parse(JSON.stringify(data));
+}
+
+// IDs de registros criados offline (ainda não sincronizados) usam o prefixo
+// `tmp_` e permanecem strings; IDs reais (vindos do banco) são sempre
+// numéricos. Normaliza um id recebido (de uma rota, de um `:key` de lista
+// etc.) para o tipo correto antes de consultar o IndexedDB, cujas chaves são
+// tipadas (`1` e `"1"` são chaves diferentes).
+function normalizeId(id) {
+    if (typeof id === 'string' && id.startsWith('tmp_')) {
+        return id;
+    }
+
+    return Number(id);
 }
 
 function generateUuid() {
@@ -142,8 +174,7 @@ export async function cacheWorkout(workout) {
 }
 
 export async function getCachedWorkout(id) {
-    const numericId = Number(id);
-    return withStore(STORE_WORKOUTS, 'readonly', (store) => requestToPromise(store.get(numericId)));
+    return withStore(STORE_WORKOUTS, 'readonly', (store) => requestToPromise(store.get(normalizeId(id))));
 }
 
 /**
@@ -156,9 +187,86 @@ export async function getCachedWorkoutById(id) {
     const direct = await getCachedWorkout(id);
     if (direct) return direct;
 
-    const numericId = Number(id);
+    const targetId = normalizeId(id);
     const list = await getCachedWorkoutsList();
-    return list.find((workout) => workout.id === numericId) ?? null;
+    return list.find((workout) => workout.id === targetId) ?? null;
+}
+
+/**
+ * Remove um treino do "instantâneo" da lista e do registro individual — usado
+ * ao aplicar, otimisticamente, uma exclusão feita offline.
+ */
+export async function removeCachedWorkout(id) {
+    const targetId = normalizeId(id);
+
+    const list = await getCachedWorkoutsList();
+    await cacheWorkoutsList(list.filter((workout) => workout.id !== targetId));
+
+    return withStore(STORE_WORKOUTS, 'readwrite', (store) => {
+        store.delete(targetId);
+    });
+}
+
+// ─── Programas de treino (cached_programs) ─────────────────────────────────
+
+/**
+ * Salva o instantâneo da lista de programas (tela `Programs/Index`) para
+ * navegação offline.
+ */
+export async function cachePrograms(programs) {
+    const record = toPlainObject({ id: PROGRAMS_LIST_KEY, items: programs, cachedAt: new Date().toISOString() });
+
+    return withStore(STORE_PROGRAMS, 'readwrite', (store) => {
+        store.put(record);
+    });
+}
+
+export async function getCachedProgramsList() {
+    const record = await withStore(STORE_PROGRAMS, 'readonly', (store) => requestToPromise(store.get(PROGRAMS_LIST_KEY)));
+    return record?.items ?? [];
+}
+
+/**
+ * Salva o detalhe completo de um programa (com suas fichas), usado pela tela
+ * `Programs/Show` para permitir abrir o programa sem conexão.
+ */
+export async function cacheProgram(program) {
+    if (!program?.id) return;
+
+    const record = toPlainObject({ ...program, cachedAt: new Date().toISOString() });
+
+    return withStore(STORE_PROGRAMS, 'readwrite', (store) => {
+        store.put(record);
+    });
+}
+
+export async function getCachedProgram(id) {
+    return withStore(STORE_PROGRAMS, 'readonly', (store) => requestToPromise(store.get(normalizeId(id))));
+}
+
+/**
+ * Busca o detalhe de um programa para abertura offline, com o mesmo
+ * fallback usado em `getCachedWorkoutById`: se o programa nunca foi aberto
+ * individualmente, procura o mesmo id dentro do último instantâneo da lista.
+ */
+export async function getCachedProgramById(id) {
+    const direct = await getCachedProgram(id);
+    if (direct) return direct;
+
+    const targetId = normalizeId(id);
+    const list = await getCachedProgramsList();
+    return list.find((program) => program.id === targetId) ?? null;
+}
+
+export async function removeCachedProgram(id) {
+    const targetId = normalizeId(id);
+
+    const list = await getCachedProgramsList();
+    await cachePrograms(list.filter((program) => program.id !== targetId));
+
+    return withStore(STORE_PROGRAMS, 'readwrite', (store) => {
+        store.delete(targetId);
+    });
 }
 
 // ─── Catálogo de exercícios (cached_exercises) ─────────────────────────────
@@ -255,10 +363,57 @@ export async function clearSyncQueue() {
     });
 }
 
+// ─── Metadados (meta) ───────────────────────────────────────────────────────
+
+async function setMeta(key, value) {
+    return withStore(STORE_META, 'readwrite', (store) => {
+        store.put(toPlainObject({ key, value }));
+    });
+}
+
+async function getMeta(key) {
+    const record = await withStore(STORE_META, 'readonly', (store) => requestToPromise(store.get(key)));
+    return record?.value ?? null;
+}
+
+// ─── Full Sync (download inicial do estado global) ─────────────────────────
+
+/**
+ * Sobrescreve todo o estado offline com a resposta de `GET /api/sync/state`
+ * (ver `SyncStateController` e `resources/js/Utils/syncState.js`): a lista
+ * de programas e treinos, cada programa/treino individualmente (para abrir
+ * o detalhe offline sem nunca tê-lo visitado antes), o catálogo de
+ * exercícios, o histórico de últimas cargas e a versão atual do Inertia (que
+ * o mini-servidor do Service Worker usa para montar páginas válidas).
+ */
+export async function saveFullSyncState(state) {
+    const programs = state.programs ?? [];
+    const workouts = state.workouts ?? [];
+
+    await Promise.all([
+        cachePrograms(programs),
+        ...programs.map((program) => cacheProgram(program)),
+        cacheWorkoutsList(workouts),
+        ...workouts.map((workout) => cacheWorkout(workout)),
+        cacheExercisesCatalog(state.exercisesCatalog ?? []),
+        cacheLastLogs(state.lastLogs ?? {}),
+        setMeta('inertiaVersion', state.version ?? null),
+        setMeta('lastFullSyncAt', state.syncedAt ?? new Date().toISOString()),
+    ]);
+}
+
+export async function getStoredInertiaVersion() {
+    return getMeta('inertiaVersion');
+}
+
+export async function getLastFullSyncAt() {
+    return getMeta('lastFullSyncAt');
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 export function isOffline() {
     return typeof navigator !== 'undefined' && navigator.onLine === false;
 }
 
-export { generateUuid };
+export { generateUuid, normalizeId };

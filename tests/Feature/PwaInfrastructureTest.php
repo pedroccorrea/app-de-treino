@@ -48,3 +48,31 @@ test('sw.js intercepts Inertia requests and caches build assets for offline use'
     // em cache em vez do erro nativo de conexão do navegador.
     expect($content)->toContain("request.mode === 'navigate'");
 });
+
+test('sw.js implements the offline mini-server (Phase 33): synthesizes Inertia pages and queues mutations from IndexedDB', function () {
+    $response = $this->get('/sw.js');
+
+    $content = $response->getContent();
+
+    // O banco/stores do mini-servidor precisam ser idênticos aos definidos
+    // em `resources/js/Utils/offlineStorage.js`, já que os dois mantêm
+    // cópias independentes da mesma camada de acesso ao IndexedDB.
+    expect($content)->toContain("const DB_NAME = 'ia-lift-offline'");
+    expect($content)->toContain("const STORE_PROGRAMS = 'cached_programs'");
+
+    // Navegação/Inertia GET para as telas offline-first monta o JSON no
+    // formato esperado pelo Inertia a partir do IndexedDB, sem bater na rede.
+    expect($content)->toContain('Dashboard');
+    expect($content)->toContain("'Workouts/Index'");
+    expect($content)->toContain("'Programs/Index'");
+    expect($content)->toContain("'Programs/Show'");
+    expect($content)->toContain('buildOfflinePageResponse');
+
+    // Mutações offline (criar/editar/excluir programa ou treino) são
+    // enfileiradas na sync_queue e aplicadas otimisticamente, com um
+    // redirecionamento 303 forjado para o Inertia seguir sem erro.
+    expect($content)->toContain('MUTATION_ROUTES');
+    expect($content)->toContain('handleOfflineMutation');
+    expect($content)->toContain('enqueueSyncAction');
+    expect($content)->toContain('status: 303');
+});

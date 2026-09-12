@@ -14,7 +14,8 @@ import InputLabel from '@/Components/InputLabel.vue';
 import TextInput from '@/Components/TextInput.vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
+import { cacheProgram, getCachedProgramById } from '@/Utils/offlineStorage';
 
 const props = defineProps({
     program: {
@@ -25,6 +26,30 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
+});
+
+// ─── Optimistic UI: fichas anexadas/criadas offline, ainda não sincronizadas
+// Cobre a janela em que a conexão já voltou e esta tela carregou com os
+// dados reais do servidor, mas a fila de sincronização (`sync_queue`) ainda
+// não terminou de enviar uma ficha vinculada a este programa enquanto
+// offline. Também cacheia o detalhe deste programa para reabertura offline
+// (mesmo padrão de `Workouts/Show.vue`).
+const pendingWorkouts = ref([]);
+
+const displayedWorkouts = computed(() => {
+    const alreadyLinked = new Set(props.program.workouts.map((workout) => workout.id));
+    const stillPending = pendingWorkouts.value.filter((workout) => !alreadyLinked.has(workout.id));
+
+    return [...props.program.workouts, ...stillPending];
+});
+
+onMounted(async () => {
+    const cached = await getCachedProgramById(props.program.id);
+    pendingWorkouts.value = (cached?.workouts ?? []).filter(
+        (workout) => typeof workout.id === 'string' && workout.id.startsWith('tmp_'),
+    );
+
+    cacheProgram({ ...props.program, workouts: [...props.program.workouts, ...pendingWorkouts.value] });
 });
 
 // ─── Inline edit do cabeçalho (nome/descrição) ──────────────────────────────
@@ -304,7 +329,7 @@ const detachWorkout = () => {
                         </BaseButton>
                     </div>
 
-                    <BaseCard v-if="!program.workouts.length" class="border-dashed px-6 py-16 text-center">
+                    <BaseCard v-if="!displayedWorkouts.length" class="border-dashed px-6 py-16 text-center">
                         <div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-radius-lg bg-accent-muted">
                             <SetwaveLogo :size="32" variant="mark" />
                         </div>
@@ -316,7 +341,7 @@ const detachWorkout = () => {
 
                     <div v-else class="space-y-3">
                         <ProgramWorkoutCard
-                            v-for="workout in program.workouts"
+                            v-for="workout in displayedWorkouts"
                             :key="workout.id"
                             :workout="workout"
                             :return-to="returnToProgram"

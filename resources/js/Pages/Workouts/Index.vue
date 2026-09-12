@@ -37,7 +37,23 @@ const props = defineProps({
 // carregamento desta tela grava a lista mais recente para uso futuro offline.
 const offlineWorkouts = ref(null);
 
-const displayedWorkouts = computed(() => offlineWorkouts.value ?? props.workouts);
+// ─── Optimistic UI: treinos criados offline, ainda não sincronizados ───────
+// Cobre a janela em que a conexão já voltou e esta tela carregou com os
+// dados reais do servidor, mas a fila de sincronização (`sync_queue`) ainda
+// não terminou de enviar um treino criado enquanto offline — sem isso, ele
+// "sumiria" da lista até o próximo sync terminar. Quando o dispositivo
+// segue offline, `offlineWorkouts` já é a mesma lista que o Service Worker
+// usaria para montar esta página, então já inclui qualquer pendência.
+const pendingWorkouts = ref([]);
+
+const displayedWorkouts = computed(() => {
+    if (offlineWorkouts.value) return offlineWorkouts.value;
+
+    const alreadySynced = new Set(props.workouts.map((workout) => workout.id));
+    const stillPending = pendingWorkouts.value.filter((workout) => !alreadySynced.has(workout.id));
+
+    return [...stillPending, ...props.workouts];
+});
 
 onMounted(async () => {
     if (isOffline()) {
@@ -45,7 +61,12 @@ onMounted(async () => {
         return;
     }
 
-    cacheWorkoutsList(props.workouts);
+    const cached = await getCachedWorkoutsList();
+    pendingWorkouts.value = cached.filter((workout) => typeof workout.id === 'string' && workout.id.startsWith('tmp_'));
+
+    // Mantém o cache offline atualizado sem descartar treinos ainda
+    // pendentes de sincronização (por isso mescla em vez de sobrescrever).
+    cacheWorkoutsList([...pendingWorkouts.value, ...props.workouts]);
 });
 
 // ─── Fichas do programa ativo ────────────────────────────────────────────────

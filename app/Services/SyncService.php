@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\User;
 use App\Models\Workout;
+use App\Models\WorkoutProgram;
 use App\Models\WorkoutSession;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -11,7 +12,11 @@ use Illuminate\Validation\ValidationException;
 
 class SyncService
 {
-    public function __construct(private WorkoutSessionService $workoutSessionService) {}
+    public function __construct(
+        private WorkoutSessionService $workoutSessionService,
+        private WorkoutService $workoutService,
+        private WorkoutProgramService $workoutProgramService,
+    ) {}
 
     /**
      * Processa, em uma única transação e em ordem cronológica (pelo
@@ -186,5 +191,223 @@ class SyncService
         }
 
         return $session;
+    }
+
+    /**
+     * Processa, em uma única transação e em ordem cronológica, o lote de
+     * mutações de CRUD (programas e treinos) registradas offline na fila de
+     * sincronização (IndexedDB `sync_queue`).
+     *
+     * Referências entre ações do mesmo lote (ex.: uma ficha criada offline e
+     * já anexada, na mesma sessão offline, a um programa também criado
+     * offline) usam uma referência temporária `tmp_<client_uuid>` em vez de
+     * um ID real de banco — `$createdProgramsByUuid`/`$createdWorkoutsByUuid`
+     * é o que permite resolver essas referências à medida que cada `create_*`
+     * é processado, mesmo que a criação da entidade referenciada só exista a
+     * partir desta mesma chamada.
+     *
+     * Assim como em `processWorkoutSessionActions`, `client_uuid` é persistido
+     * no registro criado e usado para detectar reenvios do mesmo lote (ex.:
+     * reconexões instáveis) sem duplicar o programa/treino.
+     *
+     * @param  array<int, array<string, mixed>>  $actions
+     * @return array<int, array{uuid: string, type: string, client_uuid: ?string, id: ?int, status: string}>
+     */
+    public function processResourceMutations(User $user, array $actions): array
+    {
+        $ordered = collect($actions)
+            ->values()
+            ->map(fn (array $action, int $index) => $action + ['_order' => $index])
+            ->sort(function (array $a, array $b) {
+                $diff = Carbon::parse($a['occurred_at'])->getPreciseTimestamp(6)
+                    <=> Carbon::parse($b['occurred_at'])->getPreciseTimestamp(6);
+
+                return $diff !== 0 ? $diff : $a['_order'] <=> $b['_order'];
+            })
+            ->values();
+
+        return DB::transaction(function () use ($user, $ordered) {
+            /** @var array<string, WorkoutProgram> $createdProgramsByUuid */
+            $createdProgramsByUuid = [];
+            /** @var array<string, Workout> $createdWorkoutsByUuid */
+            $createdWorkoutsByUuid = [];
+            $results = [];
+
+            foreach ($ordered as $action) {
+                $model = match ($action['type']) {
+                    'create_program' => $this->createProgramAction($user, $action, $createdProgramsByUuid),
+                    'update_program' => $this->workoutProgramService->updateProgram(
+                        $this->resolveProgram($user, $action['program_id'], $createdProgramsByUuid),
+                        $action
+                    ),
+                    'activate_program' => $this->workoutProgramService->activateProgram(
+                        $this->resolveProgram($user, $action['program_id'], $createdProgramsByUuid)
+                    ),
+                    'archive_program' => $this->workoutProgramService->archiveProgram(
+                        $this->resolveProgram($user, $action['program_id'], $createdProgramsByUuid)
+                    ),
+                    'delete_program' => $this->deleteProgramAction($user, $action, $createdProgramsByUuid),
+                    'create_workout' => $this->createWorkoutAction($user, $action, $createdProgramsByUuid, $createdWorkoutsByUuid),
+                    'update_workout' => $this->workoutService->updateWorkout(
+                        $this->resolveWorkout($user, $action['workout_id'], $createdWorkoutsByUuid),
+                        $action
+                    ),
+                    'archive_workout' => $this->workoutService->toggleArchive(
+                        $this->resolveWorkout($user, $action['workout_id'], $createdWorkoutsByUuid)
+                    ),
+                    'delete_workout' => $this->deleteWorkoutAction($user, $action, $createdWorkoutsByUuid),
+                    'attach_workout' => $this->attachWorkoutAction($user, $action, $createdProgramsByUuid, $createdWorkoutsByUuid),
+                    'detach_workout' => $this->detachWorkoutAction($user, $action, $createdProgramsByUuid, $createdWorkoutsByUuid),
+                };
+
+                $results[] = [
+                    'uuid' => $action['uuid'],
+                    'type' => $action['type'],
+                    'client_uuid' => $action['client_uuid'] ?? null,
+                    'id' => $model?->id,
+                    'status' => 'synced',
+                ];
+            }
+
+            return $results;
+        });
+    }
+
+    private function createProgramAction(User $user, array $action, array &$createdProgramsByUuid): WorkoutProgram
+    {
+        $existing = WorkoutProgram::query()
+            ->where('user_id', $user->id)
+            ->where('client_uuid', $action['client_uuid'])
+            ->first();
+
+        if ($existing !== null) {
+            return $createdProgramsByUuid[$action['client_uuid']] = $existing;
+        }
+
+        $program = $this->workoutProgramService->createProgram($user, $action);
+        $program->forceFill(['client_uuid' => $action['client_uuid']])->save();
+
+        return $createdProgramsByUuid[$action['client_uuid']] = $program;
+    }
+
+    private function deleteProgramAction(User $user, array $action, array &$createdProgramsByUuid): WorkoutProgram
+    {
+        $program = $this->resolveProgram($user, $action['program_id'], $createdProgramsByUuid);
+        $this->workoutProgramService->deleteProgram($program);
+
+        return $program;
+    }
+
+    private function createWorkoutAction(User $user, array $action, array &$createdProgramsByUuid, array &$createdWorkoutsByUuid): Workout
+    {
+        $existing = Workout::query()
+            ->where('user_id', $user->id)
+            ->where('client_uuid', $action['client_uuid'])
+            ->first();
+
+        if ($existing !== null) {
+            return $createdWorkoutsByUuid[$action['client_uuid']] = $existing;
+        }
+
+        $data = $action;
+        $data['workout_program_id'] = empty($action['workout_program_id'])
+            ? null
+            : $this->resolveProgram($user, $action['workout_program_id'], $createdProgramsByUuid)->id;
+
+        $workout = $this->workoutService->createWorkout($user, $data);
+        $workout->forceFill(['client_uuid' => $action['client_uuid']])->save();
+
+        return $createdWorkoutsByUuid[$action['client_uuid']] = $workout;
+    }
+
+    private function deleteWorkoutAction(User $user, array $action, array &$createdWorkoutsByUuid): Workout
+    {
+        $workout = $this->resolveWorkout($user, $action['workout_id'], $createdWorkoutsByUuid);
+        $this->workoutService->destroy($workout);
+
+        return $workout;
+    }
+
+    private function attachWorkoutAction(User $user, array $action, array &$createdProgramsByUuid, array &$createdWorkoutsByUuid): WorkoutProgram
+    {
+        $program = $this->resolveProgram($user, $action['program_id'], $createdProgramsByUuid);
+        $workout = $this->resolveWorkout($user, $action['workout_id'], $createdWorkoutsByUuid);
+
+        $this->workoutProgramService->attachWorkouts($program, [$workout->id]);
+
+        return $program;
+    }
+
+    private function detachWorkoutAction(User $user, array $action, array &$createdProgramsByUuid, array &$createdWorkoutsByUuid): WorkoutProgram
+    {
+        $program = $this->resolveProgram($user, $action['program_id'], $createdProgramsByUuid);
+        $workout = $this->resolveWorkout($user, $action['workout_id'], $createdWorkoutsByUuid);
+
+        $this->workoutProgramService->detachWorkout($program, $workout);
+
+        return $program;
+    }
+
+    /**
+     * Resolves a `program_id` field that is either a real database ID or a
+     * `tmp_<client_uuid>` reference to a program created earlier in this
+     * same batch (see `processResourceMutations`).
+     *
+     * @param  array<string, WorkoutProgram>  $createdProgramsByUuid
+     */
+    private function resolveProgram(User $user, int|string $rawId, array $createdProgramsByUuid): WorkoutProgram
+    {
+        if (is_string($rawId) && str_starts_with($rawId, 'tmp_')) {
+            $program = $createdProgramsByUuid[substr($rawId, 4)] ?? null;
+
+            if ($program === null) {
+                throw ValidationException::withMessages([
+                    'actions' => 'Nenhum programa correspondente foi encontrado para sincronizar esta ação.',
+                ]);
+            }
+
+            return $program;
+        }
+
+        $program = WorkoutProgram::query()->where('id', $rawId)->where('user_id', $user->id)->first();
+
+        if ($program === null) {
+            throw ValidationException::withMessages([
+                'actions' => 'Nenhum programa correspondente foi encontrado para sincronizar esta ação.',
+            ]);
+        }
+
+        return $program;
+    }
+
+    /**
+     * Resolves a `workout_id` field the same way `resolveProgram` does for
+     * `program_id`.
+     *
+     * @param  array<string, Workout>  $createdWorkoutsByUuid
+     */
+    private function resolveWorkout(User $user, int|string $rawId, array $createdWorkoutsByUuid): Workout
+    {
+        if (is_string($rawId) && str_starts_with($rawId, 'tmp_')) {
+            $workout = $createdWorkoutsByUuid[substr($rawId, 4)] ?? null;
+
+            if ($workout === null) {
+                throw ValidationException::withMessages([
+                    'actions' => 'Nenhum treino correspondente foi encontrado para sincronizar esta ação.',
+                ]);
+            }
+
+            return $workout;
+        }
+
+        $workout = Workout::query()->where('id', $rawId)->where('user_id', $user->id)->first();
+
+        if ($workout === null) {
+            throw ValidationException::withMessages([
+                'actions' => 'Nenhum treino correspondente foi encontrado para sincronizar esta ação.',
+            ]);
+        }
+
+        return $workout;
     }
 }
