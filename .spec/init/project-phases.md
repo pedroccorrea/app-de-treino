@@ -745,3 +745,24 @@
 2. Criar um programa de treino offline não gera erro no console e o novo programa aparece na lista.
 3. `php artisan test` passa em 100% de toda a suíte.
 4. `npm run build` compila com zero erros.
+
+# Phase 34: Estabilização PWA, Cache Dinâmico de Assets e Deep Clone do IndexedDB
+## Tasks
+1. **Cache Dinâmico e Resiliente de Assets (`public/sw.js`):**
+   - O Service Worker atual não consegue servir os chunks do Vue quando o nome do arquivo muda após o build.
+   - Atualizar a estratégia de `fetch` no `sw.js`:
+     * Todas as requisições para `/build/assets/` devem usar a estratégia `Stale-While-Revalidate` com cache persistente. Se o arquivo estiver no cache, devolva imediatamente; em segundo plano, tente buscar uma versão nova na rede e atualize o cache.
+     * Nenhuma requisição para `/build/assets/` deve retornar `ERR_INTERNET_DISCONNECTED`. Se falhar na rede, o fallback para o cache deve ser obrigatório.
+
+2. **Deep Unproxy Completo no IndexedDB (`resources/js/Utils/offlineStorage.js`):**
+   - O método `toPlainObject` atual falhou com `DataCloneError`.
+   - Modifique o método para utilizar `toRaw()` do Vue recursivamente OU um parser seguro que garanta a remoção completa dos Handlers de Proxy gerados pelo Vue 3 antes de qualquer operação `put` ou `add` no IndexedDB.
+
+3. **Desacoplamento de Erros Externos (Bypass de Extensões):**
+   - Garantir que o Service Worker NÃO quebre o carregamento se extensões do Chrome injetarem scripts ou requisitarem URLs de terceiros (`chrome-extension://`). Ignorar requisições que não pertençam à origem do app no `sw.js`.
+
+## Acceptance Criteria
+1. Nenhuma requisição de arquivos compilados em `/build/assets/` gera `ERR_INTERNET_DISCONNECTED` no console quando offline.
+2. Nenhuma operação de salvamento de treinos no offlineStorage gera `DataCloneError`.
+3. `php artisan test` passa em 100%.
+4. `npm run build` compila sem erros.
