@@ -766,3 +766,23 @@
 2. Nenhuma operação de salvamento de treinos no offlineStorage gera `DataCloneError`.
 3. `php artisan test` passa em 100%.
 4. `npm run build` compila sem erros.
+
+# Phase 35: Correção de Auth no Sync e Resiliência de Cache Vazio
+## Tasks
+1. **Correção do Erro 401 nas Rotas de Sync (`routes/web.php`):**
+   - MOVER as rotas `GET /api/sync/state` e `POST /api/sync/workout-sessions` (ou qualquer outra rota de sync) que estejam no arquivo `api.php` para o arquivo `routes/web.php`, garantindo que fiquem DENTRO do grupo `Route::middleware('auth')`.
+   - Isso garantirá que as requisições de download do estado offline via Axios utilizem a sessão/cookie normal do Inertia, resolvendo o erro 401 Unauthorized.
+
+2. **Resiliência contra Cache Vazio no Service Worker (`sw.js`):**
+   - O erro `ERR_INTERNET_DISCONNECTED` está ocorrendo porque, quando o cache está vazio e a rede falha, o `caches.match(request)` retorna `undefined`.
+   - Modifique a captura de erro do `fetch` no SW:
+     * Se `caches.match()` não encontrar nada, o SW DEVE ESTRITAMENTE retornar um `new Response()` sintético.
+     * Se for requisição Inertia (`X-Inertia`), retorne: `new Response(JSON.stringify({}), { status: 200, headers: { 'Content-Type': 'application/json', 'X-Inertia': 'true', 'X-Inertia-Offline-Fallback': 'true' } })`.
+     * Se for navegação normal, retorne um HTML de fallback básico ou force reload.
+     * NUNCA deixe a Promise ser rejeitada sem resposta.
+
+## Acceptance Criteria
+1. Nenhuma requisição `/api/sync/state` retorna 401 Unauthorized.
+2. O SW retorna um Response válido mesmo com cache vazio em modo offline.
+3. `php artisan test` passa em 100%.
+4. `npm run build` compila com zero erros.
