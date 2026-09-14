@@ -809,10 +809,11 @@ async function handleInertiaRequest(request, requestUrl) {
             if (offlinePage) return offlinePage;
         }
 
-        return new Response(JSON.stringify({ offline: true }), {
+        return new Response(JSON.stringify({}), {
             status: 200,
             headers: {
                 'Content-Type': 'application/json',
+                'X-Inertia': 'true',
                 'X-Inertia-Offline-Fallback': 'true',
             },
         });
