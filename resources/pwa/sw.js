@@ -50,6 +50,41 @@ self.addEventListener('activate', (event) => {
     );
 });
 
+// Rotas cujo JSON cacheado no `INERTIA_CACHE` pode ficar defasado assim que
+// uma sessão de treino é iniciada, alterada ou finalizada (ex: o dashboard
+// e a listagem de treinos deixam de refletir a sessão em andamento). O
+// frontend avisa este Service Worker via `postMessage` nesses três momentos
+// (ver `resources/js/Utils/serviceWorkerMessaging.js`) para que a próxima
+// leitura offline dessas páginas nunca sirva a resposta antiga guardada
+// aqui — cai direto no mini-servidor (dados reais do IndexedDB) definido
+// mais abaixo.
+const EVICTABLE_INERTIA_PATH_PATTERNS = [
+    /^\/dashboard(\/.*)?$/,
+    /^\/workouts(\/.*)?$/,
+    /^\/programs(\/.*)?$/,
+];
+
+function isEvictableInertiaPath(pathname) {
+    return EVICTABLE_INERTIA_PATH_PATTERNS.some((pattern) => pattern.test(pathname));
+}
+
+async function evictInertiaCache() {
+    const cache = await caches.open(INERTIA_CACHE);
+    const requests = await cache.keys();
+
+    await Promise.all(
+        requests
+            .filter((request) => isEvictableInertiaPath(new URL(request.url).pathname))
+            .map((request) => cache.delete(request))
+    );
+}
+
+self.addEventListener('message', (event) => {
+    if (event.data?.type !== 'EVICT_INERTIA_CACHE') return;
+
+    event.waitUntil(evictInertiaCache());
+});
+
 // ─────────────────────────────────────────────────────────────────────────
 // Mini-servidor (IndexedDB): o Service Worker é registrado como script
 // clássico (`navigator.serviceWorker.register('/sw.js')`, sem `type:

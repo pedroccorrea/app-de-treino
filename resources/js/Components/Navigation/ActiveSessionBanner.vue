@@ -1,6 +1,7 @@
 <script setup>
+import { getActiveSession } from '@/Utils/offlineStorage';
 import { Link, usePage } from '@inertiajs/vue3';
-import { computed, onUnmounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 
 const page = usePage();
 
@@ -11,7 +12,43 @@ const activeSession = computed(() => page.props.activeWorkoutSession ?? null);
 
 const isOnSessionPage = computed(() => route().current('workout-sessions.show'));
 
-const showBanner = computed(() => activeSession.value !== null && !isOnSessionPage.value);
+// ─── Autoridade do IndexedDB (Phase 36) ────────────────────────────────────
+// Em modo offline, `page.props.activeWorkoutSession` pode ter vindo de uma
+// resposta JSON já cacheada e desatualizada (ex: sessão finalizada, mas o
+// Service Worker ainda serve o snapshot antigo do dashboard). O IndexedDB
+// (`active_session`, mantido por `WorkoutSessions/Active.vue`) é a fonte de
+// verdade nesse cenário: se ele confirma que não há sessão aberta, o banner
+// nunca aparece, mesmo com uma prop antiga dizendo o contrário.
+const isOnline = ref(typeof navigator === 'undefined' || navigator.onLine);
+const localActiveSession = ref(null);
+
+async function syncLocalActiveSession() {
+    try {
+        localActiveSession.value = await getActiveSession();
+    } catch (_) {
+        localActiveSession.value = null;
+    }
+}
+
+watch(activeSession, syncLocalActiveSession, { immediate: true });
+
+function updateOnlineStatus() {
+    isOnline.value = navigator.onLine;
+    if (isOnline.value) syncLocalActiveSession();
+}
+
+onMounted(() => {
+    window.addEventListener('online', updateOnlineStatus);
+    window.addEventListener('offline', updateOnlineStatus);
+});
+
+const showBanner = computed(() => {
+    if (activeSession.value === null) return false;
+    if (isOnSessionPage.value) return false;
+    if (!isOnline.value && localActiveSession.value === null) return false;
+
+    return true;
+});
 
 // ─── Live elapsed time ────────────────────────────────────────────────────────
 const now = ref(Date.now());
@@ -40,7 +77,11 @@ watch(
     { immediate: true },
 );
 
-onUnmounted(stopTick);
+onUnmounted(() => {
+    stopTick();
+    window.removeEventListener('online', updateOnlineStatus);
+    window.removeEventListener('offline', updateOnlineStatus);
+});
 
 const elapsedDisplay = computed(() => {
     if (!activeSession.value?.started_at) return '00:00';

@@ -22,7 +22,7 @@ const { scheduleChime, cancelChime } = useAudioChime();
 // Agrupa esta sessão (já real no banco) na fila de sincronização caso a
 // conexão caia no meio do treino — nesse cenário `client_session_id` é só
 // uma etiqueta de agrupamento, já que `session_id` real é sempre enviado.
-const { isOnline, queueAction } = useOfflineSync();
+const { isOnline, queueAction, startActiveSessionLocally, finishActiveSessionLocally, notifySessionChanged } = useOfflineSync();
 
 // ─── Menu lateral (navegação livre sem interromper a sessão) ──────────────────
 const sidebarOpen = ref(false);
@@ -402,6 +402,7 @@ const completeSet = async (exercise, setNumber) => {
             reps: inputs.reps,
         });
         markSetCompleteLocally(exercise, setNumber, inputs);
+        notifySessionChanged();
         savingSet.value = null;
         return;
     }
@@ -419,6 +420,7 @@ const completeSet = async (exercise, setNumber) => {
             preserveState: true,
             onSuccess: () => {
                 markSetCompleteLocally(exercise, setNumber, inputs);
+                notifySessionChanged();
                 savingSet.value = null;
             },
             onError: () => {
@@ -563,6 +565,13 @@ watch(restRemaining, (seconds) => {
 const finishWorkout = async () => {
     finishing.value = true;
 
+    // Encerra a sessão ativa localmente (IndexedDB) e expurga as páginas
+    // Inertia cacheadas de imediato — antes mesmo da confirmação do
+    // servidor ou da sincronização da fila — para que o banner global e a
+    // Dashboard nunca continuem "achando" que este treino ainda está em
+    // andamento (Phase 36).
+    await finishActiveSessionLocally(props.workout?.id);
+
     if (props.offlineOnly || !isOnline.value) {
         await queueAction({
             type: 'finish_session',
@@ -603,6 +612,17 @@ onMounted(() => {
         cacheWorkout({ ...props.workout, exercises: props.exercises });
     }
     cacheLastLogs(props.lastLogs);
+
+    // Registra esta sessão como a sessão ativa local (IndexedDB) e avisa o
+    // Service Worker para expurgar as páginas Inertia cacheadas — cobre
+    // tanto o início de uma sessão nova quanto a reabertura/continuação de
+    // uma já em andamento (Phase 36).
+    startActiveSessionLocally({
+        id: props.session.id,
+        workout_id: props.workout?.id ?? null,
+        workout_name: props.workout?.name ?? null,
+        started_at: props.session.started_at,
+    });
 });
 
 onUnmounted(() => {

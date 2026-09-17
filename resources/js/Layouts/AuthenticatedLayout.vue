@@ -6,6 +6,7 @@ import Sidebar from '@/Components/Navigation/Sidebar.vue';
 import Toast from '@/Components/Notifications/Toast.vue';
 import { router, usePage } from '@inertiajs/vue3';
 import { warmWorkoutsCache } from '@/Utils/cacheWarming';
+import { clearActiveSession, setActiveSession } from '@/Utils/offlineStorage';
 
 const sidebarOpen = ref(false);
 
@@ -38,6 +39,28 @@ watch(
 watch(
     () => page.props.flash?.error,
     (message) => showToast(message, 'error'),
+    { immediate: true },
+);
+
+// ─── Autoridade do IndexedDB (Phase 36) ─────────────────────────────────────
+// Toda página autenticada compartilha `activeWorkoutSession` (ver
+// `HandleInertiaRequests`), que é sempre fresco quando a requisição chegou a
+// bater no servidor. Reconcilia essa verdade com a cópia local (IndexedDB)
+// que `ActiveSessionBanner.vue` e `Dashboard.vue` consultam em modo offline —
+// mantendo-a sempre alinhada ao estado real do servidor sempre que há
+// conexão, inclusive quando a sessão foi iniciada/finalizada em outro
+// dispositivo ou aba.
+watch(
+    () => page.props.activeWorkoutSession,
+    (session) => {
+        if (typeof navigator === 'undefined' || !navigator.onLine) return;
+
+        if (session) {
+            setActiveSession(session);
+        } else {
+            clearActiveSession();
+        }
+    },
     { immediate: true },
 );
 

@@ -1,5 +1,6 @@
 import { ref } from 'vue';
 import * as offlineStorage from '@/Utils/offlineStorage';
+import { evictInertiaCache } from '@/Utils/serviceWorkerMessaging';
 import { fetchAndStoreFullSyncState } from '@/Utils/syncState';
 
 // Estado compartilhado entre todos os componentes que usam este composable
@@ -131,8 +132,44 @@ async function queueAction(action) {
     return record;
 }
 
+/**
+ * Registra localmente (IndexedDB) qual sessão está em andamento e avisa o
+ * Service Worker para expurgar as páginas Inertia cacheadas — chamado ao
+ * abrir/continuar uma sessão de treino, online ou offline (Phase 36).
+ */
+async function startActiveSessionLocally(session) {
+    await offlineStorage.setActiveSession(session);
+    evictInertiaCache();
+}
+
+/**
+ * Encerra a sessão ativa localmente e avisa o Service Worker para expurgar
+ * as páginas Inertia cacheadas — chamado imediatamente ao finalizar um
+ * treino, sem esperar a confirmação do servidor nem a sincronização da fila,
+ * para que o dispositivo nunca continue "achando" que há uma sessão em
+ * andamento (Phase 36). Quando o id do treino é conhecido, também carimba a
+ * conclusão na cópia local do treino (`last_completed_at`), para que o
+ * status fique correto mesmo antes do próximo full sync.
+ */
+async function finishActiveSessionLocally(workoutId = null) {
+    await offlineStorage.clearActiveSession();
+    if (workoutId) {
+        await offlineStorage.markWorkoutCompletedLocally(workoutId);
+    }
+    evictInertiaCache();
+}
+
 export function useOfflineSync() {
     registerGlobalListeners();
 
-    return { isOnline, syncing, pendingCount, queueAction, flushQueue };
+    return {
+        isOnline,
+        syncing,
+        pendingCount,
+        queueAction,
+        flushQueue,
+        startActiveSessionLocally,
+        finishActiveSessionLocally,
+        notifySessionChanged: evictInertiaCache,
+    };
 }

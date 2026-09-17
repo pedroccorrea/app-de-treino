@@ -268,6 +268,31 @@ export async function removeCachedWorkout(id) {
     });
 }
 
+/**
+ * Carimba `last_completed_at` no registro individual do treino e na sua
+ * entrada dentro do instantâneo da lista — chamado imediatamente ao
+ * finalizar uma sessão (online ou offline), para que a cópia local do
+ * treino reflita a conclusão sem esperar o próximo full sync (Phase 36).
+ */
+export async function markWorkoutCompletedLocally(id, completedAt = new Date().toISOString()) {
+    if (!id) return;
+
+    const targetId = normalizeId(id);
+
+    const [individual, list] = await Promise.all([getCachedWorkout(targetId), getCachedWorkoutsList()]);
+
+    if (individual) {
+        await cacheWorkout({ ...individual, last_completed_at: completedAt });
+    }
+
+    const listIndex = list.findIndex((workout) => workout.id === targetId);
+    if (listIndex !== -1) {
+        const updatedList = [...list];
+        updatedList[listIndex] = { ...updatedList[listIndex], last_completed_at: completedAt };
+        await cacheWorkoutsList(updatedList);
+    }
+}
+
 // ─── Programas de treino (cached_programs) ─────────────────────────────────
 
 /**
@@ -328,6 +353,83 @@ export async function removeCachedProgram(id) {
     return withStore(STORE_PROGRAMS, 'readwrite', (store) => {
         store.delete(targetId);
     });
+}
+
+// ─── Sessão ativa local (meta: active_session) ─────────────────────────────
+//
+// Cópia local, gravada e apagada de forma imediata (sem esperar confirmação
+// do servidor nem a sincronização da fila), de qual sessão de treino está em
+// andamento neste dispositivo. É essa cópia — não a prop `activeWorkoutSession`
+// compartilhada pelo Inertia, que pode vir de uma resposta HTTP já cacheada
+// e desatualizada — que `ActiveSessionBanner.vue` e `Dashboard.vue` consultam
+// para decidir se exibem o indicador de "treino em andamento" em modo offline.
+
+/**
+ * Registra a sessão atualmente em andamento. Chamado tanto ao iniciar
+ * quanto ao reabrir/continuar uma sessão (online ou offline).
+ */
+export async function setActiveSession(session) {
+    return setMeta('active_session', toPlainObject(session));
+}
+
+export async function getActiveSession() {
+    return getMeta('active_session');
+}
+
+/**
+ * Remove a sessão ativa local — chamado imediatamente ao finalizar um
+ * treino, antes mesmo de qualquer confirmação do servidor, para que o
+ * dispositivo nunca continue "achando" que há uma sessão em andamento.
+ */
+export async function clearActiveSession() {
+    return withStore(STORE_META, 'readwrite', (store) => {
+        store.delete('active_session');
+    });
+}
+
+// ─── Dashboard (estado derivado para uso offline) ──────────────────────────
+
+function todayIsoDayOfWeek() {
+    const jsDay = new Date().getDay();
+    return jsDay === 0 ? 7 : jsDay;
+}
+
+/**
+ * Recalcula o estado da Dashboard (Card Hero + lista de treinos ativos)
+ * inteiramente a partir do IndexedDB local. Usado por `Dashboard.vue` quando
+ * o dispositivo está offline, para que o que aparece na tela nunca dependa
+ * de uma prop vinda de uma resposta HTTP já cacheada — espelha a mesma
+ * lógica que `resources/pwa/sw.js` usa para montar esta página no
+ * mini-servidor (`buildDashboardProps`), mas roda direto no componente Vue,
+ * cobrindo também navegações client-side do Inertia que não chegam a passar
+ * pelo Service Worker.
+ */
+export async function getOfflineDashboardState() {
+    const [workouts, programs] = await Promise.all([getCachedWorkoutsList(), getCachedProgramsList()]);
+    const today = todayIsoDayOfWeek();
+
+    const activeProgram = programs.find((program) => program.is_active) ?? null;
+    const activeWorkouts = workouts.filter((workout) => workout.is_active);
+
+    const todayWorkout = activeProgram
+        ? activeWorkouts.find((workout) => workout.program_ids?.includes(activeProgram.id) && workout.days_of_week?.includes(today))
+        : null;
+
+    return {
+        todayWorkout: todayWorkout ? {
+            id: todayWorkout.id,
+            name: todayWorkout.name,
+            muscle_groups: todayWorkout.muscle_groups ?? [],
+            exercises_count: todayWorkout.exercises_count ?? 0,
+            program_name: activeProgram?.name ?? null,
+        } : null,
+        activeWorkouts: activeWorkouts.map((workout) => ({
+            id: workout.id,
+            name: workout.name,
+            exercises_count: workout.exercises_count ?? 0,
+            days_of_week_labels: workout.days_of_week_labels ?? [],
+        })),
+    };
 }
 
 // ─── Catálogo de exercícios (cached_exercises) ─────────────────────────────
