@@ -786,3 +786,25 @@
 2. O SW retorna um Response válido mesmo com cache vazio em modo offline.
 3. `php artisan test` passa em 100%.
 4. `npm run build` compila com zero erros.
+
+# Phase 36: Desacoplamento de Cache, Invalidação Imediata e Autoridade do IndexedDB
+## Tasks
+1. **Invalidação de Snapshots do Inertia no Service Worker (`sw.js`):**
+   - Implementar listener para mensagens do tipo `EVICT_INERTIA_CACHE` no Service Worker.
+   - Sempre que uma sessão de treino for finalizada, iniciada ou alterada, o frontend deve enviar essa mensagem para que o SW delete imediatamente as cópias cacheadas de `/dashboard`, `/workouts*` e `/programs*` do `INERTIA_CACHE`.
+   - Isso garante que o Service Worker nunca entregue uma resposta JSON antiga com estado de sessão defasado.
+
+2. **Limpeza Atômica de Sessão no IndexedDB (`offlineStorage.js` e `useOfflineSync.js`):**
+   - Ao finalizar uma sessão de treino (`finishSession` / `finishWorkout`), remover imediatamente o registro da sessão ativa do IndexedDB local (`active_session`), tanto em execuções online quanto offline.
+   - Atualizar o status local do treino correspondente para refletir a conclusão de forma imediata.
+
+3. **Autoridade do Estado Local na Dashboard e Banner (`Dashboard.vue`, `ActiveSessionBanner.vue`, `AuthenticatedLayout.vue`):**
+   - Em `ActiveSessionBanner.vue`: antes de renderizar o banner de treino em andamento, verificar reativamente se o IndexedDB confirma a existência de uma sessão ativa. Se o IndexedDB indicar que não há sessão aberta, o banner DEVE ser ocultado, ignorando props antigas que possam ter vindo de cache HTTP.
+   - Em `Dashboard.vue`: quando em modo offline, resolver o estado do Card Hero e dos treinos a partir dos dados do IndexedDB local, garantindo que o status exibido seja idêntico à realidade física do aparelho.
+
+## Acceptance Criteria
+1. Ao finalizar um treino e navegar para a Dashboard em modo offline, o banner "Treino em andamento" NUNCA é exibido.
+2. O Service Worker expurga entradas de páginas do `INERTIA_CACHE` ao receber a mensagem de invalidação.
+3. `php artisan test` passa em 100% de toda a suíte.
+4. `tests/Architecture/ArchitecturalRulesTest.php` passa sem nenhuma violação.
+5. `npm run build` compila com zero erros.
