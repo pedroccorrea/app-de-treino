@@ -808,3 +808,32 @@
 3. `php artisan test` passa em 100% de toda a suíte.
 4. `tests/Architecture/ArchitecturalRulesTest.php` passa sem nenhuma violação.
 5. `npm run build` compila com zero erros.
+
+# Phase 37: Resiliência de Sincronização, Validação Idempotente e Segurança Tenant-Scoped
+## Tasks
+1. **Correção do Contrato e Eliminação do Erro 422 (`SyncWorkoutSessionsRequest.php`):**
+   - Adequar as regras de validação para aceitar datas em padrão ISO 8601 emitidas pelo JavaScript (`date_format` flexível ou regra `date`).
+   - Permitir `client_session_id` e `client_set_id` como identificadores únicos (UUID string) para suporte a idempotência.
+   - Tratar campos numéricos (`weight`, `reps`) garantindo coerção de tipo antes de validar.
+
+2. **Segurança e Escopo de Usuário no Backend (`SyncService.php`):**
+   - O processamento do lote deve ocorrer estritamente dentro de `DB::transaction()`.
+   - Garantir que cada `workout_id` pertença estritamente ao `$user->id` autenticado (`$user->workouts()->where('id', ...)`). Registros órfãos ou pertencentes a terceiros devem ser rejeitados.
+   - Utilizar `updateOrCreate` baseado no `client_session_id` para garantir idempotência total (reenvios acidentais de rede não duplicam treinos nem séries).
+
+3. **Governança da Fila Offline no Frontend (`offlineStorage.js` e `useOfflineSync.js`):**
+   - A `sync_queue` do IndexedDB só deve ser esvaziada para os itens que receberem confirmação explícita de sucesso (HTTP 200) do backend.
+   - Em caso de erro de validação (422) ou erro de servidor (500), manter os dados na fila local e registrar log no console, impedindo a perda do treino do usuário.
+
+4. **Hidratação do Estado de Auth Offline e Proteção Visual:**
+   - Ao sincronizar online, persistir um snapshot mínimo de `auth_user` (`id`, `name`, `email`) no IndexedDB.
+   - Em `Sidebar.vue`, `AuthenticatedLayout.vue` e `Show.vue`: aplicar encadeamento opcional (`auth?.user?.name ?? cachedUser?.name ?? 'Atleta'`) e `workout.exercises?.length ?? 0`, impedindo que respostas sintéticas do Service Worker quebrem o motor reativo do Vue.
+
+## Acceptance Criteria
+1. Teste de Feature `tests/Feature/SyncSecurityAndIdempotencyTest.php` valida que:
+   - O endpoint aceita o payload com datas ISO e UUIDs sem erro 422.
+   - O reenvio do mesmo payload não gera duplicações no banco de dados.
+   - Tentativa de sincronizar treinos vinculados a outro usuário é bloqueada.
+2. `php artisan test` passa em 100% de toda a suíte.
+3. `tests/Architecture/ArchitecturalRulesTest.php` passa sem violações.
+4. `npm run build` compila com zero erros.
