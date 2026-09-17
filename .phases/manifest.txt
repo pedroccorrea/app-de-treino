@@ -30,3 +30,4 @@
 2026-09-12 20:24:17 | Fase 34 | d0deb0e | 34: Estabilização PWA, Cache Dinâmico de Assets e Deep Clone do IndexedDB
 2026-09-14 09:24:58 | Fase 35 | 10de2f3 | 35: Correção de Auth no Sync e Resiliência de Cache Vazio
 2026-09-17 09:06:08 | Fase 36 | 793a948 | 36: Desacoplamento de Cache, Invalidação Imediata e Autoridade do IndexedDB
+2026-09-17 09:31:23 | Fase 37 | 38a9b6b | 37: Resiliência de Sincronização, Validação Idempotente e Segurança Tenant-Scoped
