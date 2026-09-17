@@ -28,7 +28,10 @@ const returnTo = new URLSearchParams(window.location.search).get('return_to');
 const currentPath = window.location.pathname + window.location.search;
 
 // Drag & Drop state
-const exercises = ref([...props.workout.exercises].sort((a, b) => a.order - b.order));
+// `workout.exercises` pode faltar numa resposta sintética do Service Worker
+// (`resources/pwa/sw.js`) para uma rota ainda não visitada offline — o
+// encadeamento opcional evita que isso quebre o motor reativo do Vue.
+const exercises = ref([...(props.workout.exercises ?? [])].sort((a, b) => a.order - b.order));
 const draggingIndex = ref(null);
 const dragOverIndex = ref(null);
 

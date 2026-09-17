@@ -6,7 +6,7 @@ import Sidebar from '@/Components/Navigation/Sidebar.vue';
 import Toast from '@/Components/Notifications/Toast.vue';
 import { router, usePage } from '@inertiajs/vue3';
 import { warmWorkoutsCache } from '@/Utils/cacheWarming';
-import { clearActiveSession, setActiveSession } from '@/Utils/offlineStorage';
+import { clearActiveSession, setActiveSession, setCachedAuthUser } from '@/Utils/offlineStorage';
 
 const sidebarOpen = ref(false);
 
@@ -60,6 +60,22 @@ watch(
         } else {
             clearActiveSession();
         }
+    },
+    { immediate: true },
+);
+
+// ─── Hidratação do snapshot de auth offline ─────────────────────────────────
+// Sempre que esta página carregou de verdade a partir do servidor (ou seja,
+// há conexão), grava um instantâneo mínimo (`id`, `name`, `email`) do
+// usuário autenticado no IndexedDB. É esse instantâneo que `Sidebar.vue`
+// consulta como fallback quando uma navegação offline é servida pelo
+// mini-servidor do Service Worker sem a prop `auth.user` de verdade —
+// impedindo que a UI quebre ou mostre um nome vazio.
+watch(
+    () => page.props.auth?.user,
+    (user) => {
+        if (typeof navigator === 'undefined' || !navigator.onLine) return;
+        if (user) setCachedAuthUser(user);
     },
     { immediate: true },
 );

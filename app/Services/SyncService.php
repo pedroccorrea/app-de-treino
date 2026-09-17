@@ -108,9 +108,12 @@ class SyncService
             return $existing;
         }
 
-        $workout = Workout::query()
+        // Escopo estrito por usuário via relação, não uma query solta em
+        // `Workout` — garante que um `workout_id` de outro usuário (ou
+        // órfão) nunca seja aceito aqui, mesmo que a validação da request já
+        // tenha barrado a maioria dos casos antes de chegar neste ponto.
+        $workout = $user->workouts()
             ->where('id', $action['workout_id'])
-            ->where('user_id', $user->id)
             ->firstOrFail();
 
         $this->workoutSessionService->closeOpenSessionsForUser($user);
@@ -137,6 +140,7 @@ class SyncService
                 'set_number' => $action['set_number'],
             ],
             [
+                'client_uuid' => $action['client_set_id'] ?? null,
                 'weight' => $action['weight'] ?? null,
                 'reps' => $action['reps'],
                 'rpe' => $action['rpe'] ?? null,

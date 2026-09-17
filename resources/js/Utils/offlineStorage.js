@@ -526,6 +526,24 @@ export async function clearSyncQueue() {
     });
 }
 
+// ─── Snapshot do usuário autenticado (meta: auth_user) ─────────────────────
+//
+// Cópia local mínima (`id`, `name`, `email`) do usuário logado, gravada
+// sempre que uma sincronização acontece com sucesso enquanto online.
+// `Sidebar.vue` recorre a ela quando o Service Worker serve uma página
+// sintética (ver `resources/pwa/sw.js`) sem a prop `auth.user` completa, para
+// que o nome do usuário nunca quebre a renderização nem apareça vazio.
+
+export async function setCachedAuthUser(user) {
+    if (!user?.id) return;
+
+    return setMeta('auth_user', toPlainObject({ id: user.id, name: user.name, email: user.email }));
+}
+
+export async function getCachedAuthUser() {
+    return getMeta('auth_user');
+}
+
 // ─── Metadados (meta) ───────────────────────────────────────────────────────
 
 async function setMeta(key, value) {

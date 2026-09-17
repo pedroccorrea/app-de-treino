@@ -11,7 +11,7 @@ import { useAudioChime } from '@/Composables/useAudioChime';
 import { useNowTicker } from '@/Composables/useNowTicker';
 import { useOfflineSync } from '@/Composables/useOfflineSync';
 import { useWakeLock } from '@/Composables/useWakeLock';
-import { cacheLastLogs, cacheWorkout } from '@/Utils/offlineStorage';
+import { cacheLastLogs, cacheWorkout, generateUuid } from '@/Utils/offlineStorage';
 import { Head, router } from '@inertiajs/vue3';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 
@@ -394,6 +394,7 @@ const completeSet = async (exercise, setNumber) => {
         await queueAction({
             type: 'log_set',
             client_session_id: clientSessionId.value,
+            client_set_id: generateUuid(),
             session_id: props.offlineOnly ? null : props.session.id,
             occurred_at: new Date().toISOString(),
             exercise_id: exId,

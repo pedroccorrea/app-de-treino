@@ -45,14 +45,53 @@ async function forgetTemporaryRecord(result) {
 }
 
 /**
+ * Envia um grupo de ações (sessões OU mutações de recurso) para `url` e
+ * remove da fila local SOMENTE as que o servidor confirmou explicitamente
+ * (HTTP 200 com o `uuid` da ação presente em `results`). Qualquer falha —
+ * erro de validação (422), erro de servidor (500) ou queda de rede — deixa
+ * esse grupo inteiro intacto na fila local: nada é perdido, e a tentativa
+ * será repetida no próximo flush. Retorna `true` só quando o grupo inteiro
+ * foi confirmado, usado por `flushQueue` para decidir se já pode buscar a
+ * foto completa do estado (`fetchAndStoreFullSyncState`).
+ */
+async function syncActionGroup(url, actions, onResult) {
+    if (actions.length === 0) return true;
+
+    try {
+        const response = await window.axios.post(url, { actions });
+        const results = response.data?.results ?? [];
+
+        if (onResult) {
+            for (const result of results) {
+                await onResult(result);
+            }
+        }
+
+        await offlineStorage.removeSyncActions(results.map((result) => result.uuid));
+
+        return results.length === actions.length;
+    } catch (error) {
+        const status = error?.response?.status;
+
+        if (status === 422) {
+            console.error('[sync] Lote rejeitado por validação (422); dados mantidos na fila local para nova tentativa.', error.response?.data);
+        } else {
+            console.error('[sync] Falha ao sincronizar com o servidor; dados mantidos na fila local para nova tentativa.', error);
+        }
+
+        return false;
+    }
+}
+
+/**
  * Envia a fila de mutações offline — início de sessão, séries, finalização
  * de treino e CRUD de programas/treinos — para os endpoints de sincronização
- * em lote assim que a conexão volta. Ações confirmadas pelo servidor são
- * removidas da fila; qualquer falha de rede simplesmente deixa a fila (ou o
- * que sobrar dela) intacta para a próxima tentativa. Ao final, busca a foto
- * completa do estado (`fetchAndStoreFullSyncState`) para que os IDs
- * temporários usados enquanto offline sejam substituídos pelos IDs reais em
- * toda a UI, em silêncio.
+ * em lote assim que a conexão volta. Cada grupo (sessões / mutações de
+ * recurso) é enviado e confirmado independentemente — ver `syncActionGroup`.
+ * Ao final, se AMBOS os grupos foram confirmados, busca a foto completa do
+ * estado (`fetchAndStoreFullSyncState`) para que os IDs temporários usados
+ * enquanto offline sejam substituídos pelos IDs reais em toda a UI, em
+ * silêncio.
  */
 async function flushQueue() {
     if (typeof navigator !== 'undefined' && !navigator.onLine) return;
@@ -68,32 +107,13 @@ async function flushQueue() {
     try {
         const sessionActions = actions.filter((action) => SESSION_ACTION_TYPES.includes(action.type));
         const resourceActions = actions.filter((action) => !SESSION_ACTION_TYPES.includes(action.type));
-        const syncedUuids = [];
 
-        if (sessionActions.length > 0) {
-            const response = await window.axios.post(route('sync.workout-sessions'), { actions: sessionActions });
-            syncedUuids.push(...(response.data?.results ?? []).map((result) => result.uuid));
+        const sessionsOk = await syncActionGroup(route('sync.workout-sessions'), sessionActions);
+        const resourcesOk = await syncActionGroup(route('sync.mutations'), resourceActions, forgetTemporaryRecord);
+
+        if (sessionsOk && resourcesOk) {
+            await fetchAndStoreFullSyncState();
         }
-
-        if (resourceActions.length > 0) {
-            const response = await window.axios.post(route('sync.mutations'), { actions: resourceActions });
-            const results = response.data?.results ?? [];
-
-            for (const result of results) {
-                await forgetTemporaryRecord(result);
-            }
-
-            syncedUuids.push(...results.map((result) => result.uuid));
-        }
-
-        if (syncedUuids.length > 0) {
-            await offlineStorage.removeSyncActions(syncedUuids);
-        }
-
-        await fetchAndStoreFullSyncState();
-    } catch (_) {
-        // Sem conexão de verdade (ou erro do servidor): a fila permanece
-        // intacta e será retentada no próximo evento `online` ou flush manual.
     } finally {
         syncing.value = false;
         await refreshPendingCount();

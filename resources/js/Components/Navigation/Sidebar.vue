@@ -1,6 +1,8 @@
 <script setup>
 import SetwaveLogo from '@/Components/Brand/SetwaveLogo.vue';
+import { getCachedAuthUser } from '@/Utils/offlineStorage';
 import { Link, usePage } from '@inertiajs/vue3';
+import { computed, onMounted, ref } from 'vue';
 
 defineProps({
     open: {
@@ -12,6 +14,18 @@ defineProps({
 defineEmits(['close', 'logout']);
 
 const page = usePage();
+
+// Fallback para quando uma navegação offline é servida pelo mini-servidor do
+// Service Worker (`resources/pwa/sw.js`) sem a prop `auth.user` de verdade —
+// evita que o encadeamento abaixo quebre o motor reativo do Vue ou mostre um
+// nome vazio. `setCachedAuthUser` grava esse instantâneo sempre que a página
+// carrega de verdade a partir do servidor (ver `AuthenticatedLayout.vue`).
+const cachedUser = ref(null);
+onMounted(async () => {
+    cachedUser.value = await getCachedAuthUser();
+});
+
+const displayName = computed(() => page.props.auth?.user?.name ?? cachedUser.value?.name ?? 'Atleta');
 
 const navigation = [
     {
@@ -102,11 +116,11 @@ const navigation = [
         <div class="border-t border-border-subtle p-3">
             <div class="flex items-center gap-3 rounded-radius-md px-3 py-2.5">
                 <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-radius-full bg-accent-muted text-sm font-semibold text-accent-text-soft">
-                    {{ page.props.auth.user.name.charAt(0).toUpperCase() }}
+                    {{ displayName.charAt(0).toUpperCase() }}
                 </div>
                 <div class="min-w-0 flex-1">
                     <p class="truncate text-sm font-medium text-text-primary">
-                        {{ page.props.auth.user.name }}
+                        {{ displayName }}
                     </p>
                     <button
                         type="button"
