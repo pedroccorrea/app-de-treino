@@ -11,7 +11,7 @@ import { useAudioChime } from '@/Composables/useAudioChime';
 import { useNowTicker } from '@/Composables/useNowTicker';
 import { useOfflineSync } from '@/Composables/useOfflineSync';
 import { useWakeLock } from '@/Composables/useWakeLock';
-import { cacheLastLogs, cacheWorkout, generateUuid } from '@/Utils/offlineStorage';
+import { cacheLastLogs, cacheWorkout, generateUuid, recordActiveSessionSetLog } from '@/Utils/offlineStorage';
 import { Head, router } from '@inertiajs/vue3';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 
@@ -289,8 +289,32 @@ const progressPercent = computed(() =>
 );
 
 // ─── Total volume ─────────────────────────────────────────────────────────────
+// Offline o servidor nunca devolve `setLogs` atualizados, então o volume
+// precisa de uma cópia local que cresce a cada série concluída — sem ela o
+// rodapé ficava congelado em "0 kg" durante todo um treino sem internet.
+const localSetLogs = ref([...props.setLogs]);
+
+const upsertLocalSetLog = (exerciseId, setNumber, inputs) => {
+    const entry = {
+        exercise_id: exerciseId,
+        set_number: setNumber,
+        weight: inputs.weight === '' || inputs.weight === undefined ? null : inputs.weight,
+        reps: inputs.reps === '' || inputs.reps === undefined ? null : inputs.reps,
+    };
+
+    const index = localSetLogs.value.findIndex(
+        (log) => log.exercise_id === exerciseId && log.set_number === setNumber,
+    );
+
+    if (index === -1) {
+        localSetLogs.value.push(entry);
+    } else {
+        localSetLogs.value[index] = entry;
+    }
+};
+
 const totalVolume = computed(() =>
-    props.setLogs.reduce((sum, log) => {
+    localSetLogs.value.reduce((sum, log) => {
         if (log.weight && log.reps) return sum + parseFloat(log.weight) * parseInt(log.reps);
         return sum;
     }, 0),
@@ -365,6 +389,18 @@ const markSetCompleteLocally = (exercise, setNumber, inputs) => {
     if (!savedSets.value[exId]) savedSets.value[exId] = new Set();
     savedSets.value[exId].add(setNumber);
     setStates.value[exId][setNumber] = 'done';
+
+    // Espelha a série no registro local da sessão ativa (IndexedDB) — nos
+    // dois caminhos, online e offline. É esse carimbo que permite sair da
+    // tela do treino e voltar depois com tudo marcado, sem depender de uma
+    // resposta do servidor que pode não existir.
+    upsertLocalSetLog(exId, setNumber, inputs);
+    recordActiveSessionSetLog({
+        exercise_id: exId,
+        set_number: setNumber,
+        weight: inputs.weight,
+        reps: inputs.reps,
+    });
 
     const nextSetNumber = setNumber + 1;
     if (!isSetSaved(exId, nextSetNumber)) {
@@ -618,8 +654,14 @@ onMounted(() => {
     // Service Worker para expurgar as páginas Inertia cacheadas — cobre
     // tanto o início de uma sessão nova quanto a reabertura/continuação de
     // uma já em andamento (Phase 36).
+    // `client_session_id` e `offline_only` viajam junto: é com eles que o
+    // indicador global sabe para onde apontar (a rota real da sessão, ou a
+    // página da ficha quando a sessão ainda só existe neste aparelho) e que
+    // o IndexedDB consegue reunir as séries desta sessão guardadas na fila.
     startActiveSessionLocally({
         id: props.session.id,
+        client_session_id: clientSessionId.value,
+        offline_only: props.offlineOnly,
         workout_id: props.workout?.id ?? null,
         workout_name: props.workout?.name ?? null,
         started_at: props.session.started_at,
@@ -640,6 +682,10 @@ watch(
             if (!setStates.value[exId]) setStates.value[exId] = {};
             savedSets.value[exId].add(log.set_number);
             setStates.value[exId][log.set_number] = 'done';
+
+            // O servidor é a versão definitiva de cada série já persistida:
+            // reconcilia a cópia local usada pelo volume total.
+            upsertLocalSetLog(exId, log.set_number, { weight: log.weight, reps: log.reps });
         }
     },
     { deep: true },

@@ -7,7 +7,7 @@ import CreateProgramModal from '@/Components/Programs/CreateProgramModal.vue';
 import ConfirmationModal from '@/Components/ConfirmationModal.vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, router, useForm } from '@inertiajs/vue3';
-import { computed, onMounted, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { cachePrograms, getCachedProgramsList } from '@/Utils/offlineStorage';
 
 const props = defineProps({
@@ -33,14 +33,23 @@ const displayedPrograms = computed(() => {
     return [...stillPending, ...props.programs];
 });
 
-onMounted(async () => {
-    const cached = await getCachedProgramsList();
-    pendingPrograms.value = cached.filter((program) => typeof program.id === 'string' && program.id.startsWith('tmp_'));
+// `watch(..., { immediate: true })` no lugar de `onMounted`: o Inertia NÃO
+// remonta este componente quando o redirect de uma mutação aponta para a
+// MESMA página (`/programs` → `/programs`) — só atualiza `props.programs`.
+// Um `onMounted` sozinho nunca recalcularia `pendingPrograms` depois disso
+// (mesmo bug corrigido em `Workouts/Index.vue`).
+watch(
+    () => props.programs,
+    async (programs) => {
+        const cached = await getCachedProgramsList();
+        pendingPrograms.value = cached.filter((program) => typeof program.id === 'string' && program.id.startsWith('tmp_'));
 
-    // Mantém o cache offline atualizado sem descartar programas ainda
-    // pendentes de sincronização (por isso mescla em vez de sobrescrever).
-    cachePrograms([...pendingPrograms.value, ...props.programs]);
-});
+        // Mantém o cache offline atualizado sem descartar programas ainda
+        // pendentes de sincronização (por isso mescla em vez de sobrescrever).
+        cachePrograms([...pendingPrograms.value, ...programs]);
+    },
+    { immediate: true },
+);
 
 const showCreateProgramModal = ref(false);
 

@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'v4';
+const CACHE_VERSION = 'v10';
 const APP_SHELL_CACHE = `setwave-shell-${CACHE_VERSION}`;
 const STATIC_ASSETS_CACHE = `setwave-assets-${CACHE_VERSION}`;
 const INERTIA_CACHE = `setwave-inertia-${CACHE_VERSION}`;
@@ -32,7 +32,16 @@ self.addEventListener('install', (event) => {
     event.waitUntil(
         caches
             .open(APP_SHELL_CACHE)
-            .then((cache) => cache.addAll(APP_SHELL_ASSETS))
+            // `cache.addAll()` é tudo-ou-nada: se UM único asset falhar (uma
+            // falha de rede passageira, um ícone temporariamente
+            // indisponível), a instalação INTEIRA falha — o Service Worker
+            // nunca ativa, e a página nunca fica sob controle nenhum,
+            // offline ou online. `Promise.allSettled` cacheia o que
+            // conseguir e nunca deixa uma falha isolada derrubar a ativação
+            // inteira do worker.
+            .then((cache) => Promise.allSettled(
+                APP_SHELL_ASSETS.map((asset) => cache.add(asset)),
+            ))
             .then(() => self.skipWaiting())
     );
 });
@@ -62,6 +71,7 @@ const EVICTABLE_INERTIA_PATH_PATTERNS = [
     /^\/dashboard(\/.*)?$/,
     /^\/workouts(\/.*)?$/,
     /^\/programs(\/.*)?$/,
+    /^\/workout-sessions(\/.*)?$/,
 ];
 
 function isEvictableInertiaPath(pathname) {
@@ -100,6 +110,7 @@ const DB_VERSION = 2;
 const STORE_WORKOUTS = 'cached_workouts';
 const STORE_PROGRAMS = 'cached_programs';
 const STORE_EXERCISES = 'cached_exercises';
+const STORE_LAST_LOGS = 'cached_last_logs';
 const STORE_SYNC_QUEUE = 'sync_queue';
 const STORE_META = 'meta';
 
@@ -128,8 +139,8 @@ function openDatabase() {
                 if (!db.objectStoreNames.contains(STORE_EXERCISES)) {
                     db.createObjectStore(STORE_EXERCISES, { keyPath: 'id' });
                 }
-                if (!db.objectStoreNames.contains('cached_last_logs')) {
-                    db.createObjectStore('cached_last_logs', { keyPath: 'exercise_id' });
+                if (!db.objectStoreNames.contains(STORE_LAST_LOGS)) {
+                    db.createObjectStore(STORE_LAST_LOGS, { keyPath: 'exercise_id' });
                 }
                 if (!db.objectStoreNames.contains(STORE_SYNC_QUEUE)) {
                     db.createObjectStore(STORE_SYNC_QUEUE, { keyPath: 'uuid' });
@@ -387,6 +398,73 @@ async function unlinkWorkoutFromProgramCache(programId, workoutId) {
     }));
 }
 
+// ─── Sessão ativa local (meta: active_session) ─────────────────────────────
+//
+// Cópia mínima, em JS puro, das mesmas funções de
+// `resources/js/Utils/offlineStorage.js` — necessária porque as rotas de
+// início/registro/finalização de sessão abaixo (`start_session_fallback`,
+// `log_set_fallback`, `finish_session_fallback`) só entram em ação quando o
+// FRONT-END decidiu (errado) que estava online e mandou um POST "normal" que
+// a rede rejeitou de verdade. Precisam se comportar exatamente como o
+// caminho "offline" que o Vue já usa, para que a página re-renderizada logo
+// em seguida (via `buildActiveSessionProps`) veja o mesmo estado.
+
+async function setActiveSessionMeta(session) {
+    if (!session?.id) return;
+
+    const existing = (await idbGet(STORE_META, 'active_session'))?.value ?? null;
+    const merged = existing && String(existing.id) === String(session.id)
+        ? { ...existing, ...session }
+        : session;
+
+    return idbPut(STORE_META, { key: 'active_session', value: merged });
+}
+
+async function clearActiveSessionMeta() {
+    return idbDelete(STORE_META, 'active_session');
+}
+
+async function recordActiveSessionSetLogMeta(log) {
+    const session = (await idbGet(STORE_META, 'active_session'))?.value ?? null;
+    if (!session) return;
+
+    const entry = {
+        exercise_id: log.exercise_id,
+        set_number: log.set_number,
+        weight: log.weight === '' || log.weight === undefined ? null : log.weight,
+        reps: log.reps === '' || log.reps === undefined ? null : log.reps,
+    };
+
+    const logs = Array.isArray(session.set_logs) ? [...session.set_logs] : [];
+    const index = logs.findIndex((item) => item.exercise_id === entry.exercise_id && item.set_number === entry.set_number);
+
+    if (index === -1) {
+        logs.push(entry);
+    } else {
+        logs[index] = entry;
+    }
+
+    return idbPut(STORE_META, { key: 'active_session', value: { ...session, set_logs: logs } });
+}
+
+async function markWorkoutCompletedLocallySW(rawWorkoutId, completedAt) {
+    if (!rawWorkoutId) return;
+
+    const id = normalizeId(rawWorkoutId);
+    const [individual, list] = await Promise.all([idbGet(STORE_WORKOUTS, id), getListItems(STORE_WORKOUTS, WORKOUTS_LIST_KEY)]);
+
+    if (individual) {
+        await idbPut(STORE_WORKOUTS, { ...individual, last_completed_at: completedAt });
+    }
+
+    const listIndex = list.findIndex((workout) => workout.id === id);
+    if (listIndex !== -1) {
+        const updatedList = [...list];
+        updatedList[listIndex] = { ...updatedList[listIndex], last_completed_at: completedAt };
+        await putList(STORE_WORKOUTS, WORKOUTS_LIST_KEY, updatedList);
+    }
+}
+
 // ─── Mutações interceptadas offline (POST/PUT/PATCH/DELETE) ────────────────
 //
 // Cada rota de criação/edição listada aqui, quando a rede falha, é resolvida
@@ -409,6 +487,24 @@ const MUTATION_ROUTES = [
     { method: 'PUT', pattern: /^\/workouts\/([^/]+)\/?$/, type: 'update_workout' },
     { method: 'PATCH', pattern: /^\/workouts\/([^/]+)\/archive\/?$/, type: 'archive_workout' },
     { method: 'DELETE', pattern: /^\/workouts\/([^/]+)\/?$/, type: 'delete_workout' },
+
+    // Início/registro/finalização de sessão de treino: a tela
+    // (`Workouts/Show.vue`, `WorkoutSessions/Active.vue`) decide se enfileira
+    // a ação diretamente ou faz um POST "normal" com base em
+    // `navigator.onLine` — um sinal que reflete a interface de rede do
+    // sistema operacional, NÃO o modo "Offline" da aba Network do DevTools
+    // (o jeito mais comum de testar isso), que bloqueia a requisição de
+    // verdade sem nunca atualizar essa flag. Essas três rotas cobrem
+    // exatamente esse descompasso: se o front-end errar a decisão e mandar
+    // um POST "online" que a rede rejeita de verdade, o Service Worker ainda
+    // aplica a mesma fila de sincronização de sessão (`/api/sync/
+    // workout-sessions`) que o caminho "offline" já usa — em vez de deixar o
+    // erro de rede cru estourar até o XHR (`net::ERR_FAILED`), que era
+    // exatamente o sintoma relatado ("não consigo iniciar/registrar treino
+    // offline", indistinguível de "a navegação inteira quebrou").
+    { method: 'POST', pattern: /^\/workouts\/([^/]+)\/start\/?$/, type: 'start_session_fallback' },
+    { method: 'POST', pattern: /^\/workout-sessions\/([^/]+)\/sets\/?$/, type: 'log_set_fallback' },
+    { method: 'POST', pattern: /^\/workout-sessions\/([^/]+)\/finish\/?$/, type: 'finish_session_fallback' },
 ];
 
 function matchMutationRoute(method, pathname) {
@@ -426,7 +522,70 @@ function redirectResponse(location) {
     return new Response(null, { status: 303, headers: { Location: target } });
 }
 
+/**
+ * Alvo do redirect 303 forjado após uma mutação offline, espelhando o que o
+ * controller real faz online — nesta ordem: `return_to` explícito (corpo ou
+ * query string) primeiro; senão, o destino "natural" de cada tipo de
+ * mutação; só então a página de origem (`request.referrer`) como último
+ * recurso.
+ *
+ * `create_workout` e `create_program` são casos especiais e vêm ANTES do
+ * `referrer`, não depois: as duas têm um destino "natural" que replica o
+ * `WorkoutController@store`/`WorkoutProgramController@store` reais —
+ * `/workouts` (ou a página do programa, quando criada a partir dele) e
+ * `/programs`. Usar o referrer para elas quebra especificamente o fluxo da
+ * tela dedicada `/workouts/create`: o `referrer` de um fetch disparado
+ * DAQUELA página é a própria página, então o usuário criava a ficha e
+ * "voltava" para o formulário em branco — indistinguível de "não
+ * funcionou". `create_program` não tem este problema hoje (nasce de um modal
+ * em `/programs`, cujo referrer já é o destino certo), mas fica bom mesmo
+ * assim: nunca soa correto usar a página de criação como fallback do redirect da própria criação.
+ */
+function resolveMutationRedirectTarget(route, body, requestUrl) {
+    const explicit = body.return_to ?? requestUrl.searchParams.get('return_to') ?? null;
+    if (explicit) return explicit;
+
+    if (route.type === 'create_workout') {
+        return body.workout_program_id ? `/programs/${body.workout_program_id}` : '/workouts';
+    }
+
+    if (route.type === 'create_program') {
+        return '/programs';
+    }
+
+    // Mesmo raciocínio para a tela dedicada `/workouts/{id}/edit`: sem
+    // `return_to`, o `WorkoutController@update` real volta para a página da
+    // própria ficha (`workouts.show`) — nunca para o formulário de edição,
+    // que é justamente o que o referrer aponta aqui.
+    if (route.type === 'update_workout') {
+        return `/workouts/${route.params[0]}`;
+    }
+
+    return null;
+}
+
+/**
+ * `handleOfflineMutation` nunca pode deixar uma exceção escapar: isso faria
+ * a Promise passada a `event.respondWith()` REJEITAR, e um `respondWith()`
+ * rejeitado vira um erro de rede genérico (`net::ERR_FAILED`) para quem fez
+ * a requisição — a mutação (criar/editar/excluir) simplesmente "não
+ * funciona", sem nenhuma pista no console sobre o motivo real. Este
+ * wrapper garante duas coisas: (1) o erro real é logado, nomeado com o tipo
+ * da mutação; (2) a resposta ainda é um redirect válido para uma página
+ * segura, para que a UI não fique travada — mesmo que a mutação em si não
+ * tenha sido aplicada.
+ */
 async function handleOfflineMutation(request, requestUrl, route) {
+    try {
+        return await applyOfflineMutation(request, requestUrl, route);
+    } catch (error) {
+        console.error(`[SW] Falha ao aplicar mutação offline "${route.type}":`, error);
+
+        return redirectResponse('/dashboard');
+    }
+}
+
+async function applyOfflineMutation(request, requestUrl, route) {
     const body = await request.clone().json().catch(() => ({}));
     const uuid = generateUuid();
     const occurredAt = new Date().toISOString();
@@ -436,8 +595,11 @@ async function handleOfflineMutation(request, requestUrl, route) {
     // script, inclusive dentro do próprio Service Worker. O valor equivalente,
     // quando disponível, vem em `request.referrer` (propriedade separada,
     // preenchida pelo navegador com a URL da página que originou o fetch).
-    const redirectTo = body.return_to
-        ?? requestUrl.searchParams.get('return_to')
+    // `let`, não `const`: os três tipos de fallback de sessão (logo abaixo)
+    // só sabem o destino correto depois de gerar/consultar dados em tempo de
+    // execução (um `client_session_id` novo, ou o `workout_id` da sessão
+    // ativa) — cada um reatribui esta variável dentro do próprio `case`.
+    let redirectTo = resolveMutationRedirectTarget(route, body, requestUrl)
         ?? (request.referrer || null)
         ?? '/dashboard';
 
@@ -568,6 +730,85 @@ async function handleOfflineMutation(request, requestUrl, route) {
             });
             break;
         }
+
+        // ─── Fallback de sessão: o front-end mandou um POST "online" (por
+        // achar, via `navigator.onLine`, que a rede estava de pé) que a rede
+        // rejeitou de verdade. Aplica exatamente o mesmo efeito que o
+        // caminho "offline" já teria aplicado — mesma fila
+        // (`sync.workout-sessions`), mesmo formato de ação — para que o
+        // usuário nunca veja o erro de rede cru.
+
+        case 'start_session_fallback': {
+            const workoutId = normalizeId(route.params[0]);
+            const clientSessionId = generateUuid();
+
+            const workout = (await idbGet(STORE_WORKOUTS, workoutId))
+                ?? (await getListItems(STORE_WORKOUTS, WORKOUTS_LIST_KEY)).find((w) => w.id === workoutId)
+                ?? null;
+
+            await enqueueSyncAction({
+                uuid, type: 'start_session', client_session_id: clientSessionId,
+                occurred_at: occurredAt, workout_id: workoutId,
+            });
+
+            await setActiveSessionMeta({
+                id: clientSessionId,
+                client_session_id: clientSessionId,
+                offline_only: true,
+                workout_id: workoutId,
+                workout_name: workout?.name ?? null,
+                started_at: occurredAt,
+            });
+
+            await evictInertiaCache();
+
+            redirectTo = `/workout-sessions/${clientSessionId}`;
+            break;
+        }
+
+        case 'log_set_fallback': {
+            const sessionId = normalizeId(route.params[0]);
+            const clientSessionId = `session-${sessionId}`;
+
+            await enqueueSyncAction({
+                uuid, type: 'log_set', client_session_id: clientSessionId,
+                client_set_id: generateUuid(), session_id: sessionId, occurred_at: occurredAt,
+                exercise_id: body.exercise_id, set_number: body.set_number,
+                weight: body.weight ?? null, reps: body.reps,
+            });
+
+            await recordActiveSessionSetLogMeta({
+                exercise_id: body.exercise_id, set_number: body.set_number,
+                weight: body.weight, reps: body.reps,
+            });
+
+            await evictInertiaCache();
+
+            redirectTo = `/workout-sessions/${sessionId}`;
+            break;
+        }
+
+        case 'finish_session_fallback': {
+            const sessionId = normalizeId(route.params[0]);
+            const clientSessionId = `session-${sessionId}`;
+
+            const activeSession = (await idbGet(STORE_META, 'active_session'))?.value ?? null;
+            const workoutId = activeSession && String(activeSession.id) === String(sessionId)
+                ? activeSession.workout_id
+                : null;
+
+            await enqueueSyncAction({
+                uuid, type: 'finish_session', client_session_id: clientSessionId,
+                session_id: sessionId, occurred_at: occurredAt,
+            });
+
+            await clearActiveSessionMeta();
+            if (workoutId) await markWorkoutCompletedLocallySW(workoutId, occurredAt);
+            await evictInertiaCache();
+
+            redirectTo = '/dashboard';
+            break;
+        }
     }
 
     return redirectResponse(redirectTo);
@@ -583,9 +824,12 @@ async function handleOfflineMutation(request, requestUrl, route) {
 const PAGE_ROUTES = [
     { pattern: /^\/(?:dashboard)?\/?$/, component: 'Dashboard', build: buildDashboardProps },
     { pattern: /^\/workouts\/?$/, component: 'Workouts/Index', build: buildWorkoutsIndexProps },
+    { pattern: /^\/workouts\/create\/?$/, component: 'Workouts/Create', build: buildWorkoutCreateProps },
+    { pattern: /^\/workouts\/([^/]+)\/edit\/?$/, component: 'Workouts/Edit', build: buildWorkoutEditProps },
     { pattern: /^\/workouts\/(?!create\b)([^/]+)\/?$/, component: 'Workouts/Show', build: buildWorkoutShowProps },
     { pattern: /^\/programs\/?$/, component: 'Programs/Index', build: buildProgramsIndexProps },
     { pattern: /^\/programs\/([^/]+)\/?$/, component: 'Programs/Show', build: buildProgramShowProps },
+    { pattern: /^\/workout-sessions\/([^/]+)\/?$/, component: 'WorkoutSessions/Active', build: buildActiveSessionProps },
 ];
 
 function matchPageRoute(pathname) {
@@ -646,6 +890,39 @@ async function buildWorkoutsIndexProps() {
     };
 }
 
+/**
+ * Monta o formulário de criação de ficha (`Workouts/Create`) a partir do
+ * catálogo de exercícios cacheado. Sem esta rota, `/workouts/create` não
+ * tinha como ser sintetizado offline — o mini-servidor devolvia `null` para
+ * qualquer rota desconhecida, e a navegação (de documento ou via XHR do
+ * Inertia) caía no JSON de fallback / página cacheada errada, tornando
+ * impossível abrir a tela de criação sem internet.
+ */
+async function buildWorkoutCreateProps() {
+    const exercisesCatalogRecord = await idbGet(STORE_EXERCISES, EXERCISES_CATALOG_KEY);
+
+    return {
+        exercisesCatalog: exercisesCatalogRecord?.groups ?? [],
+    };
+}
+
+/**
+ * Monta a tela de edição (`Workouts/Edit`) a partir do treino cacheado — a
+ * mesma lógica de `buildWorkoutShowProps`, mais o catálogo de exercícios que
+ * o formulário precisa para adicionar/trocar exercícios.
+ */
+async function buildWorkoutEditProps(params) {
+    const showProps = await buildWorkoutShowProps(params);
+    if (showProps === null) return null;
+
+    const exercisesCatalogRecord = await idbGet(STORE_EXERCISES, EXERCISES_CATALOG_KEY);
+
+    return {
+        ...showProps,
+        exercisesCatalog: exercisesCatalogRecord?.groups ?? [],
+    };
+}
+
 async function buildWorkoutShowProps(params) {
     const id = normalizeId(params[0]);
     const direct = await idbGet(STORE_WORKOUTS, id);
@@ -654,7 +931,120 @@ async function buildWorkoutShowProps(params) {
     // Sem nenhum dado cacheado para esta ficha específica: sinaliza "sem
     // dados" (`null`) em vez de montar uma página com `workout: null`, que o
     // Vue (`Workouts/Show.vue`) não sabe renderizar (`workout` é obrigatório).
-    return workout ? { workout } : null;
+    if (!workout) return null;
+
+    // Defaults antes do spread: um registro gravado por uma versão antiga do
+    // app (ou por uma tela que só conhecia parte dos campos) não pode chegar
+    // ao Vue sem `muscle_groups`/`exercises` — `Workouts/Show.vue` itera os
+    // dois, e um `undefined` aqui aborta o render no meio do card.
+    return {
+        workout: {
+            muscle_groups: [],
+            exercises: [],
+            days_of_week: [],
+            days_of_week_labels: [],
+            ...workout,
+        },
+    };
+}
+
+/**
+ * Monta a tela de sessão ativa (`WorkoutSessions/Active`) inteiramente a
+ * partir do IndexedDB. É isso que faz o botão "Treino em andamento" levar de
+ * volta ao treino quando a internet caiu no meio da série: a rota real
+ * `/workout-sessions/{id}` existe no servidor, mas sem rede o Laravel nunca
+ * responde — aqui ela é remontada com a ficha cacheada, as séries já
+ * registradas (fila de sincronização + carimbo na sessão ativa) e o
+ * histórico de cargas.
+ */
+async function buildActiveSessionProps(params) {
+    const session = (await idbGet(STORE_META, 'active_session'))?.value ?? null;
+
+    if (!session) return null;
+    if (String(session.id) !== String(params[0])) return null;
+
+    const workoutId = normalizeId(session.workout_id);
+    const direct = await idbGet(STORE_WORKOUTS, workoutId);
+    const workout = direct
+        ?? (await getListItems(STORE_WORKOUTS, WORKOUTS_LIST_KEY)).find((item) => item.id === workoutId)
+        ?? null;
+
+    if (!workout) return null;
+
+    return {
+        session: {
+            id: session.id,
+            started_at: session.started_at ?? null,
+            completed_at: null,
+            notes: null,
+        },
+        workout: {
+            id: workout.id,
+            name: workout.name,
+            description: workout.description ?? null,
+        },
+        exercises: (workout.exercises ?? []).map((exercise, index) => ({
+            id: exercise.id,
+            name: exercise.name,
+            primary_muscle: exercise.primary_muscle ?? '',
+            target_sets: exercise.target_sets ?? 3,
+            target_reps: exercise.target_reps ?? '10',
+            rest_seconds: exercise.rest_seconds ?? 60,
+            notes: exercise.notes ?? null,
+            order: exercise.order ?? index,
+        })),
+        setLogs: await collectSessionSetLogs(session),
+        lastLogs: await getCachedLastLogsMap(),
+        offlineOnly: session.offline_only === true,
+    };
+}
+
+/**
+ * Une as duas memórias locais de séries desta sessão: o que ainda está na
+ * fila esperando sincronizar e o que ficou carimbado no próprio registro da
+ * sessão ativa (séries feitas online, ou offline e já sincronizadas — a fila
+ * é esvaziada nesse caso). Espelha `getActiveSessionSetLogs()` em
+ * `resources/js/Utils/offlineStorage.js`.
+ */
+async function collectSessionSetLogs(session) {
+    const db = await openDatabase();
+    const queued = await requestToPromise(
+        db.transaction(STORE_SYNC_QUEUE, 'readonly').objectStore(STORE_SYNC_QUEUE).getAll(),
+    );
+
+    const clientSessionId = String(session.client_session_id ?? session.id);
+    const byPosition = new Map();
+
+    for (const log of Array.isArray(session.set_logs) ? session.set_logs : []) {
+        byPosition.set(`${log.exercise_id}-${log.set_number}`, log);
+    }
+
+    queued
+        .filter((row) => row.type === 'log_set' && String(row.client_session_id) === clientSessionId)
+        .sort((a, b) => new Date(a.occurred_at) - new Date(b.occurred_at))
+        .forEach((row) => byPosition.set(`${row.exercise_id}-${row.set_number}`, row));
+
+    return [...byPosition.values()].map((log) => ({
+        exercise_id: log.exercise_id,
+        set_number: log.set_number,
+        weight: log.weight ?? null,
+        reps: log.reps ?? null,
+        rpe: log.rpe ?? null,
+        is_warmup: Boolean(log.is_warmup),
+        notes: log.notes ?? null,
+    }));
+}
+
+async function getCachedLastLogsMap() {
+    const db = await openDatabase();
+    const rows = await requestToPromise(
+        db.transaction(STORE_LAST_LOGS, 'readonly').objectStore(STORE_LAST_LOGS).getAll(),
+    );
+
+    return rows.reduce((acc, row) => {
+        acc[row.exercise_id] = row;
+        return acc;
+    }, {});
 }
 
 async function buildProgramsIndexProps() {
@@ -680,6 +1070,40 @@ async function buildProgramShowProps(params) {
     };
 }
 
+/**
+ * Props que o `HandleInertiaRequests` compartilha com TODA página
+ * autenticada. Sem elas, uma página sintetizada aqui chegava ao Vue sem
+ * `auth.user` (nome do usuário vazio na sidebar) e, principalmente, sem
+ * `activeWorkoutSession` — que é justamente o que faz o botão flutuante
+ * "Treino em andamento" existir. Era por isso que o indicador sumia assim
+ * que o usuário navegava offline e reaparecia ao voltar a internet.
+ */
+async function buildSharedProps() {
+    const [user, session, workouts] = await Promise.all([
+        idbGet(STORE_META, 'auth_user'),
+        idbGet(STORE_META, 'active_session'),
+        getListItems(STORE_WORKOUTS, WORKOUTS_LIST_KEY),
+    ]);
+
+    const activeSession = session?.value ?? null;
+
+    return {
+        auth: { user: user?.value ?? null },
+        flash: { success: null, error: null },
+        errors: {},
+        activeWorkoutSession: activeSession
+            ? {
+                id: activeSession.id,
+                workout_id: activeSession.workout_id ?? null,
+                workout_name: activeSession.workout_name ?? null,
+                started_at: activeSession.started_at ?? null,
+                offline_only: activeSession.offline_only === true,
+            }
+            : null,
+        userWorkoutIds: workouts.filter((workout) => workout.is_active).map((workout) => workout.id),
+    };
+}
+
 async function buildOfflinePageResponse(request, requestUrl, route) {
     const props = await route.build(route.params);
     if (props === null) return null;
@@ -688,7 +1112,7 @@ async function buildOfflinePageResponse(request, requestUrl, route) {
 
     const page = {
         component: route.component,
-        props,
+        props: { ...(await buildSharedProps()), ...props },
         url: requestUrl.pathname + requestUrl.search,
         version,
         clearHistory: false,
@@ -706,14 +1130,62 @@ async function buildOfflinePageResponse(request, requestUrl, route) {
 
     // Navegação de documento completo (F5, digitar a URL) para uma dessas
     // rotas: reaproveita o HTML de qualquer página já cacheada como app
-    // shell (o cliente Inertia se rehidrata a partir do `data-page` embutido
-    // nela) — o conteúdo real chega em seguida pela visita XHR que o próprio
-    // Inertia dispara ao montar.
+    // shell (mesmos scripts/estilos do Vite) e REESCREVE o `data-page`
+    // embutido com a página montada aqui. Sem essa reescrita, o cliente
+    // Inertia se rehidratava com o `data-page` congelado de outra página —
+    // o usuário dava F5 em `/workout-sessions/12` e caía numa Dashboard
+    // velha, sem nenhuma requisição posterior para corrigir o rumo.
     const shellCache = await caches.open(PAGE_CACHE);
     const shellKeys = await shellCache.keys();
-    if (shellKeys.length > 0) return shellCache.match(shellKeys[0]);
+    if (shellKeys.length === 0) return null;
 
-    return null;
+    const shellResponse = await shellCache.match(shellKeys[0]);
+    if (!shellResponse) return null;
+
+    const html = await shellResponse.text();
+
+    return new Response(replaceInertiaDataPage(html, page), {
+        status: 200,
+        headers: { 'Content-Type': 'text/html; charset=utf-8' },
+    });
+}
+
+/**
+ * Wrapper de segurança em torno de `buildOfflinePageResponse`. Uma exceção
+ * ali dentro (ex.: um `idbGet` falhando porque uma store esperada não existe
+ * ainda no IndexedDB deste aparelho, ou um erro num dos `build` de cada
+ * rota) NUNCA pode escapar para quem chamou `handleNavigationRequest`/
+ * `handleInertiaRequest` — isso rejeitaria a Promise de `event.respondWith()`
+ * e viraria um erro de rede genérico (`net::ERR_FAILED`) para a página, sem
+ * nenhuma pista no console do que realmente falhou. Aqui o erro é logado
+ * (nomeado com a rota) e a chamada degrada para `null`, deixando o restante
+ * da cadeia de fallback (cache/app shell) resolver a resposta normalmente.
+ */
+async function safeBuildOfflinePageResponse(request, requestUrl, route) {
+    try {
+        return await buildOfflinePageResponse(request, requestUrl, route);
+    } catch (error) {
+        console.error(`[SW] Falha ao montar a página offline "${route.component}":`, error);
+
+        return null;
+    }
+}
+
+/**
+ * Troca o valor do atributo `data-page` do `<div id="app">` renderizado pelo
+ * Blade (`@inertia`) pelo objeto de página montado offline. O valor precisa
+ * ser escapado exatamente como o `e()` do Laravel faria, senão as aspas do
+ * JSON encerram o atributo e o HTML quebra.
+ */
+function replaceInertiaDataPage(html, page) {
+    const encoded = JSON.stringify(page)
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+
+    return html.replace(/data-page="[^"]*"/, `data-page="${encoded}"`);
 }
 
 // ─── Estratégias de rede genéricas (mantidas da versão anterior) ───────────
@@ -723,11 +1195,6 @@ async function buildOfflinePageResponse(request, requestUrl, route) {
 // direto para a última resposta em cache daquela mesma requisição.
 async function networkFirst(request, cacheName) {
     const cache = await caches.open(cacheName);
-
-    if (!self.navigator.onLine) {
-        const cachedResponse = await cache.match(request);
-        if (cachedResponse) return cachedResponse;
-    }
 
     try {
         const networkResponse = await fetch(request);
@@ -742,6 +1209,44 @@ async function networkFirst(request, cacheName) {
 
         const fallbackResponse = await caches.match(request);
         if (fallbackResponse) return fallbackResponse;
+
+        throw error;
+    }
+}
+
+/**
+ * Mesma ideia de `networkFirst`, mas para rotas que o mini-servidor
+ * (IndexedDB) sabe reconstruir (`PAGE_ROUTES`): quando a rede falha de
+ * verdade, o IndexedDB tem prioridade sobre qualquer resposta HTTP cacheada
+ * — que pode ser de ANTES da mutação mais recente (ex.: uma ficha criada
+ * offline há 5 segundos não existe na resposta de `/workouts` cacheada
+ * ontem).
+ *
+ * Corrigido para NUNCA depender de `navigator.onLine` para decidir a ordem
+ * de prioridade: o modo "Offline" da aba Network do DevTools — o jeito mais
+ * comum de testar isso — bloqueia requisições de verdade, mas NUNCA muda
+ * essa flag (ela só reflete o estado da interface de rede do sistema
+ * operacional). Depender dela aqui fazia o Service Worker sempre tentar a
+ * rede primeiro, falhar, e então servir o cache HTTP desatualizado — porque
+ * era exatamente isso que `networkFirst()` fazia no `catch` — sem nunca
+ * chegar a reconstruir a página a partir do IndexedDB. O sintoma: uma ficha
+ * criada offline só aparecia depois que a internet voltava de verdade.
+ */
+async function networkFirstWithOfflineSynthesis(request, requestUrl, cacheName, pageRoute) {
+    const cache = await caches.open(cacheName);
+
+    try {
+        const networkResponse = await fetch(request);
+        cache.put(request, networkResponse.clone());
+        return networkResponse;
+    } catch (error) {
+        if (pageRoute) {
+            const offlinePage = await safeBuildOfflinePageResponse(request, requestUrl, pageRoute);
+            if (offlinePage) return offlinePage;
+        }
+
+        const cachedResponse = await cache.match(request);
+        if (cachedResponse) return cachedResponse;
 
         throw error;
     }
@@ -802,15 +1307,11 @@ async function staleWhileRevalidate(request, cacheName) {
 // (dados reais do IndexedDB) e, na ausência de dados para aquela rota
 // específica, cai para a última página cacheada como app shell.
 async function handleNavigationRequest(request, requestUrl) {
-    try {
-        return await networkFirst(request, PAGE_CACHE);
-    } catch (error) {
-        const pageRoute = matchPageRoute(requestUrl.pathname);
-        if (pageRoute) {
-            const offlinePage = await buildOfflinePageResponse(request, requestUrl, pageRoute);
-            if (offlinePage) return offlinePage;
-        }
+    const pageRoute = matchPageRoute(requestUrl.pathname);
 
+    try {
+        return await networkFirstWithOfflineSynthesis(request, requestUrl, PAGE_CACHE, pageRoute);
+    } catch (error) {
         const cache = await caches.open(PAGE_CACHE);
 
         const cachedDashboard = await cache.match('/dashboard');
@@ -835,15 +1336,11 @@ async function handleNavigationRequest(request, requestUrl) {
 // (`resources/js/bootstrap.js`) trata recarregando a página, caindo na
 // navegação de documento completo acima.
 async function handleInertiaRequest(request, requestUrl) {
-    try {
-        return await networkFirst(request, INERTIA_CACHE);
-    } catch (error) {
-        const pageRoute = matchPageRoute(requestUrl.pathname);
-        if (pageRoute) {
-            const offlinePage = await buildOfflinePageResponse(request, requestUrl, pageRoute);
-            if (offlinePage) return offlinePage;
-        }
+    const pageRoute = matchPageRoute(requestUrl.pathname);
 
+    try {
+        return await networkFirstWithOfflineSynthesis(request, requestUrl, INERTIA_CACHE, pageRoute);
+    } catch (error) {
         return new Response(JSON.stringify({}), {
             status: 200,
             headers: {
@@ -892,8 +1389,28 @@ self.addEventListener('fetch', (event) => {
     const isInertiaRequest = request.headers.get('X-Inertia') === 'true';
     const isJsonRequest = (request.headers.get('Accept') ?? '').includes('application/json');
 
-    if (isInertiaRequest || isJsonRequest) {
+    if (isInertiaRequest) {
         event.respondWith(handleInertiaRequest(request, requestUrl));
+        return;
+    }
+
+    // Chamadas JSON que NÃO são navegação do Inertia (`/api/sync/state`, as
+    // sugestões de sobrecarga): rede e só rede.
+    //
+    // Nada de cache aqui, e isso é deliberado: `/api/sync/state` é a foto
+    // completa do estado do usuário, e `saveFullSyncState()` SOBRESCREVE o
+    // IndexedDB com o que receber. Servir uma foto antiga do cache apagaria
+    // fichas criadas offline que ainda não subiram. E nada de JSON de
+    // fallback: era ele que fazia o interceptor do `bootstrap.js` recarregar
+    // a página em looping quando `navigator.onLine` mentia. A falha vira um
+    // 504 sintético só para não sujar o console com erro de rede cru — quem
+    // chama já sabe se degradar sozinho.
+    if (isJsonRequest) {
+        event.respondWith(
+            fetch(request).catch(
+                () => new Response(null, { status: 504, statusText: 'Indisponível offline' }),
+            ),
+        );
         return;
     }
 

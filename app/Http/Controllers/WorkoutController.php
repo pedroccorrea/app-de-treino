@@ -190,6 +190,10 @@ class WorkoutController extends Controller
                 'primary_muscle' => $exercise->primary_muscle_group->label(),
                 'target_sets' => $exercise->pivot->target_sets,
                 'target_reps' => $exercise->pivot->target_reps,
+                // Necessário para que uma sessão iniciada offline a partir
+                // desta tela respeite o descanso configurado na ficha, em vez
+                // de cair no padrão de 60s.
+                'rest_seconds' => $exercise->pivot->rest_seconds ?? 60,
                 'order' => $exercise->pivot->order,
             ])->values()->all(),
         ];

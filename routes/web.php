@@ -20,6 +20,15 @@ Route::get('/manifest.json', function () {
 Route::get('/sw.js', function () {
     return response(file_get_contents(resource_path('pwa/sw.js')), 200, [
         'Content-Type' => 'application/javascript',
+        // Os navegadores já ignoram cache HTTP ao checar o script principal
+        // do Service Worker por padrão — mas isso já variou entre versões, e
+        // um proxy/CDN no meio do caminho não segue essa regra. Sem este
+        // cabeçalho explícito, qualquer camada de cache no meio (inclusive o
+        // próprio navegador, em alguma configuração) pode continuar servindo
+        // bytes antigos de `/sw.js`, e nenhuma correção deste arquivo chega a
+        // ser instalada — o pior tipo de bug: o código já está certo, mas
+        // nunca é ele que roda.
+        'Cache-Control' => 'no-cache, no-store, must-revalidate',
     ]);
 })->name('pwa.service-worker');
 

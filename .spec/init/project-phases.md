@@ -837,3 +837,168 @@
 2. `php artisan test` passa em 100% de toda a suíte.
 3. `tests/Architecture/ArchitecturalRulesTest.php` passa sem violações.
 4. `npm run build` compila com zero erros.
+# Phase 38: Offline-First Definitivo — Sessão Contínua, Sincronização Resiliente e a Causa Raiz Real do "Só Atualiza Quando a Internet Volta"
+
+Investigação longa, em várias rodadas, disparada por relatos recorrentes de que navegar pelo menu, criar e excluir fichas offline "não funcionavam" ou "só apareciam quando a internet voltava". Cada etapa abaixo corrigiu um problema real e verificável — a causa raiz definitiva só foi isolada na Etapa 38.7, depois de descartar (por eliminação e reprodução automatizada com navegador real) todas as hipóteses anteriores sobre Service Worker e sincronização.
+
+## Etapa 38.1 — Continuidade Real da Sessão Offline e Props Compartilhadas no Mini-Servidor
+### Tasks
+1. **Props compartilhadas nas páginas sintetizadas (`resources/pwa/sw.js`):**
+   - `buildOfflinePageResponse` passa a injetar em TODA página montada pelo mini-servidor as props que `HandleInertiaRequests` compartilha: `auth.user`, `activeWorkoutSession`, `flash`, `errors` e `userWorkoutIds`, lidas do IndexedDB.
+   - Sem elas, qualquer navegação offline chegava ao Vue sem `activeWorkoutSession` — causa raiz do botão flutuante "Treino em andamento" sumir ao navegar sem internet e voltar quando a conexão retornava.
+
+2. **Rota offline da sessão ativa (`resources/pwa/sw.js`):**
+   - Nova rota `/workout-sessions/{id}` no mini-servidor, montando `WorkoutSessions/Active` a partir do IndexedDB (ficha cacheada + séries da fila de sincronização + `last logs`).
+   - Prioridade do mini-servidor sobre o cache HTTP quando `navigator.onLine` é falso, tanto para navegação de documento quanto para requisições Inertia.
+   - Navegação de documento completo reescreve o `data-page` do app shell em cache, em vez de rehidratar o Inertia com o estado congelado de outra página.
+
+3. **Retomada de sessão iniciada offline (`Workouts/Show.vue`, `offlineStorage.js`):**
+   - Sessões nascidas offline não têm rota própria no servidor; ao montar a página da ficha, se o IndexedDB indicar uma sessão offline aberta para ELA, a sessão é restaurada com o progresso intacto.
+   - `active_session` passa a carregar `client_session_id`, `offline_only`, `workout_id` e o carimbo das séries concluídas (`set_logs`), reconstruíveis também a partir da própria `sync_queue`.
+
+4. **Autoridade do IndexedDB no indicador global (`ActiveSessionBanner.vue`):**
+   - Offline, o registro local é a fonte de verdade; online, a prop do servidor, com o registro local como rede de segurança para quando `navigator.onLine` mente.
+   - O destino do link é calculado: rota real da sessão quando ela existe no servidor, página da ficha quando ela só existe neste aparelho.
+   - O registro local é relido a cada navegação (`router.on('navigate')`), não só quando a prop do Inertia muda.
+
+5. **Mesclagem não-destrutiva do cache de fichas (`offlineStorage.js`):**
+   - `cacheWorkout()` passa a mesclar com o registro existente. A tela de sessão ativa, que só conhece `{id, name, description}` + exercícios, apagava `muscle_groups`/`is_active`/`days_of_week` do treino no IndexedDB — quebrando o render offline de `Workouts/Show` (só cabeçalho e botão "Voltar") e sumindo com o treino da Dashboard offline.
+
+6. **Continuidade de sessão entre lotes de sincronização (`SyncService.php`, `SyncWorkoutSessionsRequest.php`):**
+   - `log_set`/`finish_session` resolvem a sessão em três camadas: lote atual → `client_uuid` no banco → `session_id` (ou o rótulo `session-<id>`).
+   - Elimina o 422 "Nenhuma sessão de treino correspondente foi encontrada" quando a conexão volta no meio do treino, a fila é esvaziada e o lote seguinte chega sem `start_session`.
+   - `workout_id` aceita a referência `tmp_<client_uuid>` de uma ficha criada offline; `flushQueue` sincroniza mutações de recurso ANTES das sessões para que essa referência sempre exista.
+
+7. **Correções de interface e de rede:**
+   - `Sidebar.vue`: backdrop acima da tela de sessão ativa (`z-[80]`/`z-[90]`), que por ser `fixed inset-0 z-50` interceptava o clique "fora do menu" e deixava o drawer preso aberto.
+   - `bootstrap.js`: cooldown no reload disparado pelo fallback offline, impedindo laço infinito.
+   - Chamadas JSON que não são navegação Inertia (`/api/sync/state`, sugestões de sobrecarga) passam a ser rede-e-só-rede: nunca servidas do cache (uma foto antiga sobrescreveria o IndexedDB) e nunca respondidas com o JSON de fallback.
+   - Volume total da sessão calculado sobre uma cópia local das séries, para não ficar congelado em "0 kg" durante um treino inteiro sem internet.
+
+### Acceptance Criteria
+1. Iniciar treino online, desligar a internet e navegar pelo app: o botão "Treino em andamento" permanece visível e leva de volta à sessão.
+2. Iniciar treino offline e navegar pelo app: o botão aparece e leva de volta à sessão, com todas as séries já registradas.
+3. Abrir qualquer ficha offline exibe a lista completa de exercícios, inclusive fichas já treinadas neste aparelho.
+4. Menu lateral fecha ao clicar fora dele durante uma sessão de treino, com ou sem internet.
+5. Reconexão no meio do treino sincroniza sem 422 e sem duplicar sessões.
+6. `php artisan test` passa em 100% de toda a suíte.
+7. `npm run build` compila com zero erros.
+
+## Etapa 38.2 — Robustez do CRUD Offline de Fichas e Reconciliação de Versão do Service Worker
+### Tasks
+1. **Rotas offline ausentes para criar/editar fichas (`resources/pwa/sw.js`):**
+   - `/workouts/create` e `/workouts/{id}/edit` não tinham entrada no mini-servidor — offline, essas navegações caíam no JSON de fallback (ou na página cacheada errada), tornando impossível sequer abrir os formulários sem internet.
+   - Novas rotas `buildWorkoutCreateProps`/`buildWorkoutEditProps`, lendo o catálogo de exercícios cacheado.
+
+2. **Redirect pós-mutação apontando para o próprio formulário (`resources/pwa/sw.js`):**
+   - Sem `return_to` explícito, o fallback usava `request.referrer` — que para um POST/PUT disparado DENTRO de `/workouts/create` ou `/workouts/{id}/edit` é a própria página do formulário, não o destino correto.
+   - `resolveMutationRedirectTarget()` calcula o destino "natural" de cada tipo (`create_workout` → `/workouts` ou `/programs/{id}`; `update_workout` → `/workouts/{id}`; `create_program` → `/programs`) ANTES do referrer, espelhando o que os controllers reais fazem online.
+
+3. **Reconciliação de versão entre página e Service Worker (`resources/views/app.blade.php`):**
+   - `skipWaiting()`+`clients.claim()` fazem o novo Service Worker assumir o controle quase imediatamente, mas isso não recarrega o JavaScript da página já carregada — uma aba aberta há tempo continuava rodando um bundle Vue/Inertia desatualizado enquanto já falava com um Service Worker novo, fazendo qualquer correção de bug parecer "não funcionou" até um F5 manual.
+   - Novo listener `controllerchange` recarrega a página automaticamente (uma única vez) assim que um novo Service Worker assume.
+
+4. **Blindagem contra falhas silenciosas (`resources/pwa/sw.js`):**
+   - Uma exceção dentro do processamento de uma mutação offline, ou da montagem de uma página pelo mini-servidor, rejeitava a Promise de `event.respondWith()` — o navegador reporta isso como erro de rede genérico, indistinguível de "não funcionou" e sem nenhuma pista no console.
+   - `handleOfflineMutation`/`safeBuildOfflinePageResponse` agora envolvem o processamento real em `try/catch`, logam `[SW] Falha ao ...` com o erro completo, e degradam para uma resposta seguem (redirect para `/dashboard`, ou `null` para a cadeia de fallback normal) em vez de deixar a falha escapar sem diagnóstico.
+
+### Acceptance Criteria
+1. Abrir "Novo Treino" e "Editar Treino" offline exibe o formulário normalmente, usando o catálogo de exercícios cacheado.
+2. Criar, editar ou excluir uma ficha offline redireciona para a mesma página que o fluxo online usaria (nunca de volta para o próprio formulário).
+3. Uma aba aberta antes de um deploy do Service Worker se atualiza sozinha (reload automático) assim que a nova versão assume o controle.
+4. Qualquer falha inesperada no processamento offline aparece no console como `[SW] Falha ao ...`, nunca como um erro de rede genérico sem contexto.
+5. `php artisan test` passa em 100% de toda a suíte.
+6. `npm run build` compila com zero erros.
+
+## Etapa 38.3 — Continuidade de Mutações de Recurso Entre Lotes e Isolamento de Falhas na Fila de Sincronização
+### Tasks
+1. **Fallback por `client_uuid` em `resolveWorkout`/`resolveProgram` (`SyncService.php`):**
+   - As duas só resolviam uma referência `tmp_<uuid>` dentro do mapa em memória do lote ATUAL — sem olhar o banco. Criar uma ficha/programa offline e, antes do próximo full sync trocar o ID temporário pelo real, mexer nela de novo (editar, arquivar, excluir, anexar a um programa) é o uso normal, não um caso raro; se essas duas ações fossem enviadas em requisições HTTP separadas (comum com conexão instável), a segunda travava para sempre com "Nenhum treino/programa correspondente foi encontrado", mesmo a entidade já existindo de verdade no servidor.
+   - Mesmo padrão já corrigido para sessões na Phase 38 (`resolveSession`), agora replicado aqui: antes de desistir, consulta `Workout`/`WorkoutProgram` por `client_uuid` pertencente ao usuário.
+
+2. **Isolamento de falhas por ação, não por lote inteiro (`SyncService.php`):**
+   - `processResourceMutations`/`processWorkoutSessionActions` processavam TODO o lote dentro de uma única transação que abortava por completo (`ValidationException` → 422) se UMA ÚNICA ação não pudesse ser resolvida — inclusive uma ação antiga, permanentemente presa na fila local desde uma sessão de testes anterior. Isso bloqueava para sempre TODAS as outras ações do mesmo lote, incluindo criações novas e perfeitamente válidas enfileiradas depois dela — a causa raiz de "não consigo criar nem excluir treinos".
+   - Cada ação agora roda em seu próprio `try/catch` dentro do loop: uma falha é logada (`Log::warning`) e a ação simplesmente fica de fora de `results` (permanece na fila do dispositivo para nova tentativa), mas o processamento CONTINUA para as ações seguintes. A resposta é sempre 200, com `results` podendo ser um subconjunto das ações enviadas — contrato que o frontend (`useOfflineSync.js`) já respeitava desde a Phase 37 (só remove da fila os uuids presentes em `results`).
+   - 422 continua reservado para falhas estruturais genuínas de payload, validadas em `SyncWorkoutSessionsRequest`/`SyncResourceMutationsRequest` (tipos errados, campos obrigatórios ausentes, posse de `workout_id`/`session_id` verificável antecipadamente) — nunca mais para uma referência `tmp_` que só o processamento sabe resolver.
+
+### Acceptance Criteria
+1. Criar uma ficha offline e, antes do próximo full sync, editá-la/excluí-la/anexá-la a um programa — mesmo que essas ações sincronizem em requisições HTTP separadas — nunca resulta em 422.
+2. Uma ação antiga e permanentemente irresolúvel na fila local nunca mais impede outras ações (incluindo criações novas) do mesmo lote de sincronizar.
+3. `php artisan test` passa em 100% de toda a suíte.
+4. `npm run build` compila com zero erros.
+
+## Etapa 38.4 — `navigator.onLine` Não É Confiável Sob DevTools Network=Offline — Prioridade Corrigida e Fallback do Ciclo de Vida da Sessão
+### Tasks
+1. **Causa raiz identificada via investigação ao vivo (não apenas leitura de código):** o modo "Offline" da aba **Network** do DevTools (o jeito mais comum de testar isso) bloqueia requisições de verdade, mas **nunca atualiza `navigator.onLine`** — essa flag só reflete a interface de rede do sistema operacional. Confirmado passo a passo com o usuário (worker ativo, v8 rodando, aba controlada, "Bypass for network" desmarcado) antes de reproduzir o bug via simulação executável do `sw.js` em Node (IndexedDB/Cache Storage falsos, fiéis à API real).
+
+2. **Prioridade de fetch corrigida (`resources/pwa/sw.js`):**
+   - `networkFirst()`/`handleNavigationRequest`/`handleInertiaRequest` decidiam se o mini-servidor tinha prioridade sobre o cache HTTP checando `!self.navigator.onLine` — sempre `false` sob DevTools Network=Offline, então o Service Worker sempre tentava a rede primeiro, ela falhava de verdade, e a resposta CACHEADA (desatualizada) vencia antes mesmo de o mini-servidor ser consultado.
+   - Nova função `networkFirstWithOfflineSynthesis()`: ao falhar de verdade a busca na rede (independente do que `navigator.onLine` diga), tenta reconstruir a página a partir do IndexedDB ANTES de recorrer ao cache HTTP desatualizado.
+   - Era exatamente isso que fazia uma ficha criada offline não aparecer até a internet realmente voltar, e a navegação entre menus parecer quebrada de forma inconsistente.
+
+3. **Fallback do ciclo de vida da sessão de treino (`resources/pwa/sw.js`):**
+   - `Workouts/Show.vue`/`WorkoutSessions/Active.vue` decidem se enfileiram a ação diretamente ou mandam um POST "normal" com base na MESMA flag não confiável. Sob DevTools Network=Offline, essas telas erram a decisão e mandam um POST que a rede rejeita de verdade — para `/workouts/{id}/start`, `/workout-sessions/{id}/sets` e `/workout-sessions/{id}/finish`, nenhuma delas tinha entrada em `MUTATION_ROUTES`, então o erro de rede cru escapava direto até o XHR (`net::ERR_FAILED`), indistinguível de "o app offline não funciona nada".
+   - Três novas rotas de mutação (`start_session_fallback`, `log_set_fallback`, `finish_session_fallback`) aplicam exatamente o mesmo efeito que o caminho "offline" já aplicaria — mesma fila (`sync.workout-sessions`), mesmo `active_session` local, mesmo redirect — reaproveitando a rota `/workout-sessions/{id}` já sintetizável desde a Phase 38.
+   - Validado via simulação executável ponta a ponta: registrar uma série e finalizar um treino através dessas rotas de fallback persiste corretamente e é visível ao reabrir a sessão, mesmo com a rede genuinamente bloqueada e `navigator.onLine` mentindo `true`.
+
+### Acceptance Criteria
+1. Testando com DevTools → Network → "Offline" (não apenas Wi-Fi desligado): criar uma ficha aparece IMEDIATAMENTE na lista, sem esperar a internet voltar.
+2. Iniciar/registrar série/finalizar um treino funciona mesmo quando o front-end erra a decisão "estou online?" e manda um POST que a rede rejeita de verdade.
+3. Navegação entre menus nunca produz um erro de rede cru (`net::ERR_FAILED`/XHR onerror), independente do método usado para simular offline.
+4. `php artisan test` passa em 100% de toda a suíte.
+5. `npm run build` compila com zero erros.
+
+## Etapa 38.5 — A Página Que Registra o Service Worker Pela Primeira Vez Nunca Fica Sob o Controle Dele
+### Tasks
+1. **Causa raiz real, finalmente isolada por reprodução guiada com o usuário:** um comportamento DOCUMENTADO (e amplamente esquecido) da spec de Service Workers — a página cujo carregamento dispara o PRIMEIRO `register()` de um Service Worker NUNCA fica sob o controle dele, mesmo depois de ativo e mesmo com `clients.claim()` chamado no `activate`. Só a PRÓXIMA navegação de documento completo fica controlada. Isso explica o padrão intermitente relatado ao longo de toda a investigação: "funciona depois que dou Ctrl+F5, mas nunca sozinho" — a aba original nunca teve NENHUMA requisição interceptada offline (nem navegação de menu, nem criar/excluir ficha), porque o `event.respondWith()` do Service Worker nunca chegava a ser convocado para ela.
+   - Confirmado com o usuário, passo a passo: worker "activated and is running", versão v8/v9 confirmada no código-fonte servido, aba com `navigator.serviceWorker.controller` retornando um objeto em ALGUNS momentos — mas o sintoma persistindo mesmo assim, até a descrição precisa "se estou no dashboard e desligo a internet, não navega, a não ser que dê Ctrl+F5" revelar o padrão.
+
+2. **Correção (`resources/views/app.blade.php`):**
+   - Depois de `register()`, aguarda `navigator.serviceWorker.ready` (garante que existe um worker ATIVO) e então checa `navigator.serviceWorker.controller`. Se ainda `null` — exatamente o caso desta página ser a que disparou o registro —, recarrega a página UMA ÚNICA VEZ (guardado por uma chave em `sessionStorage`, para nunca entrar em loop). Esse reload é seguro incondicionalmente (diferente do reload em `controllerchange`, que precisa checar `navigator.onLine`): ele só acontece logo após a página ter acabado de carregar com sucesso pela rede real.
+
+3. **Robustez complementar (`resources/pwa/sw.js`):**
+   - `install` trocou `cache.addAll()` (tudo-ou-nada: um único asset do app shell falhando em baixar derrubava a instalação INTEIRA, deixando a página permanentemente sem controle nenhum) por `Promise.allSettled()` sobre `cache.add()` individual — uma falha isolada nunca mais impede a ativação do worker.
+
+### Acceptance Criteria
+1. Uma aba recém-aberta (primeiro carregamento após registrar/atualizar o Service Worker) recarrega sozinha, uma única vez, e a partir daí toda navegação — online ou offline — é interceptada normalmente, sem precisar de F5 manual.
+2. Criar ou excluir uma ficha offline reflete IMEDIATAMENTE na tela, não apenas quando a internet volta.
+3. `php artisan test` passa em 100% de toda a suíte.
+4. `npm run build` compila com zero erros.
+
+## Etapa 38.6 — Causa Raiz Real (Parcial): Vite HMR Não Pode Ser Testado Offline
+### Tasks
+1. **Causa raiz finalmente confirmada por reprodução empírica** (Puppeteer + Edge real, contra o código-fonte exato deste repositório, não apenas leitura/simulação de código): o usuário roda `npm run dev -- --host 0.0.0.0` E `php artisan serve --host=0.0.0.0` simultaneamente. Nesse modo, `@vite(...)` aponta CADA componente de página (buscado sob demanda via `import.meta.glob`) para o **servidor do Vite, numa origem/porta separada** (não `public/build/assets`). O Service Worker, registrado para a origem do Laravel, **não tem como interceptar** requisições a essa outra origem — é uma limitação estrutural, não um bug de lógica.
+   - Testado e confirmado com um navegador real automatizado (Puppeteer/CDP contra Edge): com `php artisan serve` sozinho (sem `npm run dev`), criar e excluir uma ficha offline funciona perfeitamente e reflete na tela IMEDIATAMENTE — inclusive com o servidor genuinamente derrubado (não apenas emulação de rede).
+   - O sintoma relatado ("cria mas só aparece quando a internet volta") era exatamente o `import()` dinâmico de `Workouts/Index.vue` (ou qualquer página ainda não carregada nesta sessão) travando ao tentar buscar o servidor do Vite, inatingível offline — mesmo com os dados por trás (IndexedDB, fila de sincronização) já corretos, confirmados como corretos pelo mesmo teste automatizado.
+   - Isso explica TODA a série de investigações anteriores (Phases 38-38.4): cada correção no Service Worker e no fluxo de sincronização estava, de fato, correta — mas nenhuma delas jamais poderia consertar um travamento que acontece numa camada (carregamento de componente Vue via HMR) completamente fora do alcance do Service Worker.
+
+2. **Aviso explícito no console (`resources/views/app.blade.php`):**
+   - Detecta a presença de `public/hot` (o sinalizador que só existe enquanto `npm run dev` está ativo) e emite um `console.warn` claro explicando a limitação, assim que o Service Worker registra.
+
+3. **Documentação (`CLAUDE.md`):**
+   - Novo comando `npm run build && php artisan serve` explicitamente rotulado para testes offline/PWA.
+   - Novo parágrafo na seção Frontend explicando a limitação e apontando para este registro de fase.
+
+### Acceptance Criteria
+1. Testando com `npm run build && php artisan serve` (sem `npm run dev`), criar/excluir uma ficha offline reflete imediatamente na tela — confirmado por teste automatizado com navegador real, inclusive com o servidor genuinamente inatingível.
+2. Rodando com `npm run dev` ativo, o console do navegador exibe um aviso claro sobre a limitação assim que o Service Worker registra.
+3. `php artisan test` passa em 100% de toda a suíte.
+4. `npm run build` compila com zero erros.
+
+## Etapa 38.7 — Causa Raiz Definitiva: `Workouts/Index.vue` Travava numa Lista Congelada Depois da Primeira Vez Offline
+### Tasks
+1. **Causa raiz real, finalmente isolada e confirmada por automação de navegador de ponta a ponta** (Puppeteer + Edge real, emulando iPhone/`sec-ch-ua` exatamente como o ambiente do usuário, `php artisan serve --host=0.0.0.0` sem `npm run dev`, servidor genuinamente ou emulado offline): **não era um bug de Service Worker, backend, ou sincronização** — era um bug de reatividade em `resources/js/Pages/Workouts/Index.vue`.
+   - `offlineWorkouts` era preenchido, uma única vez, dentro de `onMounted`, quando a página era aberta offline — e a partir daí o computed `displayedWorkouts` **sempre** retornava esse snapshot congelado, ignorando `props.workouts` para sempre, pelo resto da vida daquele componente montado.
+   - O Inertia **não remonta** o componente quando o redirect de uma mutação aponta para a MESMA página (`/workouts` → `/workouts`, o caso de criar e excluir uma ficha a partir da própria listagem) — ele só atualiza as props. Como `onMounted` só roda uma vez, a lista ficava congelada no estado de quando a página foi aberta, e SÓ uma navegação para outra página e de volta (algo que o usuário só fazia, coincidentemente, quando testava de novo "depois que a internet voltou") disparava uma nova montagem e finalmente mostrava os dados certos — o padrão intermitente relatado ao longo de TODA a investigação (Phases 38–38.5).
+   - Confirmado definitivamente: com o Service Worker funcionando perfeitamente (validado repetidamente por automação real, inclusive com o servidor genuinamente derrubado), criar/excluir uma ficha sempre atualizava `props.workouts` corretamente — só a tela de `Workouts/Index.vue` nunca refletia isso depois da primeira visita offline.
+
+2. **Correção (`resources/js/Pages/Workouts/Index.vue`):**
+   - Removido o `offlineWorkouts` (override permanente) por completo — `props.workouts` já É a mesma lista que o mini-servidor do Service Worker monta a partir do IndexedDB (`buildWorkoutsIndexProps`), então sempre pode ser confiada diretamente, online ou offline.
+   - `pendingWorkouts` (treinos criados offline, ainda não sincronizados) passou de um `onMounted` único para um `watch(() => props.workouts, ..., { immediate: true })`, que roda de novo toda vez que o Inertia atualizar as props — não só na primeira montagem.
+
+3. **Mesmo padrão corrigido por consistência, mesmo sem o bug fatal** (`Programs/Index.vue`, `Programs/Show.vue`): ambos já confiavam em `props.programs`/`props.program.workouts` diretamente (sem a trava fatal), mas seus `pendingPrograms`/`pendingWorkouts` auxiliares também só recalculavam em `onMounted` — trocado pelo mesmo `watch(..., { immediate: true })`.
+
+### Acceptance Criteria
+1. Criar ou excluir uma ficha offline, a partir da própria tela `/workouts`, atualiza a lista imediatamente — confirmado por automação de navegador real, com o servidor genuinamente inatingível.
+2. `php artisan test` passa em 100% de toda a suíte.
+3. `npm run build` compila com zero erros.

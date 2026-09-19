@@ -55,8 +55,15 @@ watch(
     (session) => {
         if (typeof navigator === 'undefined' || !navigator.onLine) return;
 
+        // `undefined` (a chave nem existe) significa "esta resposta não veio
+        // do servidor" — é o caso de uma página sintetizada pelo Service
+        // Worker. Só um `null` explícito é o servidor afirmando que não há
+        // sessão aberta; tratar os dois igual apagava a sessão em andamento
+        // do aparelho no meio do treino.
+        if (page.props.activeWorkoutSession === undefined) return;
+
         if (session) {
-            setActiveSession(session);
+            setActiveSession({ ...session, client_session_id: `session-${session.id}`, offline_only: false });
         } else {
             clearActiveSession();
         }

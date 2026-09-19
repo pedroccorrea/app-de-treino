@@ -47,6 +47,10 @@ class WorkoutSessionController extends Controller
                 'target_reps' => $exercise->pivot->target_reps ?? '10',
                 'rest_seconds' => $exercise->pivot->rest_seconds ?? 60,
                 'notes' => $exercise->pivot->notes,
+                // `order` viaja junto porque esta mesma lista é gravada no
+                // IndexedDB (ver `cacheWorkout` em `offlineStorage.js`) e
+                // reaproveitada por `Workouts/Show.vue`, que ordena por ele.
+                'order' => $exercise->pivot->order,
             ];
         })->values()->all() : [];
 

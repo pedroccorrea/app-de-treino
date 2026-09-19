@@ -113,6 +113,7 @@ class SyncStateController extends Controller
                 'primary_muscle' => $exercise->primary_muscle_group->label(),
                 'target_sets' => $exercise->pivot->target_sets,
                 'target_reps' => $exercise->pivot->target_reps,
+                'rest_seconds' => $exercise->pivot->rest_seconds ?? 60,
                 'order' => $exercise->pivot->order,
             ])->values()->all(),
         ];

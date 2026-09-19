@@ -2,6 +2,8 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Workout;
+use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -63,6 +65,33 @@ class SyncWorkoutSessionsRequest extends FormRequest
     }
 
     /**
+     * Valida a referência a uma ficha dentro de uma ação de sessão, nas duas
+     * formas possíveis: ID real do banco (escopado ao usuário) ou
+     * `tmp_<client_uuid>` de uma ficha criada offline — que a esta altura já
+     * deve existir no banco, carimbada com aquele mesmo `client_uuid`.
+     */
+    private function validateWorkoutReference(mixed $value, Closure $fail): void
+    {
+        if ($value === null) {
+            return;
+        }
+
+        $query = Workout::query()->where('user_id', $this->user()->id);
+
+        if (is_string($value) && str_starts_with($value, 'tmp_')) {
+            if (! $query->where('client_uuid', substr($value, 4))->exists()) {
+                $fail('A ficha desta sessão de treino ainda não foi sincronizada.');
+            }
+
+            return;
+        }
+
+        if (! is_int($value) || ! $query->whereKey($value)->exists()) {
+            $fail('A ficha informada para esta sessão de treino não foi encontrada.');
+        }
+    }
+
+    /**
      * Cada item de `actions` é uma mutação que ocorreu offline, na ordem em
      * que o dispositivo a registrou. `client_session_id` agrupa as ações que
      * pertencem à mesma sessão de treino (gerado no dispositivo antes de a
@@ -89,11 +118,16 @@ class SyncWorkoutSessionsRequest extends FormRequest
                 Rule::exists('workout_sessions', 'id')->where('user_id', $this->user()->id),
             ],
 
+            // `workout_id` aceita duas formas: o ID real do banco, ou a
+            // referência temporária `tmp_<client_uuid>` de uma ficha criada
+            // offline e treinada antes de qualquer sincronização. O segundo
+            // caso é resolvido pelo `client_uuid` já gravado no banco — as
+            // mutações de recurso são sempre sincronizadas primeiro (ver
+            // `flushQueue` em `useOfflineSync.js`).
             'actions.*.workout_id' => [
                 'required_if:actions.*.type,start_session',
                 'nullable',
-                'integer',
-                Rule::exists('workouts', 'id')->where('user_id', $this->user()->id),
+                fn (string $attribute, mixed $value, Closure $fail) => $this->validateWorkoutReference($value, $fail),
             ],
 
             'actions.*.exercise_id' => [

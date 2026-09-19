@@ -84,6 +84,22 @@ async function syncActionGroup(url, actions, onResult) {
 }
 
 /**
+ * Uma ação de sessão foi confirmada pelo servidor: se a sessão em andamento
+ * neste aparelho era a que nasceu offline (o `id` local é o próprio
+ * `client_session_id`), troca o ID temporário pelo ID real recém-criado. Sem
+ * isso, o indicador global de "treino em andamento" continuaria apontando
+ * para um ID que só existe aqui, e voltar ao treino depois da reconexão
+ * levaria a uma tela que o servidor não sabe montar.
+ */
+async function reconcileSyncedSession(result) {
+    if (!result?.session_id || !result?.client_session_id) return;
+
+    const promoted = await offlineStorage.promoteActiveSessionId(result.client_session_id, result.session_id);
+
+    if (promoted) evictInertiaCache();
+}
+
+/**
  * Envia a fila de mutações offline — início de sessão, séries, finalização
  * de treino e CRUD de programas/treinos — para os endpoints de sincronização
  * em lote assim que a conexão volta. Cada grupo (sessões / mutações de
@@ -108,8 +124,12 @@ async function flushQueue() {
         const sessionActions = actions.filter((action) => SESSION_ACTION_TYPES.includes(action.type));
         const resourceActions = actions.filter((action) => !SESSION_ACTION_TYPES.includes(action.type));
 
-        const sessionsOk = await syncActionGroup(route('sync.workout-sessions'), sessionActions);
+        // Recursos ANTES de sessões, sempre. Uma ficha criada offline e
+        // treinada na mesma janela sem internet produz um `start_session`
+        // que aponta para `tmp_<uuid>`: só depois que a ficha existe de
+        // verdade no banco é que essa referência tem como ser resolvida.
         const resourcesOk = await syncActionGroup(route('sync.mutations'), resourceActions, forgetTemporaryRecord);
+        const sessionsOk = await syncActionGroup(route('sync.workout-sessions'), sessionActions, reconcileSyncedSession);
 
         if (sessionsOk && resourcesOk) {
             await fetchAndStoreFullSyncState();

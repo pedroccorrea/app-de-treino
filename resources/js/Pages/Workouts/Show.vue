@@ -6,7 +6,13 @@ import SectionLabel from '@/Components/UI/SectionLabel.vue';
 import ActiveWorkoutSession from '@/Pages/WorkoutSessions/Active.vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { useOfflineSync } from '@/Composables/useOfflineSync';
-import { cacheWorkout, generateUuid, getCachedLastLogs } from '@/Utils/offlineStorage';
+import {
+    cacheWorkout,
+    generateUuid,
+    getActiveSession,
+    getActiveSessionSetLogs,
+    getCachedLastLogs,
+} from '@/Utils/offlineStorage';
 import { Head, Link, router } from '@inertiajs/vue3';
 import { computed, onMounted, ref } from 'vue';
 
@@ -20,6 +26,12 @@ const props = defineProps({
 // Grava o detalhe deste treino (com exercícios) no IndexedDB para que ele
 // possa ser reaberto e uma sessão iniciada mesmo sem conexão de internet.
 onMounted(() => cacheWorkout(props.workout));
+
+// `muscle_groups` pode faltar num registro sintetizado pelo Service Worker
+// ou numa versão antiga do cache local — e um `.length` direto em cima de
+// `undefined` derruba o render bem no meio do card, deixando na tela só o
+// cabeçalho e o botão "Voltar".
+const muscleGroups = computed(() => props.workout.muscle_groups ?? []);
 
 // If this page was itself opened from another page (e.g. a program's page)
 // via ?return_to=..., the back button and the edit link (which carries
@@ -128,34 +140,69 @@ const { queueAction } = useOfflineSync();
 // e o `start_session` só é confirmado no servidor quando a fila sincronizar.
 const offlineSessionProps = ref(null);
 
+/**
+ * Monta o conjunto de props de `WorkoutSessions/Active.vue` para uma sessão
+ * que vive só neste aparelho. `setLogs` vem do IndexedDB (fila de
+ * sincronização + carimbo na sessão ativa), e é isso que faz uma sessão
+ * offline sobreviver a sair da tela e voltar depois.
+ */
+const buildOfflineSessionProps = async (session, setLogs = []) => ({
+    session: {
+        id: session.id,
+        started_at: session.started_at,
+        completed_at: null,
+        notes: null,
+    },
+    workout: {
+        id: props.workout.id,
+        name: props.workout.name,
+        description: props.workout.description,
+    },
+    exercises: exercises.value,
+    setLogs,
+    lastLogs: await getCachedLastLogs(),
+});
+
+// ─── Retomada de sessão offline (Phase 38) ─────────────────────────────────
+// Uma sessão iniciada sem internet não existe no servidor, então não há rota
+// `/workout-sessions/{id}` para voltar: a tela do treino é renderizada aqui
+// mesmo. Ao montar esta página — por navegação normal ou por um clique no
+// indicador global "Treino em andamento" — se o IndexedDB disser que há uma
+// sessão offline aberta para ESTA ficha, ela é restaurada com o progresso
+// intacto. Antes desta correção, sair da tela significava perder o treino.
+onMounted(async () => {
+    try {
+        const session = await getActiveSession();
+
+        if (!session) return;
+        if (session.offline_only !== true) return;
+        if (String(session.workout_id) !== String(props.workout.id)) return;
+
+        offlineSessionProps.value = await buildOfflineSessionProps(session, await getActiveSessionSetLogs());
+    } catch (_) {
+        // IndexedDB indisponível: a página da ficha continua funcionando
+        // normalmente, apenas sem retomar a sessão automaticamente.
+    }
+});
+
 const startWorkout = async () => {
     if (!navigator.onLine) {
         starting.value = true;
 
         const clientSessionId = generateUuid();
+        const startedAt = new Date().toISOString();
+
         await queueAction({
             type: 'start_session',
             client_session_id: clientSessionId,
-            occurred_at: new Date().toISOString(),
+            occurred_at: startedAt,
             workout_id: props.workout.id,
         });
 
-        offlineSessionProps.value = {
-            session: {
-                id: clientSessionId,
-                started_at: new Date().toISOString(),
-                completed_at: null,
-                notes: null,
-            },
-            workout: {
-                id: props.workout.id,
-                name: props.workout.name,
-                description: props.workout.description,
-            },
-            exercises: exercises.value,
-            setLogs: [],
-            lastLogs: await getCachedLastLogs(),
-        };
+        offlineSessionProps.value = await buildOfflineSessionProps({
+            id: clientSessionId,
+            started_at: startedAt,
+        });
         starting.value = false;
         return;
     }
@@ -214,8 +261,8 @@ const startWorkout = async () => {
                             Sem descrição para este treino.
                         </p>
 
-                        <div v-if="workout.muscle_groups.length" class="mt-4 flex flex-wrap gap-2">
-                            <BaseBadge v-for="muscle in workout.muscle_groups" :key="muscle" tone="neutral">
+                        <div v-if="muscleGroups.length" class="mt-4 flex flex-wrap gap-2">
+                            <BaseBadge v-for="muscle in muscleGroups" :key="muscle" tone="neutral">
                                 {{ muscle }}
                             </BaseBadge>
                         </div>

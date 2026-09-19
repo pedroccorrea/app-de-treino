@@ -8,7 +8,9 @@ use App\Models\WorkoutProgram;
 use App\Models\WorkoutSession;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class SyncService
 {
@@ -37,6 +39,16 @@ class SyncService
      * `client_session_id` é persistido como `client_uuid` e usado para
      * localizar a sessão já criada em vez de criar uma nova.
      *
+     * Cada ação é processada isoladamente: se UMA não puder ser resolvida
+     * (ex.: referencia uma sessão que nunca existiu, ou ainda não chegou a
+     * este servidor), ela simplesmente fica de fora de `results` — o
+     * dispositivo a mantém na fila local para tentar de novo — e o
+     * processamento CONTINUA para as ações seguintes. Sem isso, uma única
+     * ação permanentemente irresolúvel travada na fila bloquearia para
+     * sempre TODAS as outras ações do mesmo lote (o lote inteiro rodava
+     * dentro de uma única transação que abortava por completo), inclusive
+     * ações novas e perfeitamente válidas enfileiradas depois dela.
+     *
      * @param  array<int, array<string, mixed>>  $actions
      * @return array<int, array{uuid: string, client_session_id: string, session_id: ?int, status: string}>
      */
@@ -62,18 +74,29 @@ class SyncService
                 $clientSessionId = $action['client_session_id'];
                 $occurredAt = Carbon::parse($action['occurred_at']);
 
-                $session = match ($action['type']) {
-                    'start_session' => $this->startSession($user, $action, $occurredAt),
-                    'log_set' => $this->logSet(
-                        $sessionsByClientId[$clientSessionId] ?? $this->findOwnedSession($user, $action['session_id'] ?? null),
-                        $action,
-                        $occurredAt
-                    ),
-                    'finish_session' => $this->finishSession(
-                        $sessionsByClientId[$clientSessionId] ?? $this->findOwnedSession($user, $action['session_id'] ?? null),
-                        $occurredAt
-                    ),
-                };
+                try {
+                    $session = match ($action['type']) {
+                        'start_session' => $this->startSession($user, $action, $occurredAt),
+                        'log_set' => $this->logSet(
+                            $this->resolveSession($user, $sessionsByClientId, $clientSessionId, $action['session_id'] ?? null),
+                            $action,
+                            $occurredAt
+                        ),
+                        'finish_session' => $this->finishSession(
+                            $this->resolveSession($user, $sessionsByClientId, $clientSessionId, $action['session_id'] ?? null),
+                            $occurredAt
+                        ),
+                    };
+                } catch (Throwable $e) {
+                    Log::warning('[sync] Ação de sessão de treino não pôde ser sincronizada agora; permanece na fila do dispositivo.', [
+                        'user_id' => $user->id,
+                        'action_type' => $action['type'],
+                        'client_session_id' => $clientSessionId,
+                        'message' => $e->getMessage(),
+                    ]);
+
+                    continue;
+                }
 
                 $sessionsByClientId[$clientSessionId] = $session;
 
@@ -112,9 +135,14 @@ class SyncService
         // `Workout` — garante que um `workout_id` de outro usuário (ou
         // órfão) nunca seja aceito aqui, mesmo que a validação da request já
         // tenha barrado a maioria dos casos antes de chegar neste ponto.
-        $workout = $user->workouts()
-            ->where('id', $action['workout_id'])
-            ->firstOrFail();
+        // `tmp_<client_uuid>` é a ficha criada offline e treinada na mesma
+        // janela sem internet: ela já foi criada pelo lote de mutações de
+        // recurso, sincronizado antes deste.
+        $rawWorkoutId = $action['workout_id'];
+
+        $workout = is_string($rawWorkoutId) && str_starts_with($rawWorkoutId, 'tmp_')
+            ? $user->workouts()->where('client_uuid', substr($rawWorkoutId, 4))->firstOrFail()
+            : $user->workouts()->whereKey($rawWorkoutId)->firstOrFail();
 
         $this->workoutSessionService->closeOpenSessionsForUser($user);
 
@@ -174,6 +202,52 @@ class SyncService
         return $session;
     }
 
+    /**
+     * Encontra a `WorkoutSession` real à qual um `log_set`/`finish_session`
+     * pertence, em três camadas — nesta ordem:
+     *
+     *   1. O mapa do lote atual (`start_session` processado agora há pouco);
+     *   2. O banco, por `client_uuid` — a sessão já foi criada por um lote
+     *      ANTERIOR. É o caso decisivo: a conexão volta no meio do treino, a
+     *      fila é sincronizada e esvaziada, o usuário continua registrando
+     *      séries e o próximo lote chega sem nenhum `start_session` dentro.
+     *      Sem esta camada, esse lote era rejeitado com 422 ("Nenhuma sessão
+     *      de treino correspondente…") e as séries ficavam presas na fila
+     *      para sempre;
+     *   3. O `session_id` real enviado pelo dispositivo (sessão iniciada
+     *      online), com o próprio rótulo `session-<id>` como último recurso
+     *      caso o `session_id` não tenha vindo no payload.
+     *
+     * @param  array<string, WorkoutSession>  $sessionsByClientId
+     */
+    private function resolveSession(User $user, array $sessionsByClientId, string $clientSessionId, ?int $sessionId): ?WorkoutSession
+    {
+        if (isset($sessionsByClientId[$clientSessionId])) {
+            return $sessionsByClientId[$clientSessionId];
+        }
+
+        $byClientUuid = WorkoutSession::query()
+            ->where('user_id', $user->id)
+            ->where('client_uuid', $clientSessionId)
+            ->first();
+
+        if ($byClientUuid !== null) {
+            return $byClientUuid;
+        }
+
+        $session = $this->findOwnedSession($user, $sessionId);
+
+        if ($session !== null) {
+            return $session;
+        }
+
+        if (preg_match('/^session-(\d+)$/', $clientSessionId, $matches) === 1) {
+            return $this->findOwnedSession($user, (int) $matches[1]);
+        }
+
+        return null;
+    }
+
     private function findOwnedSession(User $user, ?int $sessionId): ?WorkoutSession
     {
         if ($sessionId === null) {
@@ -214,6 +288,14 @@ class SyncService
      * no registro criado e usado para detectar reenvios do mesmo lote (ex.:
      * reconexões instáveis) sem duplicar o programa/treino.
      *
+     * Cada ação é processada isoladamente, pela mesma razão descrita em
+     * `processWorkoutSessionActions`: uma ação que não pode ser resolvida
+     * agora (ex.: referencia via `tmp_<uuid>` um treino cujo `create_workout`
+     * ainda não chegou a este servidor) fica de fora de `results` — o
+     * dispositivo a mantém na fila — SEM impedir que as demais ações do
+     * mesmo lote, incluindo criações novas totalmente independentes, sejam
+     * sincronizadas normalmente.
+     *
      * @param  array<int, array<string, mixed>>  $actions
      * @return array<int, array{uuid: string, type: string, client_uuid: ?string, id: ?int, status: string}>
      */
@@ -238,31 +320,42 @@ class SyncService
             $results = [];
 
             foreach ($ordered as $action) {
-                $model = match ($action['type']) {
-                    'create_program' => $this->createProgramAction($user, $action, $createdProgramsByUuid),
-                    'update_program' => $this->workoutProgramService->updateProgram(
-                        $this->resolveProgram($user, $action['program_id'], $createdProgramsByUuid),
-                        $action
-                    ),
-                    'activate_program' => $this->workoutProgramService->activateProgram(
-                        $this->resolveProgram($user, $action['program_id'], $createdProgramsByUuid)
-                    ),
-                    'archive_program' => $this->workoutProgramService->archiveProgram(
-                        $this->resolveProgram($user, $action['program_id'], $createdProgramsByUuid)
-                    ),
-                    'delete_program' => $this->deleteProgramAction($user, $action, $createdProgramsByUuid),
-                    'create_workout' => $this->createWorkoutAction($user, $action, $createdProgramsByUuid, $createdWorkoutsByUuid),
-                    'update_workout' => $this->workoutService->updateWorkout(
-                        $this->resolveWorkout($user, $action['workout_id'], $createdWorkoutsByUuid),
-                        $action
-                    ),
-                    'archive_workout' => $this->workoutService->toggleArchive(
-                        $this->resolveWorkout($user, $action['workout_id'], $createdWorkoutsByUuid)
-                    ),
-                    'delete_workout' => $this->deleteWorkoutAction($user, $action, $createdWorkoutsByUuid),
-                    'attach_workout' => $this->attachWorkoutAction($user, $action, $createdProgramsByUuid, $createdWorkoutsByUuid),
-                    'detach_workout' => $this->detachWorkoutAction($user, $action, $createdProgramsByUuid, $createdWorkoutsByUuid),
-                };
+                try {
+                    $model = match ($action['type']) {
+                        'create_program' => $this->createProgramAction($user, $action, $createdProgramsByUuid),
+                        'update_program' => $this->workoutProgramService->updateProgram(
+                            $this->resolveProgram($user, $action['program_id'], $createdProgramsByUuid),
+                            $action
+                        ),
+                        'activate_program' => $this->workoutProgramService->activateProgram(
+                            $this->resolveProgram($user, $action['program_id'], $createdProgramsByUuid)
+                        ),
+                        'archive_program' => $this->workoutProgramService->archiveProgram(
+                            $this->resolveProgram($user, $action['program_id'], $createdProgramsByUuid)
+                        ),
+                        'delete_program' => $this->deleteProgramAction($user, $action, $createdProgramsByUuid),
+                        'create_workout' => $this->createWorkoutAction($user, $action, $createdProgramsByUuid, $createdWorkoutsByUuid),
+                        'update_workout' => $this->workoutService->updateWorkout(
+                            $this->resolveWorkout($user, $action['workout_id'], $createdWorkoutsByUuid),
+                            $action
+                        ),
+                        'archive_workout' => $this->workoutService->toggleArchive(
+                            $this->resolveWorkout($user, $action['workout_id'], $createdWorkoutsByUuid)
+                        ),
+                        'delete_workout' => $this->deleteWorkoutAction($user, $action, $createdWorkoutsByUuid),
+                        'attach_workout' => $this->attachWorkoutAction($user, $action, $createdProgramsByUuid, $createdWorkoutsByUuid),
+                        'detach_workout' => $this->detachWorkoutAction($user, $action, $createdProgramsByUuid, $createdWorkoutsByUuid),
+                    };
+                } catch (Throwable $e) {
+                    Log::warning('[sync] Mutação offline não pôde ser sincronizada agora; permanece na fila do dispositivo.', [
+                        'user_id' => $user->id,
+                        'action_type' => $action['type'],
+                        'client_uuid' => $action['client_uuid'] ?? null,
+                        'message' => $e->getMessage(),
+                    ]);
+
+                    continue;
+                }
 
                 $results[] = [
                     'uuid' => $action['uuid'],
@@ -354,15 +447,25 @@ class SyncService
 
     /**
      * Resolves a `program_id` field that is either a real database ID or a
-     * `tmp_<client_uuid>` reference to a program created earlier in this
-     * same batch (see `processResourceMutations`).
+     * `tmp_<client_uuid>` reference to a program created earlier — nesta
+     * mesma chamada (mapa `$createdProgramsByUuid`) OU em um lote ANTERIOR já
+     * sincronizado e removido da fila local. É esta segunda camada — buscar
+     * no banco por `client_uuid` — que faltava: sem ela, criar um programa
+     * offline e, antes do próximo full sync substituir o ID temporário,
+     * mexer nele de novo (editar, arquivar, anexar uma ficha) em um lote
+     * SEPARADO, rejeitava essa segunda ação com "Nenhum programa
+     * correspondente encontrado" para sempre — mesmo o programa já existindo
+     * de verdade no servidor.
      *
      * @param  array<string, WorkoutProgram>  $createdProgramsByUuid
      */
     private function resolveProgram(User $user, int|string $rawId, array $createdProgramsByUuid): WorkoutProgram
     {
         if (is_string($rawId) && str_starts_with($rawId, 'tmp_')) {
-            $program = $createdProgramsByUuid[substr($rawId, 4)] ?? null;
+            $clientUuid = substr($rawId, 4);
+
+            $program = $createdProgramsByUuid[$clientUuid]
+                ?? WorkoutProgram::query()->where('user_id', $user->id)->where('client_uuid', $clientUuid)->first();
 
             if ($program === null) {
                 throw ValidationException::withMessages([
@@ -385,15 +488,19 @@ class SyncService
     }
 
     /**
-     * Resolves a `workout_id` field the same way `resolveProgram` does for
-     * `program_id`.
+     * Resolves a `workout_id` field da mesma forma que `resolveProgram`
+     * resolve `program_id` — incluindo o fallback por `client_uuid` no banco
+     * para uma ficha criada em um lote anterior (ver comentário acima).
      *
      * @param  array<string, Workout>  $createdWorkoutsByUuid
      */
     private function resolveWorkout(User $user, int|string $rawId, array $createdWorkoutsByUuid): Workout
     {
         if (is_string($rawId) && str_starts_with($rawId, 'tmp_')) {
-            $workout = $createdWorkoutsByUuid[substr($rawId, 4)] ?? null;
+            $clientUuid = substr($rawId, 4);
+
+            $workout = $createdWorkoutsByUuid[$clientUuid]
+                ?? Workout::query()->where('user_id', $user->id)->where('client_uuid', $clientUuid)->first();
 
             if ($workout === null) {
                 throw ValidationException::withMessages([

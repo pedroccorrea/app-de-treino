@@ -26,6 +26,9 @@ php artisan test tests/Feature/WorkoutSessionTest.php
 vendor/bin/pint
 vendor/bin/pint --dirty
 
+# Testar comportamento OFFLINE/PWA (Service Worker) — NUNCA com `composer dev`/`npm run dev` rodando
+npm run build && php artisan serve
+
 # DB
 php artisan migrate
 php artisan migrate:fresh --seed   # seeds the global exercise catalog via ExerciseSeeder
@@ -51,6 +54,8 @@ There is no JS linter/formatter configured (no ESLint/Prettier in package.json).
 **Routing:** all authenticated app routes are declared directly in `routes/web.php` inside a single `Route::middleware('auth')` group (resource-style manual routes, not `Route::resource`). Breeze auth routes are required in from `routes/auth.php`. Ziggy exposes these routes to the frontend as the `route()` helper.
 
 **Frontend:** Inertia pages live in `resources/js/Pages/`, mirroring controller/route names (e.g. `WorkoutController@show` renders `Pages/Workouts/Show.vue`). Shared/reusable UI goes in `resources/js/Components/` (Breeze-provided primitives at the top level, feature-specific components namespaced by folder, e.g. `Components/Workouts/ExerciseSelector.vue`). Two layouts: `Layouts/AuthenticatedLayout.vue` and `Layouts/GuestLayout.vue`. Forms should use Inertia's `useForm`; navigation should rely on Inertia visits, not full page reloads. Tailwind theme accent color is violet `#8B5CF6`; design mobile-first with dark mode support.
+
+**Offline/PWA (Service Worker, `resources/pwa/sw.js`):** the app is offline-first — see `.spec/init/project-phases.md` (Phases 28-38+) for the full history of this architecture (mini-server synthesizing Inertia pages from IndexedDB, offline mutation queue, sync endpoints). **Critical testing caveat:** offline behavior can ONLY be tested against a production build (`npm run build && php artisan serve`, `npm run dev`/`composer dev` NOT running). While `npm run dev`'s Vite HMR server is active, `@vite(...)` serves every page component on demand from Vite's own dev-server origin (a separate port) — an origin the Service Worker (registered for the Laravel origin) can never intercept. Offline, opening any page whose component wasn't already loaded in that session hangs indefinitely on that dynamic `import()`, even though the underlying data (IndexedDB, the sync queue) is already correct — this reads exactly like "the mutation didn't apply" but isn't; it's a page-render deadlock unrelated to the Service Worker's own logic. The app warns about this in the browser console (via `public/hot` detection in `resources/views/app.blade.php`) whenever the SW registers while Vite's dev server is active.
 
 - **Modularização de Componentes:** Evite criar arquivos de páginas (.vue) gigantescos e monolíticos. Extraia elementos independentes e lógicas isoladas em componentes dedicados dentro de `resources/js/Components/` (ex: `RestTimerModal.vue`, `SetRow.vue`, `ExerciseHeader.vue`).
 - **Contratos Claros:** Componentes filhos devem usar estritamente `defineProps()` e `defineEmits()` para comunicação limpa com a página pai.

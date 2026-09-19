@@ -14,7 +14,7 @@ import InputLabel from '@/Components/InputLabel.vue';
 import TextInput from '@/Components/TextInput.vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
-import { computed, onMounted, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { cacheProgram, getCachedProgramById } from '@/Utils/offlineStorage';
 
 const props = defineProps({
@@ -43,14 +43,23 @@ const displayedWorkouts = computed(() => {
     return [...props.program.workouts, ...stillPending];
 });
 
-onMounted(async () => {
-    const cached = await getCachedProgramById(props.program.id);
-    pendingWorkouts.value = (cached?.workouts ?? []).filter(
-        (workout) => typeof workout.id === 'string' && workout.id.startsWith('tmp_'),
-    );
+// `watch(..., { immediate: true })` no lugar de `onMounted`: o Inertia NÃO
+// remonta este componente quando o redirect de uma mutação aponta para a
+// MESMA página (`/programs/{id}` → `/programs/{id}`) — só atualiza
+// `props.program`. Um `onMounted` sozinho nunca recalcularia
+// `pendingWorkouts` depois disso (mesmo bug corrigido em `Workouts/Index.vue`).
+watch(
+    () => props.program,
+    async (program) => {
+        const cached = await getCachedProgramById(program.id);
+        pendingWorkouts.value = (cached?.workouts ?? []).filter(
+            (workout) => typeof workout.id === 'string' && workout.id.startsWith('tmp_'),
+        );
 
-    cacheProgram({ ...props.program, workouts: [...props.program.workouts, ...pendingWorkouts.value] });
-});
+        cacheProgram({ ...program, workouts: [...program.workouts, ...pendingWorkouts.value] });
+    },
+    { immediate: true },
+);
 
 // ─── Inline edit do cabeçalho (nome/descrição) ──────────────────────────────
 const isEditing = ref(false);

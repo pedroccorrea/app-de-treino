@@ -28,6 +28,9 @@ test('activeWorkoutSession prop is shared when the user has an open session', fu
         ->assertInertia(
             fn ($page) => $page->where('activeWorkoutSession', [
                 'id' => $session->id,
+                // `workout_id` é o que permite ao indicador global apontar
+                // para a página da ficha quando o aparelho está offline.
+                'workout_id' => $workout->id,
                 'workout_name' => 'Treino Peito',
                 'started_at' => $session->started_at->toJSON(),
             ])

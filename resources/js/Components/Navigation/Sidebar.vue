@@ -56,7 +56,16 @@ const navigation = [
 </script>
 
 <template>
-    <!-- Mobile backdrop -->
+    <!--
+        Mobile backdrop.
+
+        O `z-[80]` não é decorativo: a tela de sessão ativa
+        (`WorkoutSessions/Active.vue`) é um `fixed inset-0` com `z-index: 50`
+        que cobre a viewport inteira. Com o backdrop em `z-40` ele ficava
+        ATRÁS dessa tela — o menu abria, mas o clique "fora" era interceptado
+        pela sessão e nunca chegava aqui, deixando o drawer preso aberto até
+        o usuário navegar para outra página.
+    -->
     <Transition
         enter-active-class="transition-opacity ease-linear duration-200"
         enter-from-class="opacity-0"
@@ -67,14 +76,14 @@ const navigation = [
     >
         <div
             v-if="open"
-            class="fixed inset-0 z-40 bg-surface-base/70 lg:hidden"
+            class="fixed inset-0 z-[80] bg-surface-base/70 lg:hidden"
             @click="$emit('close')"
         />
     </Transition>
 
     <!-- Sidebar / drawer -->
     <aside
-        class="fixed inset-y-0 left-0 z-50 flex w-64 -translate-x-full transform flex-col border-r border-border-subtle bg-surface-raised transition-transform duration-300 ease-in-out lg:translate-x-0"
+        class="fixed inset-y-0 left-0 z-[90] flex w-64 -translate-x-full transform flex-col border-r border-border-subtle bg-surface-raised transition-transform duration-300 ease-in-out lg:translate-x-0"
         :class="{ 'translate-x-0': open }"
     >
         <div class="flex h-16 shrink-0 items-center gap-2 border-b border-border-subtle px-6">

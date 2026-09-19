@@ -86,7 +86,13 @@ class HandleInertiaRequests extends Middleware
 
         return [
             'id' => $session->id,
-            'workout_name' => $session->workout->name,
+            // `workout_id` é o que permite ao indicador global continuar
+            // apontando para algum lugar navegável quando o aparelho está
+            // offline (a página da ficha é servida pelo IndexedDB; a rota
+            // `/workout-sessions/{id}` também, mas só depois que a sessão
+            // existe de verdade no servidor).
+            'workout_id' => $session->workout_id,
+            'workout_name' => $session->workout?->name,
             'started_at' => $session->started_at,
         ];
     }

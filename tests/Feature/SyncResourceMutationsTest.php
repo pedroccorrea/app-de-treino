@@ -129,9 +129,18 @@ test('a user cannot sync resource mutations against another users program', func
         'program_id' => $program->id,
     ]];
 
-    $this->actingAs($intruder)
+    // A garantia de segurança continua: a mutação do intruso NUNCA é
+    // aplicada. O que mudou é como isso chega ao dispositivo — desde que
+    // ações são processadas isoladamente (ver `SyncService`, para que uma
+    // única ação irresolúvel não trave o lote inteiro), a ação inválida
+    // simplesmente não aparece em `results` (o servidor responde 200 com o
+    // que pôde sincronizar) em vez de derrubar a requisição inteira com 422.
+    $response = $this->actingAs($intruder)
         ->postJson(route('sync.mutations'), ['actions' => $actions])
-        ->assertStatus(422);
+        ->assertOk();
+
+    expect($response->json('results'))->toBeEmpty();
+    expect($program->fresh()->is_active)->toBeTrue();
 });
 
 test('it attaches and detaches a workout to a program offline', function () {
@@ -186,4 +195,157 @@ test('it deletes a workout created offline within the same batch', function () {
         ->assertOk();
 
     $this->assertDatabaseMissing('workouts', ['client_uuid' => 'client-workout-uuid-delete']);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Continuidade entre lotes de sincronização (mesmo bug de origem já corrigido
+// para sessões em SyncTest.php): criar uma ficha/programa offline e, ANTES do
+// próximo full sync trocar o id temporário pelo real, mexer nela de novo é o
+// caminho normal de uso — não um caso extremo. Antes desta correção, se essas
+// duas ações fossem enviadas em requisições SEPARADAS (o cenário comum quando
+// a conexão está instável), a segunda travava para sempre com "Nenhum treino/
+// programa correspondente foi encontrado", mesmo a entidade já existindo de
+// verdade no banco.
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('a later batch can update a workout created by an earlier, already-synced batch via tmp_ reference', function () {
+    $user = User::factory()->create();
+    $workoutUuid = 'workout-client-uuid-cross-batch';
+
+    $this->actingAs($user)
+        ->postJson(route('sync.mutations'), ['actions' => [[
+            'uuid' => 'action-create',
+            'type' => 'create_workout',
+            'client_uuid' => $workoutUuid,
+            'occurred_at' => now()->subMinutes(10)->toISOString(),
+            'name' => 'Ficha Original',
+            'days_of_week' => [],
+            'exercises' => [],
+        ]]])
+        ->assertOk();
+
+    $workout = Workout::where('client_uuid', $workoutUuid)->firstOrFail();
+
+    // Segundo lote, requisição HTTP totalmente separada — como aconteceria
+    // se o app sincronizasse assim que a ficha foi criada e só depois o
+    // usuário a editasse, ainda antes do próximo full sync substituir o ID
+    // temporário pelo real na cópia local.
+    $this->actingAs($user)
+        ->postJson(route('sync.mutations'), ['actions' => [[
+            'uuid' => 'action-update',
+            'type' => 'update_workout',
+            'workout_id' => "tmp_{$workoutUuid}",
+            'occurred_at' => now()->subMinutes(5)->toISOString(),
+            'name' => 'Ficha Renomeada',
+            'days_of_week' => [],
+            'exercises' => [],
+        ]]])
+        ->assertOk()
+        ->assertJsonPath('results.0.status', 'synced')
+        ->assertJsonPath('results.0.id', $workout->id);
+
+    expect($workout->refresh()->name)->toBe('Ficha Renomeada');
+});
+
+test('a later batch can delete a workout created by an earlier, already-synced batch via tmp_ reference', function () {
+    $user = User::factory()->create();
+    $workoutUuid = 'workout-client-uuid-cross-batch-delete';
+
+    $this->actingAs($user)
+        ->postJson(route('sync.mutations'), ['actions' => [[
+            'uuid' => 'action-create',
+            'type' => 'create_workout',
+            'client_uuid' => $workoutUuid,
+            'occurred_at' => now()->subMinutes(10)->toISOString(),
+            'name' => 'Ficha Para Excluir',
+            'days_of_week' => [],
+            'exercises' => [],
+        ]]])
+        ->assertOk();
+
+    $this->actingAs($user)
+        ->postJson(route('sync.mutations'), ['actions' => [[
+            'uuid' => 'action-delete',
+            'type' => 'delete_workout',
+            'workout_id' => "tmp_{$workoutUuid}",
+            'occurred_at' => now()->subMinutes(5)->toISOString(),
+        ]]])
+        ->assertOk()
+        ->assertJsonPath('results.0.status', 'synced');
+
+    $this->assertDatabaseMissing('workouts', ['client_uuid' => $workoutUuid]);
+});
+
+test('a program created by an earlier batch can be resolved by a later attach_workout action', function () {
+    $user = User::factory()->create();
+    $programUuid = 'program-client-uuid-cross-batch';
+
+    $this->actingAs($user)
+        ->postJson(route('sync.mutations'), ['actions' => [[
+            'uuid' => 'action-create-program',
+            'type' => 'create_program',
+            'client_uuid' => $programUuid,
+            'occurred_at' => now()->subMinutes(10)->toISOString(),
+            'name' => 'Programa Original',
+        ]]])
+        ->assertOk();
+
+    $program = WorkoutProgram::where('client_uuid', $programUuid)->firstOrFail();
+    $workout = $user->workouts()->create(['name' => 'Ficha Já Existente']);
+
+    $this->actingAs($user)
+        ->postJson(route('sync.mutations'), ['actions' => [[
+            'uuid' => 'action-attach',
+            'type' => 'attach_workout',
+            'program_id' => "tmp_{$programUuid}",
+            'workout_id' => $workout->id,
+            'occurred_at' => now()->subMinutes(5)->toISOString(),
+        ]]])
+        ->assertOk()
+        ->assertJsonPath('results.0.status', 'synced');
+
+    expect($program->fresh()->workouts()->whereKey($workout->id)->exists())->toBeTrue();
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Isolamento de falhas: uma ação permanentemente irresolúvel não pode mais
+// bloquear as demais ações do mesmo lote — incluindo criações novas.
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('one unresolvable action in a batch no longer blocks the other, valid actions in the same batch', function () {
+    $user = User::factory()->create();
+
+    $actions = [
+        [
+            'uuid' => 'action-broken-delete',
+            'type' => 'delete_workout',
+            // Referência a uma ficha que nunca existiu neste servidor — o
+            // caso real de uma ação presa na fila local há muito tempo.
+            'workout_id' => 'tmp_never-existed-uuid',
+            'occurred_at' => now()->subMinutes(10)->toISOString(),
+        ],
+        [
+            'uuid' => 'action-valid-create',
+            'type' => 'create_program',
+            'client_uuid' => 'client-program-uuid-survives',
+            'occurred_at' => now()->subMinutes(5)->toISOString(),
+            'name' => 'Programa Que Deve Sincronizar Mesmo Assim',
+        ],
+    ];
+
+    $response = $this->actingAs($user)
+        ->postJson(route('sync.mutations'), ['actions' => $actions])
+        ->assertOk();
+
+    // A ação quebrada simplesmente não aparece em `results` — o frontend só
+    // remove da fila local (IndexedDB) os uuids presentes na resposta, então
+    // ela permanece para uma tentativa futura, sem travar a outra.
+    $resultUuids = collect($response->json('results'))->pluck('uuid')->all();
+    expect($resultUuids)->not->toContain('action-broken-delete');
+    expect($resultUuids)->toContain('action-valid-create');
+
+    $this->assertDatabaseHas('workout_programs', [
+        'user_id' => $user->id,
+        'client_uuid' => 'client-program-uuid-survives',
+    ]);
 });

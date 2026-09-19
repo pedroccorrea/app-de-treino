@@ -9,8 +9,8 @@ import WorkoutCard from '@/Components/Workouts/WorkoutCard.vue';
 import WorkoutsIndexHeader from '@/Components/Workouts/WorkoutsIndexHeader.vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, router, useForm } from '@inertiajs/vue3';
-import { computed, onMounted, ref } from 'vue';
-import { cacheWorkoutsList, getCachedWorkoutsList, isOffline } from '@/Utils/offlineStorage';
+import { computed, ref, watch } from 'vue';
+import { cacheWorkoutsList, getCachedWorkoutsList } from '@/Utils/offlineStorage';
 
 const props = defineProps({
     workouts: {
@@ -31,43 +31,50 @@ const props = defineProps({
     },
 });
 
-// ─── Modo offline: usa a última lista de treinos cacheada no IndexedDB ───────
-// quando o dispositivo está sem conexão (ex.: a página foi reaberta a partir
-// do cache do app/service worker enquanto offline). Enquanto online, cada
-// carregamento desta tela grava a lista mais recente para uso futuro offline.
-const offlineWorkouts = ref(null);
-
 // ─── Optimistic UI: treinos criados offline, ainda não sincronizados ───────
 // Cobre a janela em que a conexão já voltou e esta tela carregou com os
 // dados reais do servidor, mas a fila de sincronização (`sync_queue`) ainda
 // não terminou de enviar um treino criado enquanto offline — sem isso, ele
-// "sumiria" da lista até o próximo sync terminar. Quando o dispositivo
-// segue offline, `offlineWorkouts` já é a mesma lista que o Service Worker
-// usaria para montar esta página, então já inclui qualquer pendência.
+// "sumiria" da lista até o próximo sync terminar. Offline, `props.workouts`
+// já É a mesma lista que o Service Worker monta a partir do IndexedDB
+// (`buildWorkoutsIndexProps`), então ela sempre pode ser confiada
+// diretamente — nunca precisa de um "modo offline" à parte que a substitua.
+//
+// Corrigido (bug real, confirmado com navegador automatizado): havia um
+// `offlineWorkouts` que, uma vez preenchido offline no `onMounted`, PASSAVA
+// A IGNORAR `props.workouts` para sempre — inclusive depois de criar ou
+// excluir uma ficha, porque o Inertia NÃO remonta este componente quando o
+// redirect de uma mutação aponta para a MESMA página (`/workouts` →
+// `/workouts`); ele só atualiza as props. Resultado: a lista ficava
+// congelada no estado de quando a página foi aberta, e só uma navegação
+// para OUTRA página e de volta (algo que o usuário só fazia, por acaso,
+// quando "a internet já tinha voltado") disparava um novo mount e
+// finalmente mostrava os dados certos.
 const pendingWorkouts = ref([]);
 
 const displayedWorkouts = computed(() => {
-    if (offlineWorkouts.value) return offlineWorkouts.value;
-
     const alreadySynced = new Set(props.workouts.map((workout) => workout.id));
     const stillPending = pendingWorkouts.value.filter((workout) => !alreadySynced.has(workout.id));
 
     return [...stillPending, ...props.workouts];
 });
 
-onMounted(async () => {
-    if (isOffline()) {
-        offlineWorkouts.value = await getCachedWorkoutsList();
-        return;
-    }
+// `watch(..., { immediate: true })` no lugar de `onMounted`: roda na
+// primeira carga E toda vez que o Inertia atualizar `props.workouts` depois
+// — exatamente o que falta para refletir criar/excluir/editar sem esperar
+// uma remontagem do componente.
+watch(
+    () => props.workouts,
+    async (workouts) => {
+        const cached = await getCachedWorkoutsList();
+        pendingWorkouts.value = cached.filter((workout) => typeof workout.id === 'string' && workout.id.startsWith('tmp_'));
 
-    const cached = await getCachedWorkoutsList();
-    pendingWorkouts.value = cached.filter((workout) => typeof workout.id === 'string' && workout.id.startsWith('tmp_'));
-
-    // Mantém o cache offline atualizado sem descartar treinos ainda
-    // pendentes de sincronização (por isso mescla em vez de sobrescrever).
-    cacheWorkoutsList([...pendingWorkouts.value, ...props.workouts]);
-});
+        // Mantém o cache offline atualizado sem descartar treinos ainda
+        // pendentes de sincronização (por isso mescla em vez de sobrescrever).
+        cacheWorkoutsList([...pendingWorkouts.value, ...workouts]);
+    },
+    { immediate: true },
+);
 
 // ─── Fichas do programa ativo ────────────────────────────────────────────────
 const activeProgramWorkouts = computed(() =>

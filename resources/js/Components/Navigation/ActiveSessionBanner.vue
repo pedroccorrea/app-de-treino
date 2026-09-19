@@ -1,53 +1,89 @@
 <script setup>
 import { getActiveSession } from '@/Utils/offlineStorage';
-import { Link, usePage } from '@inertiajs/vue3';
+import { Link, router, usePage } from '@inertiajs/vue3';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 
 const page = usePage();
 
-// Lida reativamente com a prop compartilhada pelo Inertia: assim que o
-// backend deixa de enviar uma sessão aberta (ex: redirect pós-finalização),
-// esse computed cai para `null` e o banner some sem nenhum passo manual.
-const activeSession = computed(() => page.props.activeWorkoutSession ?? null);
+// Prop compartilhada pelo Inertia (`HandleInertiaRequests`): sempre a
+// verdade do servidor quando a requisição realmente chegou nele.
+const serverSession = computed(() => page.props.activeWorkoutSession ?? null);
 
-const isOnSessionPage = computed(() => route().current('workout-sessions.show'));
-
-// ─── Autoridade do IndexedDB (Phase 36) ────────────────────────────────────
-// Em modo offline, `page.props.activeWorkoutSession` pode ter vindo de uma
-// resposta JSON já cacheada e desatualizada (ex: sessão finalizada, mas o
-// Service Worker ainda serve o snapshot antigo do dashboard). O IndexedDB
-// (`active_session`, mantido por `WorkoutSessions/Active.vue`) é a fonte de
-// verdade nesse cenário: se ele confirma que não há sessão aberta, o banner
-// nunca aparece, mesmo com uma prop antiga dizendo o contrário.
+// ─── Autoridade do IndexedDB (Phase 36 / corrigido na Phase 38) ────────────
+// Offline, `page.props.activeWorkoutSession` é imprestável: ou veio de um
+// JSON cacheado antes de o treino começar (banner some), ou de uma página
+// sintetizada pelo Service Worker. O registro local (`active_session`,
+// mantido por `WorkoutSessions/Active.vue`, pelo `AuthenticatedLayout` e
+// pela fila de sincronização) é o estado físico deste aparelho — é ele que
+// manda quando não há rede.
 const isOnline = ref(typeof navigator === 'undefined' || navigator.onLine);
-const localActiveSession = ref(null);
+const localSession = ref(null);
 
-async function syncLocalActiveSession() {
+async function syncLocalSession() {
     try {
-        localActiveSession.value = await getActiveSession();
+        localSession.value = await getActiveSession();
     } catch (_) {
-        localActiveSession.value = null;
+        localSession.value = null;
     }
 }
 
-watch(activeSession, syncLocalActiveSession, { immediate: true });
+// Online a prop do servidor manda, com o registro local como rede de
+// segurança para o caso clássico de `navigator.onLine` mentir (o navegador
+// se diz conectado, mas a resposta veio do cache do Service Worker).
+const activeSession = computed(() =>
+    isOnline.value ? (serverSession.value ?? localSession.value) : localSession.value,
+);
+
+// Sessão nascida offline: o `id` ainda é o UUID gerado no aparelho, não
+// existe `WorkoutSession` no servidor, e a tela do treino é renderizada por
+// `Workouts/Show.vue` (que a restaura do IndexedDB). O destino do banner,
+// nesse caso, é a página da ficha — que funciona online e offline.
+const isOfflineBornSession = (session) =>
+    session?.offline_only === true || !Number.isFinite(Number(session?.id));
+
+const sessionHref = computed(() => {
+    const session = activeSession.value;
+    if (!session) return null;
+
+    if (isOfflineBornSession(session)) {
+        return session.workout_id ? route('workouts.show', session.workout_id) : null;
+    }
+
+    return route('workout-sessions.show', session.id);
+});
+
+// Nunca mostra o atalho para a tela em que o usuário já está — inclusive
+// quando a sessão offline está sendo renderizada dentro da própria página da
+// ficha (`Workouts/Show.vue`).
+const isOnSessionPage = computed(() => {
+    if (!sessionHref.value) return false;
+
+    const currentPath = page.url.split('?')[0];
+    const targetPath = new URL(sessionHref.value, window.location.origin).pathname;
+
+    return currentPath === targetPath;
+});
+
+const showBanner = computed(() => Boolean(sessionHref.value) && !isOnSessionPage.value);
+
+// Recarrega o registro local a cada navegação e a cada mudança da prop do
+// servidor: sem isso o banner só se atualizava quando o Inertia trocava a
+// prop — exatamente o que nunca acontece numa navegação offline servida pelo
+// cache, deixando o botão flutuante sumido até a rede voltar.
+watch(serverSession, syncLocalSession, { immediate: true });
 
 function updateOnlineStatus() {
     isOnline.value = navigator.onLine;
-    if (isOnline.value) syncLocalActiveSession();
+    syncLocalSession();
 }
 
+let stopNavigateListener = null;
+
 onMounted(() => {
+    syncLocalSession();
+    stopNavigateListener = router.on('navigate', () => syncLocalSession());
     window.addEventListener('online', updateOnlineStatus);
     window.addEventListener('offline', updateOnlineStatus);
-});
-
-const showBanner = computed(() => {
-    if (activeSession.value === null) return false;
-    if (isOnSessionPage.value) return false;
-    if (!isOnline.value && localActiveSession.value === null) return false;
-
-    return true;
 });
 
 // ─── Live elapsed time ────────────────────────────────────────────────────────
@@ -59,16 +95,16 @@ const stopTick = () => {
     tick = null;
 };
 
-// O intervalo só existe enquanto houver sessão ativa: ao finalizar o
-// treino, `activeSession` vira null, o timer é destruído imediatamente e
-// nenhum resíduo (id antigo, contagem congelada) sobra para a próxima sessão.
+// O intervalo só existe enquanto houver sessão ativa: ao finalizar o treino,
+// `activeSession` vira null, o timer é destruído imediatamente e nenhum
+// resíduo (id antigo, contagem congelada) sobra para a próxima sessão.
 watch(
-    activeSession,
-    (session) => {
+    () => activeSession.value?.id ?? null,
+    (id) => {
         stopTick();
         now.value = Date.now();
 
-        if (session) {
+        if (id !== null) {
             tick = setInterval(() => {
                 now.value = Date.now();
             }, 1000);
@@ -79,6 +115,7 @@ watch(
 
 onUnmounted(() => {
     stopTick();
+    stopNavigateListener?.();
     window.removeEventListener('online', updateOnlineStatus);
     window.removeEventListener('offline', updateOnlineStatus);
 });
@@ -112,7 +149,7 @@ const elapsedDisplay = computed(() => {
         >
             <Link
                 v-if="showBanner"
-                :href="route('workout-sessions.show', activeSession.id)"
+                :href="sessionHref"
                 class="fixed right-4 top-20 z-50 flex items-center gap-2 rounded-radius-full border border-border-accent bg-accent-muted px-4 py-2 text-sm font-semibold text-accent-text-strong shadow-lg shadow-accent-glow backdrop-blur transition hover:bg-accent-glow-soft-hover lg:top-4"
             >
                 <span class="relative flex h-2.5 w-2.5 shrink-0">

@@ -227,10 +227,20 @@ export async function getCachedWorkoutsList() {
 export async function cacheWorkout(workout) {
     if (!workout?.id) return;
 
-    const record = toPlainObject({ ...workout, cachedAt: new Date().toISOString() });
+    const incoming = toPlainObject({ ...workout, cachedAt: new Date().toISOString() });
 
-    return withStore(STORE_WORKOUTS, 'readwrite', (store) => {
-        store.put(record);
+    // MESCLA em vez de sobrescrever. Telas diferentes conhecem recortes
+    // diferentes do mesmo treino: `Workouts/Show` traz `muscle_groups`,
+    // `days_of_week`, `is_active`…; `WorkoutSessions/Active` traz apenas
+    // `{id, name, description}` mais os exercícios com `rest_seconds`. Um
+    // `put()` cru fazia a segunda tela apagar os campos que só a primeira
+    // conhece — e era exatamente isso que quebrava a renderização offline de
+    // `Workouts/Show` (`workout.muscle_groups.length` sobre `undefined`, que
+    // aborta o patch do Vue e deixa só o cabeçalho na tela) e sumia com o
+    // treino da Dashboard offline (`is_active` ausente).
+    return withStore(STORE_WORKOUTS, 'readwrite', async (store) => {
+        const existing = await requestToPromise(store.get(incoming.id));
+        store.put(existing ? { ...existing, ...incoming } : incoming);
     });
 }
 
@@ -369,7 +379,72 @@ export async function removeCachedProgram(id) {
  * quanto ao reabrir/continuar uma sessão (online ou offline).
  */
 export async function setActiveSession(session) {
-    return setMeta('active_session', toPlainObject(session));
+    if (!session?.id) return;
+
+    // Mesma sessão já registrada: mescla, nunca sobrescreve. O registro
+    // acumula informação vinda de fontes diferentes (a prop compartilhada do
+    // Inertia, o mount de `WorkoutSessions/Active.vue`, cada série concluída),
+    // e perder `set_logs` aqui significaria voltar ao treino sem o progresso.
+    const existing = await getActiveSession();
+    const incoming = toPlainObject(session);
+
+    const merged = existing && String(existing.id) === String(incoming.id)
+        ? { ...existing, ...incoming }
+        : incoming;
+
+    return setMeta('active_session', merged);
+}
+
+/**
+ * Registra (ou atualiza) uma série concluída dentro da sessão ativa local.
+ * É esse histórico — gravado tanto no caminho online quanto no offline — que
+ * permite sair da tela do treino, navegar pelo app e voltar depois com todas
+ * as séries já feitas marcadas, mesmo sem nenhuma conexão (Phase 38).
+ */
+export async function recordActiveSessionSetLog(log) {
+    const session = await getActiveSession();
+    if (!session) return;
+
+    const entry = toPlainObject({
+        exercise_id: log.exercise_id,
+        set_number: log.set_number,
+        weight: log.weight === '' || log.weight === undefined ? null : log.weight,
+        reps: log.reps === '' || log.reps === undefined ? null : log.reps,
+    });
+
+    const logs = Array.isArray(session.set_logs) ? [...session.set_logs] : [];
+    const index = logs.findIndex(
+        (item) => item.exercise_id === entry.exercise_id && item.set_number === entry.set_number,
+    );
+
+    if (index === -1) {
+        logs.push(entry);
+    } else {
+        logs[index] = entry;
+    }
+
+    return setMeta('active_session', { ...session, set_logs: logs });
+}
+
+/**
+ * Troca o ID temporário de uma sessão nascida offline pelo ID real criado no
+ * servidor durante a sincronização, preservando o progresso já gravado. Sem
+ * isso o indicador global continuaria apontando para um ID que só existe
+ * neste dispositivo mesmo depois de a sessão virar real (Phase 38).
+ */
+export async function promoteActiveSessionId(clientSessionId, realSessionId) {
+    const session = await getActiveSession();
+
+    if (!session || String(session.id) !== String(clientSessionId)) return false;
+
+    await setMeta('active_session', {
+        ...session,
+        id: realSessionId,
+        client_session_id: `session-${realSessionId}`,
+        offline_only: false,
+    });
+
+    return true;
 }
 
 export async function getActiveSession() {
@@ -506,6 +581,69 @@ export async function enqueueSyncAction(action) {
 export async function getSyncQueue() {
     const rows = await withStore(STORE_SYNC_QUEUE, 'readonly', (store) => requestToPromise(store.getAll()));
     return rows.sort((a, b) => new Date(a.occurred_at) - new Date(b.occurred_at));
+}
+
+/**
+ * Reconstrói a lista de séries já registradas de uma sessão a partir da
+ * própria fila de sincronização — o mesmo formato do prop `setLogs` que o
+ * `WorkoutSessionController@show` envia online. Usado ao reabrir um treino
+ * em andamento offline: a fila é o registro físico do que o usuário fez
+ * neste aparelho, então ela é a fonte de verdade enquanto não sincroniza.
+ */
+export async function getQueuedSetLogs(clientSessionId) {
+    if (!clientSessionId) return [];
+
+    const rows = await getSyncQueue();
+    const byPosition = new Map();
+
+    for (const row of rows) {
+        if (row.type !== 'log_set') continue;
+        if (String(row.client_session_id) !== String(clientSessionId)) continue;
+
+        // A fila é ordenada por `occurred_at`, então a última ocorrência de
+        // um mesmo (exercício, série) é a que vale — igual ao
+        // `updateOrCreate` que o backend aplica ao sincronizar.
+        byPosition.set(`${row.exercise_id}-${row.set_number}`, {
+            exercise_id: row.exercise_id,
+            set_number: row.set_number,
+            weight: row.weight ?? null,
+            reps: row.reps ?? null,
+            rpe: row.rpe ?? null,
+            is_warmup: Boolean(row.is_warmup),
+            notes: row.notes ?? null,
+        });
+    }
+
+    return [...byPosition.values()];
+}
+
+/**
+ * Séries já feitas na sessão em andamento, unindo as duas memórias locais: o
+ * que a fila de sincronização ainda guarda (feito offline, não enviado) e o
+ * que ficou carimbado no próprio registro da sessão ativa (feito online, ou
+ * offline e já sincronizado — a fila é esvaziada nesse caso).
+ */
+export async function getActiveSessionSetLogs() {
+    const session = await getActiveSession();
+    if (!session) return [];
+
+    const stamped = Array.isArray(session.set_logs) ? session.set_logs : [];
+    const queued = await getQueuedSetLogs(session.client_session_id ?? session.id);
+
+    const byPosition = new Map();
+    for (const log of [...stamped, ...queued]) {
+        byPosition.set(`${log.exercise_id}-${log.set_number}`, {
+            exercise_id: log.exercise_id,
+            set_number: log.set_number,
+            weight: log.weight ?? null,
+            reps: log.reps ?? null,
+            rpe: log.rpe ?? null,
+            is_warmup: Boolean(log.is_warmup),
+            notes: log.notes ?? null,
+        });
+    }
+
+    return [...byPosition.values()];
 }
 
 export async function countPendingSyncActions() {

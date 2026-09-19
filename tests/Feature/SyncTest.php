@@ -252,7 +252,7 @@ test('resending the same batch is idempotent and never duplicates the workout se
     expect($session->setLogs()->count())->toBe(1);
 });
 
-test('logging a set without a resolvable session fails with a clear error', function () {
+test('logging a set without a resolvable session stays queued for retry instead of failing the whole batch', function () {
     $this->seed(ExerciseSeeder::class);
     $user = User::factory()->create();
     $exercise = Exercise::first();
@@ -269,7 +269,142 @@ test('logging a set without a resolvable session fails with a clear error', func
         ],
     ];
 
-    $this->actingAs($user)
+    // Ações são processadas isoladamente (ver `SyncService`): uma que não
+    // pode ser resolvida agora não derruba a requisição com 422 — ela
+    // simplesmente fica de fora de `results`, e o dispositivo a mantém na
+    // fila local para tentar de novo (ex.: um lote futuro que finalmente
+    // traga o `start_session` correspondente).
+    $response = $this->actingAs($user)
         ->postJson(route('sync.workout-sessions'), ['actions' => $actions])
-        ->assertStatus(422);
+        ->assertOk();
+
+    expect($response->json('results'))->toBeEmpty();
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 38 — Continuidade de sessão entre lotes de sincronização
+//
+// A conexão voltar no meio do treino é o caso normal, não a exceção: a fila é
+// enviada, confirmada e esvaziada, e o usuário continua registrando séries. O
+// lote seguinte chega SEM nenhum `start_session` dentro — e antes desta fase
+// ele era rejeitado com 422 ("Nenhuma sessão de treino correspondente…"),
+// deixando as séries presas na fila local para sempre.
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('a later batch without start_session still finds the session created offline, by client_uuid', function () {
+    $this->seed(ExerciseSeeder::class);
+    $user = User::factory()->create();
+    $exercise = Exercise::first();
+    $workout = $user->workouts()->create(['name' => 'Treino Offline']);
+
+    $clientSessionId = 'client-session-uuid-split-batch';
+
+    // Primeiro lote: a sessão nasce offline e é sincronizada.
+    $this->actingAs($user)
+        ->postJson(route('sync.workout-sessions'), ['actions' => [[
+            'uuid' => 'action-start',
+            'type' => 'start_session',
+            'client_session_id' => $clientSessionId,
+            'occurred_at' => now()->subMinutes(30)->toISOString(),
+            'workout_id' => $workout->id,
+        ]]])
+        ->assertOk();
+
+    $session = WorkoutSession::where('client_uuid', $clientSessionId)->firstOrFail();
+
+    // Segundo lote: só séries, sem `session_id` (o dispositivo nunca soube o
+    // ID real) e sem `start_session` (já foi confirmado e removido da fila).
+    $this->actingAs($user)
+        ->postJson(route('sync.workout-sessions'), ['actions' => [
+            [
+                'uuid' => 'action-set-late',
+                'type' => 'log_set',
+                'client_session_id' => $clientSessionId,
+                'occurred_at' => now()->subMinutes(10)->toISOString(),
+                'exercise_id' => $exercise->id,
+                'set_number' => 1,
+                'reps' => 10,
+                'weight' => 60,
+            ],
+            [
+                'uuid' => 'action-finish-late',
+                'type' => 'finish_session',
+                'client_session_id' => $clientSessionId,
+                'occurred_at' => now()->subMinutes(5)->toISOString(),
+            ],
+        ]])
+        ->assertOk()
+        ->assertJsonPath('results.0.session_id', $session->id);
+
+    expect($session->refresh()->setLogs()->count())->toBe(1);
+    expect($session->completed_at)->not->toBeNull();
+    expect(WorkoutSession::where('user_id', $user->id)->count())->toBe(1);
+});
+
+test('a batch of sets for a session started online resolves by the session-<id> label alone', function () {
+    $this->seed(ExerciseSeeder::class);
+    $user = User::factory()->create();
+    $exercise = Exercise::first();
+    $workout = $user->workouts()->create(['name' => 'Treino Online']);
+
+    $session = $user->workoutSessions()->create([
+        'workout_id' => $workout->id,
+        'started_at' => now()->subMinutes(20),
+    ]);
+
+    $this->actingAs($user)
+        ->postJson(route('sync.workout-sessions'), ['actions' => [[
+            'uuid' => 'action-set-label-only',
+            'type' => 'log_set',
+            // Rótulo que `WorkoutSessions/Active.vue` gera quando a sessão
+            // nasceu online — aqui sem o `session_id` junto, simulando um
+            // payload antigo já parado na fila do aparelho.
+            'client_session_id' => "session-{$session->id}",
+            'occurred_at' => now()->subMinutes(5)->toISOString(),
+            'exercise_id' => $exercise->id,
+            'set_number' => 1,
+            'reps' => 12,
+            'weight' => 40,
+        ]]])
+        ->assertOk()
+        ->assertJsonPath('results.0.session_id', $session->id);
+
+    expect($session->refresh()->setLogs()->count())->toBe(1);
+});
+
+test('a session started offline on a workout also created offline syncs via its tmp_ reference', function () {
+    $this->seed(ExerciseSeeder::class);
+    $user = User::factory()->create();
+
+    $workoutUuid = 'workout-client-uuid-38';
+
+    // Ficha criada offline: é o lote de mutações de recurso que a cria de
+    // verdade (e o frontend sempre envia esse grupo primeiro — ver
+    // `flushQueue` em `useOfflineSync.js`).
+    $this->actingAs($user)
+        ->postJson(route('sync.mutations'), ['actions' => [[
+            'uuid' => 'action-create-workout',
+            'type' => 'create_workout',
+            'client_uuid' => $workoutUuid,
+            'occurred_at' => now()->subMinutes(50)->toISOString(),
+            'name' => 'Ficha Nascida Offline',
+            'days_of_week' => [],
+            'exercises' => [],
+        ]]])
+        ->assertOk();
+
+    $this->actingAs($user)
+        ->postJson(route('sync.workout-sessions'), ['actions' => [[
+            'uuid' => 'action-start-tmp',
+            'type' => 'start_session',
+            'client_session_id' => 'client-session-uuid-tmp-workout',
+            'occurred_at' => now()->subMinutes(40)->toISOString(),
+            'workout_id' => "tmp_{$workoutUuid}",
+        ]]])
+        ->assertOk();
+
+    $workout = $user->workouts()->where('client_uuid', $workoutUuid)->firstOrFail();
+
+    expect(WorkoutSession::where('client_uuid', 'client-session-uuid-tmp-workout')->firstOrFail()->workout_id)
+        ->toBe($workout->id);
 });
