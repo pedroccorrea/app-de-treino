@@ -31,3 +31,4 @@
 2026-09-14 09:24:58 | Fase 35 | 10de2f3 | 35: Correção de Auth no Sync e Resiliência de Cache Vazio
 2026-09-17 09:06:08 | Fase 36 | 793a948 | 36: Desacoplamento de Cache, Invalidação Imediata e Autoridade do IndexedDB
 2026-09-17 09:31:23 | Fase 37 | 38a9b6b | 37: Resiliência de Sincronização, Validação Idempotente e Segurança Tenant-Scoped
+2026-09-19 16:43:28 | Fase 38 | 5806a43 | Offline-First Definitivo — Sessão Contínua, Sincronização Resiliente e Causa Raiz Real do "Só Atualiza Quando a Internet Volta"
