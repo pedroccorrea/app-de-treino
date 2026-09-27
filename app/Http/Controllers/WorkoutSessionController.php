@@ -43,6 +43,9 @@ class WorkoutSessionController extends Controller
                 'id' => $exercise->id,
                 'name' => $exercise->name,
                 'primary_muscle' => $exercise->primary_muscle_group->label(),
+                // Só para o passo dos botões + e − seguir o equipamento
+                // (null = ainda não classificado, comporta-se como "outro").
+                'equipment' => $exercise->equipment?->value,
                 'target_sets' => $exercise->pivot->target_sets ?? 3,
                 'target_reps' => $exercise->pivot->target_reps ?? '10',
                 'rest_seconds' => $exercise->pivot->rest_seconds ?? 60,

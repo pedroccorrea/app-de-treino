@@ -12,7 +12,10 @@ use Illuminate\Support\Facades\DB;
 
 class WorkoutService
 {
-    public function __construct(private readonly WorkoutProgramService $workoutProgramService) {}
+    public function __construct(
+        private readonly WorkoutProgramService $workoutProgramService,
+        private readonly ExerciseEquipmentService $exerciseEquipmentService,
+    ) {}
 
     /**
      * Fetches the user's workouts ordered by their scheduled weekday
@@ -49,7 +52,7 @@ class WorkoutService
     }
 
     /**
-     * @return array<int, array{muscle: string, muscle_key: string, exercises: array<int, array{id: int, name: string, primary_muscle: string}>}>
+     * @return array<int, array{muscle: string, muscle_key: string, exercises: array<int, array{id: int, name: string, primary_muscle: string, equipment: ?string}>}>
      */
     public function getAvailableExercises(): array
     {
@@ -66,6 +69,7 @@ class WorkoutService
                         'id' => $exercise->id,
                         'name' => $exercise->name,
                         'primary_muscle' => $exercise->primary_muscle_group->label(),
+                        'equipment' => $exercise->equipment?->value,
                     ])->values()->all(),
                 ];
             })
@@ -76,7 +80,7 @@ class WorkoutService
 
     public function createWorkout(User $user, array $data): Workout
     {
-        return DB::transaction(function () use ($user, $data) {
+        $workout = DB::transaction(function () use ($user, $data) {
             $workout = $user->workouts()->create([
                 'name' => $data['name'],
                 'description' => $data['description'] ?? null,
@@ -100,6 +104,10 @@ class WorkoutService
 
             return $workout->load('exercises');
         });
+
+        $this->exerciseEquipmentService->ensureClassifiedInBackground($workout->exercises);
+
+        return $workout;
     }
 
     /**
@@ -109,7 +117,7 @@ class WorkoutService
      */
     public function updateWorkout(Workout $workout, array $data): Workout
     {
-        return DB::transaction(function () use ($workout, $data) {
+        $workout = DB::transaction(function () use ($workout, $data) {
             $workout->update([
                 'name' => $data['name'],
                 'description' => $data['description'] ?? null,
@@ -135,6 +143,10 @@ class WorkoutService
 
             return $workout->load('exercises');
         });
+
+        $this->exerciseEquipmentService->ensureClassifiedInBackground($workout->exercises);
+
+        return $workout;
     }
 
     /**

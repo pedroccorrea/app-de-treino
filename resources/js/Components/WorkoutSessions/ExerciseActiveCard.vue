@@ -7,6 +7,7 @@ import LoadRepsHero from '@/Components/WorkoutSessions/LoadRepsHero.vue';
 import LoadRepsStepper from '@/Components/WorkoutSessions/LoadRepsStepper.vue';
 import OverloadSuggestionCard from '@/Components/WorkoutSessions/OverloadSuggestionCard.vue';
 import SetWaveProgress from '@/Components/WorkoutSessions/SetWaveProgress.vue';
+import { DEFAULT_LOAD_INCREMENT, stepLoad } from '@/Utils/loadSteps';
 
 const props = defineProps({
     exercise: {
@@ -105,6 +106,18 @@ const deltaText = computed(() => {
 
     return `${diff > 0 ? '+' : '-'}${fmt(Math.abs(diff))} kg`;
 });
+
+// Passo dos botões + e − de carga: segue o equipamento do exercício (ex:
+// halteres acima de 10 kg sobem de 2 em 2). A página continua recebendo só
+// um delta via adjust-weight, então nada muda no contrato com o pai.
+const runningWeight = computed(() =>
+    runningSetNumber.value === null ? 0 : parseFloat(props.setInputs[runningSetNumber.value]?.weight) || 0,
+);
+
+const loadDeltaUp = computed(() => stepLoad(props.exercise.equipment, runningWeight.value, 1) - runningWeight.value);
+const loadDeltaDown = computed(() => stepLoad(props.exercise.equipment, runningWeight.value, -1) - runningWeight.value);
+
+const loadStepLabel = computed(() => `Carga · ${fmt(loadDeltaUp.value || DEFAULT_LOAD_INCREMENT)}`);
 
 const restDisplay = computed(() => {
     const total = props.exercise.rest_seconds ?? 60;
@@ -244,9 +257,9 @@ const historyUrl = computed(() =>
 
                     <div class="flex gap-2.5">
                         <LoadRepsStepper
-                            label="Carga · 2,5"
-                            @decrement="$emit('adjust-weight', set.number, -2.5)"
-                            @increment="$emit('adjust-weight', set.number, 2.5)"
+                            :label="loadStepLabel"
+                            @decrement="$emit('adjust-weight', set.number, loadDeltaDown)"
+                            @increment="$emit('adjust-weight', set.number, loadDeltaUp)"
                         />
                         <LoadRepsStepper
                             label="Reps · 1"

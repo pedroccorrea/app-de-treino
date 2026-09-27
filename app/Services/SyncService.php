@@ -152,6 +152,8 @@ class SyncService
 
         $session->forceFill(['created_at' => $occurredAt, 'updated_at' => $occurredAt])->save();
 
+        $this->workoutSessionService->classifyWorkoutEquipment($workout);
+
         return $session;
     }
 

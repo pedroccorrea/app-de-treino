@@ -188,6 +188,9 @@ class WorkoutController extends Controller
                 'id' => $exercise->id,
                 'name' => $exercise->name,
                 'primary_muscle' => $exercise->primary_muscle_group->label(),
+                // Vai para o cache offline e chega à sessão ativa iniciada
+                // offline, para os botões + e − seguirem o equipamento.
+                'equipment' => $exercise->equipment?->value,
                 'target_sets' => $exercise->pivot->target_sets,
                 'target_reps' => $exercise->pivot->target_reps,
                 // Necessário para que uma sessão iniciada offline a partir

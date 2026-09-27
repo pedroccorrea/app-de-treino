@@ -488,7 +488,9 @@ const completeSet = async (exercise, setNumber) => {
 const adjustWeight = (exercise, setNumber, delta) => {
     const exId = exercise.id;
     const current = parseFloat(setInputs.value[exId]?.[setNumber]?.weight) || 0;
-    setInputs.value[exId][setNumber].weight = Math.max(0, current + delta);
+    // Arredonda em centésimos: o delta vem do passo do equipamento
+    // (loadSteps.js) e somas de float não podem gerar 11,999999 kg.
+    setInputs.value[exId][setNumber].weight = Math.max(0, Math.round((current + delta) * 100) / 100);
 };
 
 const adjustReps = (exercise, setNumber, delta) => {

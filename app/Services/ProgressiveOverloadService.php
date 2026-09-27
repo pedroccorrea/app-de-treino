@@ -4,7 +4,9 @@ namespace App\Services;
 
 use App\DataTransferObjects\OverloadSuggestion;
 use App\Enums\AiTask;
+use App\Enums\Equipment;
 use App\Enums\OverloadConfidence;
+use App\Models\Exercise;
 use App\Models\SetLog;
 use App\Models\User;
 use App\Models\Workout;
@@ -15,7 +17,10 @@ use Illuminate\Support\Facades\Log;
 
 class ProgressiveOverloadService
 {
-    public function __construct(private readonly AiManager $aiManager) {}
+    public function __construct(
+        private readonly AiManager $aiManager,
+        private readonly ValidLoadService $validLoadService,
+    ) {}
 
     /**
      * Analyzes the user's 3 most recent completed sessions of this workout and
@@ -27,6 +32,11 @@ class ProgressiveOverloadService
      * an exercise_id outside this workout is dropped and logged; any response
      * that isn't valid/complete JSON degrades to an empty collection instead
      * of throwing, so the screen simply shows no suggestions.
+     *
+     * Exercises with a known equipment get the list of loads that really
+     * exist for it in the prompt, and any load the AI still invents outside
+     * that list is rounded to the nearest valid one (see safeLoad()).
+     * Unclassified exercises behave as "outro": no restriction at all.
      *
      * @return Collection<int, OverloadSuggestion>
      */
@@ -40,9 +50,10 @@ class ProgressiveOverloadService
 
         $workoutExerciseIds = $workout->exercises->pluck('id')->all();
         $previousPerformance = $this->previousPerformanceByExercise($sessions);
+        $exercisesById = $workout->exercises->keyBy('id');
 
         try {
-            $response = $this->aiManager->generateStructured($this->buildPrompt($sessions, $workout), task: AiTask::FastText);
+            $response = $this->aiManager->generateStructured($this->buildPrompt($sessions, $workout, $previousPerformance), task: AiTask::FastText);
         } catch (\Throwable $e) {
             Log::warning('Falha ao consultar sugestões de sobrecarga progressiva via IA.', [
                 'workout_id' => $workout->id,
@@ -52,7 +63,7 @@ class ProgressiveOverloadService
             return collect();
         }
 
-        return $this->mapRecommendations($response, $workoutExerciseIds, $previousPerformance);
+        return $this->mapRecommendations($response, $workoutExerciseIds, $previousPerformance, $exercisesById);
     }
 
     /**
@@ -100,19 +111,19 @@ class ProgressiveOverloadService
 
     /**
      * @param  Collection<int, WorkoutSession>  $sessions
+     * @param  array<int, array{weight: ?float, reps: int}>  $previousPerformance
      */
-    private function buildPrompt(Collection $sessions, Workout $workout): string
+    private function buildPrompt(Collection $sessions, Workout $workout, array $previousPerformance): string
     {
-        $exercises = $workout->exercises->map(fn($exercise) => [
-            'exercise_id' => $exercise->id,
-            'name' => $exercise->name,
-        ])->values()->all();
+        $exercises = $workout->exercises
+            ->map(fn (Exercise $exercise) => $this->exercisePromptEntry($exercise, $previousPerformance[$exercise->id]['weight'] ?? null))
+            ->values()->all();
 
-        $history = $sessions->map(fn(WorkoutSession $session) => [
+        $history = $sessions->map(fn (WorkoutSession $session) => [
             'date' => $session->completed_at?->toDateString(),
             'sets' => $session->setLogs
                 ->sortBy([['exercise_id', 'asc'], ['set_number', 'asc']])
-                ->map(fn(SetLog $set) => [
+                ->map(fn (SetLog $set) => [
                     'exercise_id' => $set->exercise_id,
                     'exercise' => $set->exercise->name,
                     'set_number' => $set->set_number,
@@ -143,6 +154,19 @@ class ProgressiveOverloadService
         de carga. Se teve dificuldade ou RPE alto, mantenha a carga e foque em técnica. Informe também seu grau de
         confiança nessa sugestão.
 
+        CARGAS QUE EXISTEM DE VERDADE:
+        - Cada exercício informa o equipamento (equipment), como a carga é registrada (load_mode: total, por lado
+          ou por halter, isto é, o peso de cada halter/kettlebell), a carga atual (current_load) e, quando houver,
+          a lista valid_loads com as cargas válidas próximas da carga atual.
+        - Quando valid_loads existir, suggested_load DEVE ser exatamente um dos valores dessa lista, inclusive em
+          reduções de carga. Nunca sugira um valor fora dela (ex: nunca 10,5 kg em halteres).
+        - Progressão dupla: se o próximo peso válido acima da carga atual for um salto grande para o exercício
+          (comum em halteres leves e em máquinas), mantenha a carga e sugira mais repetições dentro da faixa alvo
+          (target_reps); só suba para o próximo peso válido quando o usuário tiver atingido o topo da faixa.
+        - Peso corporal (peso_corporal): não sugira carga; mantenha suggested_load igual à carga atual e progrida
+          em repetições, ou adicione anilha (um valor de valid_loads) só quando fizer sentido.
+        - Sem valid_loads (equipamento "outro"), sugira a carga como de costume.
+
         Use exclusivamente os exercise_id listados acima, nunca invente um exercise_id novo.
 
         Responda SOMENTE com um JSON no seguinte formato, sem markdown, sem comentários e sem texto adicional:
@@ -164,9 +188,10 @@ class ProgressiveOverloadService
      * @param  array<string, mixed>  $response
      * @param  array<int, int>  $workoutExerciseIds
      * @param  array<int, array{weight: ?float, reps: int}>  $previousPerformance
+     * @param  Collection<int, Exercise>  $exercisesById
      * @return Collection<int, OverloadSuggestion>
      */
-    private function mapRecommendations(array $response, array $workoutExerciseIds, array $previousPerformance): Collection
+    private function mapRecommendations(array $response, array $workoutExerciseIds, array $previousPerformance, Collection $exercisesById): Collection
     {
         $recommendations = $response['recommendations'] ?? null;
 
@@ -175,7 +200,7 @@ class ProgressiveOverloadService
         }
 
         return collect($recommendations)
-            ->map(fn(mixed $recommendation) => $this->toSuggestion($recommendation, $workoutExerciseIds, $previousPerformance))
+            ->map(fn (mixed $recommendation) => $this->toSuggestion($recommendation, $workoutExerciseIds, $previousPerformance, $exercisesById))
             ->filter()
             ->values();
     }
@@ -189,8 +214,9 @@ class ProgressiveOverloadService
      *
      * @param  array<int, int>  $workoutExerciseIds
      * @param  array<int, array{weight: ?float, reps: int}>  $previousPerformance
+     * @param  Collection<int, Exercise>  $exercisesById
      */
-    private function toSuggestion(mixed $recommendation, array $workoutExerciseIds, array $previousPerformance): ?OverloadSuggestion
+    private function toSuggestion(mixed $recommendation, array $workoutExerciseIds, array $previousPerformance, Collection $exercisesById): ?OverloadSuggestion
     {
         if (! is_array($recommendation)) {
             return null;
@@ -221,15 +247,61 @@ class ProgressiveOverloadService
         }
 
         $previous = $previousPerformance[$exerciseId] ?? null;
+        $equipment = $exercisesById->get($exerciseId)?->resolvedEquipment() ?? Equipment::Other;
 
         return new OverloadSuggestion(
             exercise_id: $exerciseId,
-            suggested_load: (float) $suggestedLoad,
+            suggested_load: $this->safeLoad($exerciseId, $equipment, $previous['weight'] ?? null, (float) $suggestedLoad),
             suggested_reps: (int) $suggestedReps,
             previous_load: $previous['weight'] ?? null,
             previous_reps: $previous['reps'] ?? null,
             rationale: $rationale,
             confidence: OverloadConfidence::fromAi($recommendation['confidence'] ?? null),
         );
+    }
+
+    /**
+     * @return array{exercise_id: int, name: string, target_reps: ?string, equipment: string, load_mode: string, current_load: ?float, valid_loads: ?list<float>}
+     */
+    private function exercisePromptEntry(Exercise $exercise, ?float $currentLoad): array
+    {
+        $equipment = $exercise->resolvedEquipment();
+        $mode = $equipment->loadMode();
+
+        return [
+            'exercise_id' => $exercise->id,
+            'name' => $exercise->name,
+            'target_reps' => $exercise->pivot?->target_reps,
+            'equipment' => $equipment->value,
+            'load_mode' => $mode->value,
+            'current_load' => $currentLoad,
+            'valid_loads' => $this->validLoadService->isRestricted($equipment)
+                ? $this->validLoadService->candidateLoads($equipment, $mode, $currentLoad ?? 0.0)
+                : null,
+        ];
+    }
+
+    /**
+     * Rede de segurança: mesmo com a lista no prompt, a IA pode devolver uma
+     * carga que não existe no equipamento. Ela é levada ao valor válido mais
+     * próximo da carga atual (empate → o menor) e o ajuste fica em log.
+     */
+    private function safeLoad(int $exerciseId, Equipment $equipment, ?float $currentLoad, float $suggestedLoad): float
+    {
+        $mode = $equipment->loadMode();
+        $rounded = $this->validLoadService->roundToValid($equipment, $mode, $currentLoad ?? 0.0, $suggestedLoad);
+
+        if (abs($rounded - $suggestedLoad) > 0.001) {
+            Log::warning('Carga sugerida pela IA arredondada para um valor válido do equipamento.', [
+                'exercise_id' => $exerciseId,
+                'equipment' => $equipment->value,
+                'load_mode' => $mode->value,
+                'current_load' => $currentLoad,
+                'ai_load' => $suggestedLoad,
+                'rounded_load' => $rounded,
+            ]);
+        }
+
+        return $rounded;
     }
 }

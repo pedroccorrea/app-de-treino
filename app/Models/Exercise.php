@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\Equipment;
 use App\Enums\MuscleGroup;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
@@ -11,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['user_id', 'name', 'primary_muscle_group', 'secondary_muscle_groups'])]
+#[Fillable(['user_id', 'name', 'primary_muscle_group', 'secondary_muscle_groups', 'equipment'])]
 class Exercise extends Model
 {
     protected function casts(): array
@@ -19,7 +20,17 @@ class Exercise extends Model
         return [
             'primary_muscle_group' => MuscleGroup::class,
             'secondary_muscle_groups' => AsEnumCollection::of(MuscleGroup::class),
+            'equipment' => Equipment::class,
         ];
+    }
+
+    /**
+     * Enquanto o exercício não foi classificado (equipment nulo), ele se
+     * comporta como "outro": sem restrição de cargas e com o passo padrão.
+     */
+    public function resolvedEquipment(): Equipment
+    {
+        return $this->equipment ?? Equipment::Other;
     }
 
     public function user(): BelongsTo

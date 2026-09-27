@@ -19,6 +19,7 @@ class WorkoutScannerService
     public function __construct(
         private readonly AiManager $aiManager,
         private readonly WorkoutProgramService $workoutProgramService,
+        private readonly ExerciseEquipmentService $exerciseEquipmentService,
     ) {}
 
     /**
@@ -39,7 +40,7 @@ class WorkoutScannerService
 
         $parsed = $this->transcribeWithAi($image, $catalog);
 
-        return DB::transaction(function () use ($parsed, $catalog, $user, $workoutProgramId) {
+        $workout = DB::transaction(function () use ($parsed, $catalog, $user, $workoutProgramId) {
             $workout = $user->workouts()->create([
                 'name' => $parsed['workout_name'] ?? 'Ficha Escaneada',
                 'workout_program_id' => $workoutProgramId ?? $this->workoutProgramService->getActiveProgram($user)?->id,
@@ -63,6 +64,13 @@ class WorkoutScannerService
 
             return $workout->load('exercises');
         });
+
+        // Exercícios criados ou reaproveitados pelo scan ganham equipamento
+        // já na importação (a IA de classificação, se precisar, roda depois
+        // da resposta, para não somar tempo à leitura da foto).
+        $this->exerciseEquipmentService->ensureClassifiedInBackground($workout->exercises);
+
+        return $workout;
     }
 
     /**
@@ -85,11 +93,11 @@ class WorkoutScannerService
      */
     private function buildPrompt(Collection $catalog): string
     {
-        $muscleGroups = implode(', ', array_map(fn(MuscleGroup $case) => $case->value, MuscleGroup::cases()));
+        $muscleGroups = implode(', ', array_map(fn (MuscleGroup $case) => $case->value, MuscleGroup::cases()));
 
         $catalogList = $catalog->isEmpty()
             ? '(nenhum exercício cadastrado ainda)'
-            : $catalog->map(fn(string $name, int $id) => "- {$name}")->implode("\n");
+            : $catalog->map(fn (string $name, int $id) => "- {$name}")->implode("\n");
 
         return <<<PROMPT
         Você é um assistente especialista em digitalização e OCR de fichas de treino de musculação (fichas escritas à mão, impressas em cupons térmicos de academias ou digitadas em aplicativos).
@@ -155,7 +163,7 @@ class WorkoutScannerService
         $name = trim($exerciseData['name'] ?? '');
 
         $matchedId = $catalog->search(
-            fn(string $existingName) => mb_strtolower($existingName) === mb_strtolower($name)
+            fn (string $existingName) => mb_strtolower($existingName) === mb_strtolower($name)
         );
 
         if ($matchedId !== false) {

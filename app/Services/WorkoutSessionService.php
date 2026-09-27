@@ -11,6 +11,8 @@ use Illuminate\Support\Facades\DB;
 
 class WorkoutSessionService
 {
+    public function __construct(private readonly ExerciseEquipmentService $exerciseEquipmentService) {}
+
     /**
      * Inicia uma nova sessão de treino para o usuário.
      *
@@ -21,7 +23,7 @@ class WorkoutSessionService
      */
     public function startSession(User $user, Workout $workout): WorkoutSession
     {
-        return DB::transaction(function () use ($user, $workout) {
+        $session = DB::transaction(function () use ($user, $workout) {
             $this->closeOpenSessionsForUser($user);
 
             return $user->workoutSessions()->create([
@@ -30,6 +32,21 @@ class WorkoutSessionService
                 'completed_at' => null,
             ]);
         });
+
+        $this->classifyWorkoutEquipment($workout);
+
+        return $session;
+    }
+
+    /**
+     * Iniciar um treino é um "uso" dos seus exercícios: os que ainda não têm
+     * equipamento são classificados aqui (palavras-chave na hora; a IA, se
+     * precisar, só depois da resposta). Reaproveitado pelo SyncService para
+     * sessões iniciadas offline.
+     */
+    public function classifyWorkoutEquipment(Workout $workout): void
+    {
+        $this->exerciseEquipmentService->ensureClassifiedInBackground($workout->exercises()->get());
     }
 
     /**

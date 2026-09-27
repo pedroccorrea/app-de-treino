@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'v10';
+const CACHE_VERSION = 'v11';
 const APP_SHELL_CACHE = `setwave-shell-${CACHE_VERSION}`;
 const STATIC_ASSETS_CACHE = `setwave-assets-${CACHE_VERSION}`;
 const INERTIA_CACHE = `setwave-inertia-${CACHE_VERSION}`;
@@ -338,6 +338,7 @@ async function buildExercisesForWorkout(exercisesInput) {
             id: exercise.id,
             name: meta.name ?? '',
             primary_muscle: meta.primary_muscle ?? '',
+            equipment: meta.equipment ?? null,
             target_sets: exercise.target_sets ?? null,
             target_reps: exercise.target_reps ?? null,
             order: exercise.order ?? index,
@@ -989,6 +990,7 @@ async function buildActiveSessionProps(params) {
             id: exercise.id,
             name: exercise.name,
             primary_muscle: exercise.primary_muscle ?? '',
+            equipment: exercise.equipment ?? null,
             target_sets: exercise.target_sets ?? 3,
             target_reps: exercise.target_reps ?? '10',
             rest_seconds: exercise.rest_seconds ?? 60,
