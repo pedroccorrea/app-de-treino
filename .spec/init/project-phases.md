@@ -1002,3 +1002,24 @@ Investigação longa, em várias rodadas, disparada por relatos recorrentes de q
 1. Criar ou excluir uma ficha offline, a partir da própria tela `/workouts`, atualiza a lista imediatamente — confirmado por automação de navegador real, com o servidor genuinamente inatingível.
 2. `php artisan test` passa em 100% de toda a suíte.
 3. `npm run build` compila com zero erros.
+
+# Phase 39: Safe-Area do iOS e Isolamento por Ação na Sincronização de Sessões
+
+Duas correções independentes, versionadas em commits separados: o layout do PWA instalado no iOS (conteúdo escondido sob o notch/Dynamic Island) e a sincronização offline de sessões de treino (lote inteiro rejeitado com 422 por causa de uma única ação velha na fila, trazendo de volta o banner "Treino em andamento" de um treino já finalizado).
+
+## Etapa 39.1 — Safe-Area do iOS no PWA Instalado
+### Tasks
+1. **Barras superiores respeitando o notch (`AuthenticatedLayout.vue`, `Sidebar.vue`, `SessionHeader.vue`, `ExerciseSelector.vue`):**
+   - Com `viewport-fit=cover` e `apple-mobile-web-app-status-bar-style=black-translucent` (já presentes em `app.blade.php`), o conteúdo é desenhado por baixo da barra de status do iOS — a barra superior mobile, o cabeçalho da Sidebar, o cabeçalho da sessão ativa e o cabeçalho do seletor de exercícios ficavam parcialmente escondidos sob o notch/Dynamic Island.
+   - Cada barra ganha `padding-top` com `env(safe-area-inset-top)` (somado ao espaçamento original via `calc()` quando havia um). Nas barras de altura fixa (`h-16`), `box-content` faz o inset SOMAR à altura em vez de espremer o conteúdo dentro dela.
+
+2. **Elementos flutuantes deslocados pelo mesmo inset (`ActiveSessionBanner.vue`, `Toast.vue`):**
+   - O banner "Treino em andamento" (`top-20`) e o Toast (`top-4`) passam a usar `top-[calc(...+env(safe-area-inset-top))]`, acompanhando a barra superior que agora é mais alta no iOS.
+
+3. **Altura dinâmica da viewport (`AuthenticatedLayout.vue`):**
+   - `min-h-screen` (`100vh`) trocado por `min-h-dvh`: no Safari do iOS, `100vh` ignora a barra de endereço/home indicator e gerava rolagem fantasma.
+
+### Acceptance Criteria
+1. No PWA instalado no iPhone, nenhuma barra superior, banner ou Toast fica escondido sob o notch/Dynamic Island.
+2. Em aparelhos sem notch e no desktop (`env(safe-area-inset-top)` = 0) o layout permanece idêntico ao anterior.
+3. `npm run build` compila com zero erros.

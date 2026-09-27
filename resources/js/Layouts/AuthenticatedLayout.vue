@@ -101,15 +101,15 @@ onMounted(() => {
 </script>
 
 <template>
-    <div class="min-h-screen bg-surface-base">
+    <div class="min-h-dvh bg-surface-base">
         <Sidebar :open="sidebarOpen" @close="sidebarOpen = false" @logout="logout" />
 
         <ActiveSessionBanner />
 
-        <div class="flex min-h-screen flex-col lg:pl-64">
+        <div class="flex min-h-dvh flex-col lg:pl-64">
             <!-- Mobile top bar -->
             <div
-                class="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-4 border-b border-border-subtle bg-surface-base/90 px-4 backdrop-blur-md lg:hidden"
+                class="sticky top-0 z-40 box-content flex h-16 shrink-0 items-center gap-4 border-b border-border-subtle bg-surface-base/90 px-4 pt-[env(safe-area-inset-top)] backdrop-blur-md lg:hidden"
             >
                 <button
                     type="button"

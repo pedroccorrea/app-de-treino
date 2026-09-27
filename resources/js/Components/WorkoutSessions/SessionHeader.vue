@@ -26,7 +26,7 @@ defineEmits(['open-drawer', 'open-menu']);
 </script>
 
 <template>
-    <header class="flex-shrink-0 border-b border-gray-800 bg-gray-900/80 backdrop-blur-sm px-4 py-3">
+    <header class="flex-shrink-0 border-b border-gray-800 bg-gray-900/80 backdrop-blur-sm px-4 pb-3 pt-[calc(0.75rem+env(safe-area-inset-top))]">
         <div class="flex items-center justify-between gap-3">
             <div class="flex min-w-0 items-center gap-3">
                 <button

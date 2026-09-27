@@ -238,7 +238,7 @@ onUnmounted(() => {
             >
                 <!-- TOP HEADER -->
                 <header
-                    class="sticky top-0 z-20 border-b border-gray-200 bg-white/90 px-4 py-3.5 backdrop-blur-md dark:border-gray-800 dark:bg-gray-900/90 sm:px-6"
+                    class="sticky top-0 z-20 border-b border-gray-200 bg-white/90 px-4 pb-3.5 pt-[calc(0.875rem+env(safe-area-inset-top))] backdrop-blur-md dark:border-gray-800 dark:bg-gray-900/90 sm:px-6"
                 >
                     <div class="mx-auto flex max-w-5xl items-center justify-between gap-3">
                         <!-- Left: Back Button or Close -->

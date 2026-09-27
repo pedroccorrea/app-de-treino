@@ -86,7 +86,7 @@ const navigation = [
         class="fixed inset-y-0 left-0 z-[90] flex w-64 -translate-x-full transform flex-col border-r border-border-subtle bg-surface-raised transition-transform duration-300 ease-in-out lg:translate-x-0"
         :class="{ 'translate-x-0': open }"
     >
-        <div class="flex h-16 shrink-0 items-center gap-2 border-b border-border-subtle px-6">
+        <div class="box-content flex h-16 shrink-0 items-center gap-2 border-b border-border-subtle px-6 pt-[env(safe-area-inset-top)]">
             <Link :href="route('dashboard')" class="flex items-center gap-2">
                 <SetwaveLogo :size="28" variant="full" />
             </Link>

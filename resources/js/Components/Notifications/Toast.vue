@@ -78,7 +78,7 @@ const dragStyle = () => ({
 <template>
     <div
         v-if="message"
-        class="fixed inset-x-4 top-4 z-[100] flex justify-center sm:inset-x-auto sm:right-6 sm:justify-end"
+        class="fixed inset-x-4 top-[calc(1rem+env(safe-area-inset-top))] z-[100] flex justify-center sm:inset-x-auto sm:right-6 sm:justify-end"
         @touchstart="onTouchStart"
         @touchmove="onTouchMove"
         @touchend="onTouchEnd"

@@ -150,7 +150,7 @@ const elapsedDisplay = computed(() => {
             <Link
                 v-if="showBanner"
                 :href="sessionHref"
-                class="fixed right-4 top-20 z-50 flex items-center gap-2 rounded-radius-full border border-border-accent bg-accent-muted px-4 py-2 text-sm font-semibold text-accent-text-strong shadow-lg shadow-accent-glow backdrop-blur transition hover:bg-accent-glow-soft-hover lg:top-4"
+                class="fixed right-4 top-[calc(5rem+env(safe-area-inset-top))] z-50 flex items-center gap-2 rounded-radius-full border border-border-accent bg-accent-muted px-4 py-2 text-sm font-semibold text-accent-text-strong shadow-lg shadow-accent-glow backdrop-blur transition hover:bg-accent-glow-soft-hover lg:top-4"
             >
                 <span class="relative flex h-2.5 w-2.5 shrink-0">
                     <span class="absolute inline-flex h-full w-full animate-ping rounded-radius-full bg-accent opacity-75" />
