@@ -1061,3 +1061,351 @@ Duas correções independentes, versionadas em commits separados: o layout do PW
 4. `php artisan test` passa em 100% de toda a suíte.
 5. `tests/Architecture/ArchitecturalRulesTest.php` passa sem violações.
 6. `npm run build` compila com zero erros.
+
+# Phase 40: Total de Séries na Tela de Descanso
+
+Na tela de descanso, onde hoje aparece "Próxima: Série 2", mostrar também o total de séries do exercício, no formato "Próxima: Série 2/4".
+
+## Regras Obrigatórias (Produção)
+- O Setwave está em produção (Render + Neon) com dados reais de usuários. Nenhuma mudança pode apagar, alterar ou colocar em risco dados existentes.
+- Migrations só aditivas: criar tabela nova ou adicionar coluna que aceite nulo. Nunca remover, renomear ou mudar o tipo de colunas ou tabelas. Nunca apagar ou reescrever registros existentes.
+- Seguir as regras do projeto: nada de cores hex em arquivos `.vue`; usar os tokens do `resources/css/design-tokens.css` e os componentes `Base*` (`resources/js/Components/UI/`).
+- Rodar os testes existentes e criar testes para o que for novo.
+- Não fazer deploy nem git push.
+
+## Tasks
+1. **Total de séries na mensagem "Próxima" (`RestTimerOverlay.vue`, `WorkoutSessions/Active.vue`):**
+   - Ponto de partida: `RestTimerOverlay.vue` recebe hoje a prop `nextSetNumber` (passada por `Active.vue` a partir de `currentNextWaitingSet`) e exibe "Próxima: Série {{ nextSetNumber }}".
+   - Passar também o total de séries do exercício e exibir "Próxima: Série X/Y".
+   - O total deve ser o mesmo número usado em "SÉRIE X DE Y" na tela do exercício (hoje calculado por `totalSetsForExercise()` em `Active.vue` e exibido em `SetWaveProgress.vue`), incluindo as séries extras adicionadas pelo "+ Adicionar série extra".
+   - Se o próximo passo depois do descanso for outro exercício, manter o comportamento atual dessa mensagem — só incluir o total quando ela mostrar número de série.
+   - Não mudar mais nada no layout da tela de descanso.
+
+## Acceptance Criteria
+1. Com 4 séries planejadas, ao concluir a série 1 aparece "Próxima: Série 2/4".
+2. Depois de adicionar uma série extra, o total é atualizado (ex.: "Próxima: Série 2/5").
+3. Quando o próximo passo é outro exercício, a mensagem se comporta exatamente como antes.
+4. O layout da tela de descanso não muda além do texto da mensagem.
+5. `php artisan test` passa em 100% de toda a suíte, incluindo os testes novos.
+6. `tests/Architecture/ArchitecturalRulesTest.php` passa sem violações.
+7. `npm run build` compila com zero erros.
+
+# Phase 41: Botão "Finalizar Exercício"
+
+Permitir encerrar o exercício atual mesmo sem concluir todas as séries.
+
+## Regras Obrigatórias (Produção)
+- O Setwave está em produção (Render + Neon) com dados reais de usuários. Nenhuma mudança pode apagar, alterar ou colocar em risco dados existentes.
+- Migrations só aditivas: criar tabela nova ou adicionar coluna que aceite nulo. Nunca remover, renomear ou mudar o tipo de colunas ou tabelas. Nunca apagar ou reescrever registros existentes.
+- Seguir as regras do projeto: nada de cores hex em arquivos `.vue`; usar os tokens do `resources/css/design-tokens.css` e os componentes `Base*` (`resources/js/Components/UI/`).
+- Rodar os testes existentes e criar testes para o que for novo.
+- Não fazer deploy nem git push.
+
+## Tasks
+1. **Botão "Finalizar exercício" (`ExerciseActiveCard.vue`):**
+   - Posicionado logo abaixo do "+ Adicionar série extra", com o mesmo estilo (mesmo tamanho, borda tracejada, discreto), mas com uma cor levemente diferente para se destacar um pouco.
+   - Usar um token existente, por exemplo uma versão suave do violeta de destaque (ex.: `--accent-text-soft`, `--accent-label`, `--border-accent`). Se não houver um adequado, criar um token novo em `design-tokens.css` (mapeado em `tailwind.config.js` e documentado em `.ai/rules/design-system.md`).
+   - O botão deve continuar discreto e não competir com o "Concluir Série".
+
+2. **Confirmação (componentes `Base*`):**
+   - Ao tocar, pedir uma confirmação simples: "Finalizar exercício com X de Y séries feitas?", com as opções Finalizar e Cancelar.
+   - Usar componentes `Base*` (e o modal/confirmação já existente no projeto, se servir, ex.: `ConfirmationModal.vue`/`Modal.vue`).
+   - Cancelar não altera nada.
+
+3. **Ao confirmar (`WorkoutSessions/Active.vue`):**
+   - As séries já concluídas continuam salvas normalmente.
+   - As séries não feitas não são registradas: nem como feitas, nem com carga ou repetições (nenhum `SetLog` criado para elas, nem na fila offline).
+   - Em seguida, seguir exatamente o mesmo fluxo de quando o usuário conclui a última série do exercício: ir para o próximo exercício ou, se for o último, fazer o mesmo que o app já faz hoje ao terminar o último exercício. Reaproveitar o fluxo existente em vez de duplicá-lo.
+   - Funcionar online e offline (sessão com fila de sincronização), sem mudar o contrato de sincronização existente.
+
+4. **Integridade dos números:**
+   - Séries não feitas não podem entrar no volume total, no histórico, nas estatísticas nem na análise da IA de progressão — nem como feitas, nem como falha.
+   - Não deve precisar de migration. Se for realmente necessária, só aditiva.
+
+## Acceptance Criteria
+1. Finalizar um exercício com 2 de 4 séries salva só as 2 feitas e avança igual ao fluxo normal (próximo exercício, ou o comportamento atual de fim do último exercício).
+2. O volume total e o histórico mostram só o que foi feito.
+3. Cancelar a confirmação não altera nada.
+4. O botão fica logo abaixo do "+ Adicionar série extra", no mesmo estilo tracejado e discreto, com cor levemente diferente vinda de token (sem hex no `.vue`), sem competir com o "Concluir Série".
+5. Testes novos cobrindo: finalizar com séries parciais (só as feitas persistidas) e séries não feitas fora do volume, histórico, estatísticas e IA de progressão.
+6. `php artisan test` passa em 100% de toda a suíte.
+7. `tests/Architecture/ArchitecturalRulesTest.php` passa sem violações.
+8. `npm run build` compila com zero erros.
+
+# Phase 42: IA de Progressão Sugere Apenas Cargas que Existem de Verdade
+
+A IA de progressão deve sugerir somente cargas que existem no equipamento do exercício (por exemplo, nunca "10,5 kg" em halteres). As sugestões atuais já são boas: manter a lógica e o tom atuais, mudando só o necessário.
+
+## Regras Obrigatórias (Produção)
+- O Setwave está em produção (Render + Neon) com dados reais de usuários. Nenhuma mudança pode apagar, alterar ou colocar em risco dados existentes.
+- Migrations só aditivas: criar tabela nova ou adicionar coluna que aceite nulo. Nunca remover, renomear ou mudar o tipo de colunas ou tabelas. Nunca apagar ou reescrever registros existentes.
+- Seguir as regras do projeto: nada de cores hex em arquivos `.vue`; usar os tokens do `resources/css/design-tokens.css` e os componentes `Base*` (`resources/js/Components/UI/`).
+- Rodar os testes existentes e criar testes para o que for novo.
+- Não fazer deploy nem git push.
+
+## Tasks
+1. **Entender o que existe hoje (descrever no resumo final da fase):**
+   - Ler como a sugestão de progressão funciona: serviço (`app/Services/ProgressiveOverloadService.php` e a camada `app/Services/AI/`), prompt, e onde a sugestão aparece (card de sugestão na sessão ativa).
+   - Ver como a carga é registrada em cada tipo de exercício: total da barra, por lado ou por halter.
+   - Descrever isso no resumo final da fase.
+
+2. **Tipo de equipamento por exercício:**
+   - Tipos: `halteres`; `barra_anilhas` (barra reta, W ou smith com anilhas); `maquina_anilhas` (leg press, hack e similares carregados com anilhas); `maquina_placas` (máquinas de pino ou pilha de placas, polia e cabo); `kettlebell`; `peso_corporal`; `outro`. Modelar como enum PHP em `app/Enums/` com `label()` em português, seguindo o padrão do projeto.
+   - Guardar em um campo novo em `exercises` (migration aditiva, coluna que aceita nulo).
+   - Identificar primeiro por palavras no nome (halter, haltere, máquina, polia, cabo, crossover, barra, smith, leg press, hack, kettlebell, barra fixa, paralela, flexão etc.).
+   - Se as palavras não resolverem, perguntar à IA uma única vez e salvar a resposta.
+   - Fazer isso sob demanda: quando o exercício for criado ou usado, inclusive pelo scan de ficha (`WorkoutScannerService`). Nunca reprocessar exercícios já classificados.
+   - O equipamento é sempre deduzido automaticamente: o usuário NUNCA escolhe nem corrige o equipamento manualmente. Não criar campo "Equipamento" em nenhuma tela e não criar tela de edição de exercício por causa disso.
+   - A forma de registro da carga (total, por lado ou por halter) também é deduzida automaticamente a partir do equipamento (ex.: `halteres` = por halter; `barra_anilhas`/`maquina_anilhas` = como o app já registra hoje, conforme a investigação do item 1), sem perguntar nada ao usuário.
+   - Se não for possível classificar (ou enquanto o exercício ainda não foi classificado), usar `outro` como padrão sensato: nesse caso, manter o comportamento atual — o passo dos botões + e − continua o incremento atual e a sugestão da IA não é restringida a uma lista de cargas.
+
+3. **Regras de cargas válidas (padrão):**
+   - Halteres (peso de cada halter): até 10 kg, de 1 em 1 kg; acima de 10 kg, de 2 em 2 kg (12, 14, 16...). Nunca decimais.
+   - Máquina de placas, polia e cabo: de 5 em 5 kg.
+   - Barra ou máquina com anilhas:
+     - Anilhas de 2,5 / 5 / 10 / 15 / 20 / 25 kg, sempre em par (uma de cada lado).
+     - O menor aumento é um par de 2,5: +5 kg se a carga registrada é o total, +2,5 kg se é por lado.
+     - Calcular sempre a partir da carga atual.
+   - Kettlebell: 4, 6, 8, 10, 12, 14, 16, 20, 24, 28, 32 kg.
+   - Peso corporal: não sugerir carga. Sugerir repetições, ou adicionar anilha quando fizer sentido.
+   - Incremento configurado pelo usuário:
+     - Se o usuário mudou o incremento de carga do exercício (o "CARGA · 2,5" abaixo dos botões + e −, em `LoadRepsStepper.vue`/`ExerciseActiveCard.vue`), esse valor tem prioridade.
+     - Se for só o valor padrão, o passo dos botões + e − passa a seguir o tipo de equipamento (ex.: halteres acima de 10 kg sobem de 2 em 2).
+
+4. **Serviço PHP determinístico (`app/Services/`):**
+   - Recebe o equipamento, a forma de registro e a carga atual.
+   - Devolve as próximas cargas válidas acima e abaixo.
+   - Testes unitários incluindo: halteres 10 → 12 (nunca 10,5); halteres 8 → 9; máquina 45 → 50; barra (carga total) 40 → 45.
+
+5. **Ajustes no prompt da IA:**
+   - Informar o tipo de equipamento e a lista de cargas válidas próximas, e exigir que ela escolha somente dessa lista.
+   - Aplicar progressão dupla: quando o próximo peso válido for um salto grande para aquele exercício (comum em halteres leves e máquinas), sugerir primeiro aumentar repetições dentro da faixa e só subir a carga ao atingir o topo da faixa.
+   - Reduções de carga também só para valores válidos.
+   - Manter a lógica e o tom atuais das sugestões, mudando só o necessário.
+
+6. **Rede de segurança:**
+   - Depois da resposta da IA, arredondar a carga sugerida para o valor válido mais próximo (em caso de empate, o menor).
+   - Registrar em log quando esse arredondamento acontecer.
+
+7. **Custo de IA:**
+   - Não aumentar o número de chamadas à IA por série. A única chamada extra permitida é a classificação do equipamento, uma vez por exercício.
+
+## Acceptance Criteria
+1. Nenhuma sugestão mostrada ao usuário tem carga inexistente para o equipamento.
+2. Os testes unitários do serviço de cargas válidas passam, incluindo: halteres 10 → 12 (nunca 10,5); halteres 8 → 9; máquina 45 → 50; barra (carga total) 40 → 45.
+3. As sugestões de exercícios que já funcionavam continuam coerentes (os testes existentes de progressão continuam passando).
+4. Testes cobrindo: classificação por palavra-chave, fallback para a IA uma única vez (sem reclassificar exercício já classificado), arredondamento de segurança com log, passo dos botões + e − seguindo o equipamento quando o incremento é o padrão, e exercício sem classificação (`outro`) mantendo o comportamento atual.
+5. Nenhuma tela ou campo pede ao usuário para escolher o equipamento; a classificação é 100% automática.
+6. Nenhuma chamada extra à IA por série; a única chamada nova é a classificação de equipamento, uma vez por exercício.
+7. A migration é aditiva (coluna nova que aceita nulo); nenhum dado existente é alterado.
+8. O resumo final descreve como a progressão funciona hoje e como a carga é registrada em cada tipo de exercício.
+9. `php artisan test` passa em 100% de toda a suíte.
+10. `tests/Architecture/ArchitecturalRulesTest.php` passa sem violações.
+11. `npm run build` compila com zero erros.
+
+# Phase 43: IA Preparada para Troca de Exercícios e de Programa
+
+Quando o programa mudar ou um exercício novo for adicionado, a IA sugere uma carga inicial realista com base em exercícios parecidos que o usuário já fez.
+
+## Regras Obrigatórias (Produção)
+- O Setwave está em produção (Render + Neon) com dados reais de usuários. Nenhuma mudança pode apagar, alterar ou colocar em risco dados existentes.
+- Migrations só aditivas: criar tabela nova ou adicionar coluna que aceite nulo. Nunca remover, renomear ou mudar o tipo de colunas ou tabelas. Nunca apagar ou reescrever registros existentes.
+- Seguir as regras do projeto: nada de cores hex em arquivos `.vue`; usar os tokens do `resources/css/design-tokens.css` e os componentes `Base*` (`resources/js/Components/UI/`).
+- Rodar os testes existentes e criar testes para o que for novo.
+- Não fazer deploy nem git push.
+
+## Tasks
+1. **Histórico e sugestões ligados ao exercício, não ao programa (verificar e corrigir se necessário):**
+   - Trocar ou editar o programa não pode fazer o usuário perder o histórico de um exercício que continua existindo.
+   - Se os exercícios forem identificados por nome, reconhecer o mesmo exercício quando a diferença for só maiúsculas, acentos, espaços ou abreviações comuns ("c/" = "com"), sem alterar os dados salvos.
+   - Descrever o que foi encontrado no resumo final da fase.
+
+2. **Complementar a classificação da Phase 42:**
+   - Adicionar grupo muscular principal e padrão de movimento.
+   - Exemplos de padrão: empurrar horizontal, empurrar vertical, puxar horizontal, puxar vertical, agachamento, dobradiça de quadril, flexão de cotovelo, extensão de cotovelo, elevação lateral, panturrilha.
+   - Mesma lógica da Phase 42: palavras-chave primeiro, IA uma única vez se preciso, salvar, migration aditiva. Reaproveitar o enum `MuscleGroup` existente quando o grupo muscular já estiver disponível.
+
+3. **Exercício sem histórico:**
+   - Buscar até 5 exercícios parecidos já feitos pelo usuário (mesmo padrão de movimento e grupo muscular, priorizando os mais recentes).
+   - Mandar para a IA um resumo curto: o exercício novo (nome, equipamento, padrão de movimento) e, para cada exercício parecido, a melhor série recente (carga × repetições e data).
+   - Não mandar o histórico inteiro.
+
+4. **Orientar a IA, no prompt, a ajustar a carga pelas diferenças entre o exercício novo e o parecido:**
+   - Halteres usam carga por halter bem menor que a barra no mesmo movimento.
+   - Máquinas guiadas costumam permitir mais carga que peso livre.
+   - Unilateral usa menos carga que bilateral.
+   - Inclinado usa menos carga que reto.
+   - Mais amplitude, mais instabilidade ou técnica mais difícil pedem menos carga.
+   - Isolado usa menos carga que composto.
+   - Na primeira sessão, ser conservador: melhor começar um pouco leve e subir na próxima.
+
+5. **Mostrar a sugestão:**
+   - A carga sugerida passa pelo serviço de cargas válidas da Phase 42.
+   - Mostrar ao usuário o motivo em uma linha, por exemplo: "Baseado em Supino Reto com Barra (40 kg × 8)".
+
+6. **Sem nenhum exercício parecido:**
+   - Não inventar número. Mostrar "Primeira vez: escolha uma carga em que você faça as repetições com boa técnica".
+
+7. **Transição para a progressão normal:**
+   - Depois que o exercício novo tiver histórico próprio, a progressão normal assume.
+
+## Acceptance Criteria
+1. Testes cobrindo três casos:
+   - Exercício novo com exercício parecido no histórico: a IA recebe só o resumo curto (até 5 parecidos, melhor série recente de cada), a carga passa pelo serviço de cargas válidas e o motivo em uma linha é exibido.
+   - Exercício novo sem nenhum parecido: nenhum número inventado; aparece "Primeira vez: escolha uma carga em que você faça as repetições com boa técnica".
+   - Troca de programa mantendo o histórico dos exercícios que continuam.
+2. Depois que o exercício novo tem histórico próprio, a progressão normal da Phase 42 assume.
+3. Migrations aditivas apenas; nenhum dado salvo é alterado (inclusive nomes de exercícios).
+4. O resumo final descreve o que foi encontrado sobre a ligação do histórico com exercício/programa.
+5. `php artisan test` passa em 100% de toda a suíte.
+6. `tests/Architecture/ArchitecturalRulesTest.php` passa sem violações.
+7. `npm run build` compila com zero erros.
+
+# Phase 44: Página de Histórico de Treinos (Somente Leitura)
+
+Uma página com a lista dos treinos FINALIZADOS do usuário e o detalhe de cada um (exercícios e séries executadas). Esta phase é só leitura; editar e excluir vêm na Phase 45.
+
+## Regras Obrigatórias (Produção)
+- O app está em produção (Render + Neon) com dados reais de usuários. Nenhum dado existente pode ser perdido ou alterado por deploy. Migrations somente aditivas (criar tabela nova ou adicionar coluna que aceite nulo; nunca remover, renomear ou mudar o tipo de colunas/tabelas; nunca apagar ou reescrever registros existentes).
+- Não mudar o comportamento do que já funciona hoje além do que a phase pede. O fluxo do treino em andamento (série atual, timer, descanso, sugestão de carga, botão Finalizar) deve continuar igual.
+- Usar o design system existente (componentes `Base*` em `resources/js/Components/UI/`, tokens de `resources/css/design-tokens.css`, nenhum hex literal em `.vue`), mobile-first, textos em pt-BR, funcionando bem em Android e iPhone.
+- Cada usuário só vê, edita e exclui os próprios treinos, com checagem no backend (não só na tela), seguindo o padrão de autorização do projeto.
+- Tudo que é calculado a partir das séries (volume total, referência "Última", sugestões de carga/progressão, recordes, histórico por exercício, estatísticas) deve refletir edições e exclusões. Descobrir se esses valores são calculados na hora ou salvos no banco; se forem salvos, recalcular.
+- Rodar os testes existentes e criar testes para o que for novo. Não fazer deploy nem git push.
+
+## Tasks
+1. **Reinvestigar o código antes de implementar:**
+   - As Phases 40 a 43 mudam o treino em andamento, a IA de progressão e a classificação de exercícios. Antes de escrever qualquer código, reler o estado atual de: models e migrations de `WorkoutSession`/`SetLog`/`Workout`/`Exercise`, `WorkoutSessionService`, `ExerciseHistoryService`, `DashboardAnalyticsService`, `ProgressiveOverloadService`, rotas em `routes/web.php`, a navegação (`Components/Navigation/Sidebar.vue`, `Layouts/AuthenticatedLayout.vue`) e a página de histórico por exercício que já existe (`Pages/Exercises/History.vue`).
+   - Referência do que existia quando esta phase foi escrita (confirmar, pode ter mudado): sessão finalizada = `workout_sessions.completed_at` preenchido; em andamento = `completed_at` nulo; séries em `set_logs` (carga pode ser nula e aparece como "—kg"); `workout_id` da sessão pode ser nulo se a ficha foi excluída (`nullOnDelete`).
+   - Se a Phase 41 ("Finalizar exercício") já estiver implementada, respeitar a regra dela: séries não feitas não existem no histórico.
+
+2. **Lista de treinos finalizados:**
+   - Somente treinos FINALIZADOS do usuário autenticado, mais recentes primeiro.
+   - Cada item com um resumo: data, nome do treino e o que mais já existir de dado aproveitável (ex.: quantidade/nomes de exercícios, volume total, duração). Tratar sessões cuja ficha foi excluída (nome ausente) com um texto neutro, sem quebrar a tela.
+   - Paginação ou carregamento incremental se fizer sentido para o volume de dados.
+   - Estado vazio amigável quando o usuário ainda não finalizou nenhum treino.
+   - O treino em andamento NÃO aparece aqui; ele continua sendo usado só pela tela de treino.
+
+3. **Acesso pela navegação atual do app:**
+   - Adicionar a entrada "Histórico" na navegação existente, sem reorganizar os itens atuais.
+
+4. **Tela de detalhe do treino:**
+   - Exercícios e séries executadas (carga × reps), na ordem em que fazem sentido para o usuário.
+   - Somente leitura nesta phase.
+   - Se fizer sentido, ligar cada exercício à página de histórico por exercício que já existe, reaproveitando-a em vez de duplicar.
+   - Acessar o detalhe de um treino de outro usuário (ou de um treino em andamento) deve ser bloqueado no backend.
+
+5. **Offline:**
+   - O app é offline-first (ver `resources/pwa/sw.js`). Esta phase não precisa sintetizar o histórico offline, mas abrir a página sem conexão não pode travar nem quebrar o app: mostrar um estado amigável ou o que já estiver em cache. Verificar como o Service Worker trata rotas novas antes de decidir.
+
+## Acceptance Criteria
+1. A página lista apenas treinos finalizados do próprio usuário, mais recentes primeiro, com data, nome e resumo.
+2. O treino em andamento não aparece na lista.
+3. O detalhe mostra exercícios e séries executadas (carga × reps), incluindo séries sem carga exibidas de forma coerente com o resto do app.
+4. Estado vazio amigável quando não há treinos finalizados.
+5. A página é acessível pela navegação atual do app.
+6. Testes de Feature cobrindo: lista só com finalizados do próprio usuário e em ordem; detalhe de treino de outro usuário bloqueado (403/404); treino em andamento fora da lista.
+7. O fluxo do treino em andamento continua igual (testes existentes passando).
+8. `php artisan test` passa em 100% de toda a suíte.
+9. `tests/Architecture/ArchitecturalRulesTest.php` passa sem violações.
+10. `npm run build` compila com zero erros.
+
+# Phase 45: Editar e Excluir no Histórico de Treinos
+
+No detalhe de um treino do histórico (Phase 44), permitir editar carga e repetições de qualquer série, excluir um exercício de um treino e excluir um treino inteiro. Motivo: treinos feitos só para testar funcionalidades poluem o histórico real.
+
+## Regras Obrigatórias (Produção)
+- O app está em produção (Render + Neon) com dados reais de usuários. Nenhum dado existente pode ser perdido ou alterado por deploy. Migrations somente aditivas (criar tabela nova ou adicionar coluna que aceite nulo; nunca remover, renomear ou mudar o tipo de colunas/tabelas; nunca apagar ou reescrever registros existentes).
+- Não mudar o comportamento do que já funciona hoje além do que a phase pede. O fluxo do treino em andamento (série atual, timer, descanso, sugestão de carga, botão Finalizar) deve continuar igual.
+- Usar o design system existente (componentes `Base*` em `resources/js/Components/UI/`, tokens de `resources/css/design-tokens.css`, nenhum hex literal em `.vue`), mobile-first, textos em pt-BR, funcionando bem em Android e iPhone.
+- Cada usuário só vê, edita e exclui os próprios treinos, com checagem no backend (não só na tela), seguindo o padrão de autorização do projeto.
+- Tudo que é calculado a partir das séries (volume total, referência "Última", sugestões de carga/progressão, recordes, histórico por exercício, estatísticas) deve refletir edições e exclusões. Descobrir se esses valores são calculados na hora ou salvos no banco; se forem salvos, recalcular.
+- Rodar os testes existentes e criar testes para o que for novo. Não fazer deploy nem git push.
+
+## Tasks
+1. **Reinvestigar o código antes de implementar:**
+   - Reler o estado atual da Phase 44 (páginas, rotas, controller/service do histórico) e de tudo que lê `set_logs`/`workout_sessions`.
+   - Mapear TODOS os pontos que calculam algo a partir das séries e confirmar se calculam na hora ou guardam resultado. Quando esta phase foi escrita, os cálculos eram feitos na hora (`WorkoutSessionService::getLastLogsForExercises`, `ExerciseHistoryService` — histórico, volume e recorde —, `ProgressiveOverloadService`, `DashboardAnalyticsService`), mas existiam cópias no aparelho: `lastLogs` no IndexedDB (via `/api/sync/state`) e páginas Inertia no cache do Service Worker. Confirmar e tratar o que existir no momento.
+   - Verificar como a sincronização offline grava séries (`SyncService`, fila `sync_queue`), para garantir que nada editado ou excluído aqui seja recriado por uma ação antiga da fila.
+
+2. **Editor de série como componente reutilizável:**
+   - Criar um componente de edição de série (carga e repetições) com `defineProps`/`defineEmits`, reaproveitando os controles de ajuste +/− e os incrementos que o treino em andamento já usa (sem duplicar lógica).
+   - Deve aceitar série sem carga (hoje exibida como "—kg").
+   - Ele será reutilizado pela Phase 46 dentro do treino em andamento; desenhar o contrato (props/eventos) pensando nisso, sem acoplar ao histórico.
+
+3. **Editar série no detalhe do treino:**
+   - Editar carga e repetições de qualquer série de um treino finalizado.
+   - Validação no backend em FormRequest (valores coerentes com os que o app já aceita ao registrar uma série).
+   - Checagem de posse no backend.
+
+4. **Excluir exercício de um treino e excluir treino inteiro:**
+   - Toda exclusão pede confirmação clara antes (usando o modal/confirmação `Base*` já existente no projeto), dizendo o que será excluído.
+   - Preferir exclusão recuperável (soft delete) se se encaixar bem no código atual — o projeto ainda não usava soft delete quando esta phase foi escrita; avaliar o impacto em consultas existentes, índices únicos e no `updateOrCreate` de séries antes de decidir. Se usar, só com colunas novas que aceitem nulo.
+   - Em qualquer caso, itens excluídos somem de todas as telas e de todos os cálculos (volume, "Última", sugestões de carga/progressão, recordes, histórico por exercício, estatísticas/dashboard, sequência de dias).
+   - Excluir treino ou exercício do histórico NÃO exclui a ficha (`Workout`) nem o exercício do catálogo.
+
+5. **Refletir as mudanças em todo o app:**
+   - Depois de editar/excluir, os valores derivados mostram o novo estado — no servidor e nas cópias do aparelho (atualizar/invalidar o que for preciso, reaproveitando os mecanismos que já existem, como a invalidação de cache do Service Worker e o `/api/sync/state`).
+
+6. **Offline:**
+   - Editar e excluir no histórico podem exigir conexão nesta phase. Sem conexão, informar de forma amigável e não perder nem corromper nada.
+
+## Acceptance Criteria
+1. Editar carga/reps de uma série no detalhe atualiza a série e todos os valores derivados (volume, "Última", sugestões, recordes, histórico por exercício, estatísticas).
+2. Excluir um exercício de um treino remove as séries dele desse treino de todas as telas e cálculos, sem excluir a ficha nem o exercício do catálogo.
+3. Excluir um treino inteiro o remove do histórico e de todos os cálculos, sem excluir a ficha.
+4. Toda exclusão pede confirmação clara; cancelar não altera nada.
+5. Nenhum usuário consegue editar ou excluir séries/exercícios/treinos de outro usuário (testado no backend).
+6. Uma ação antiga da fila offline não recria nada que foi excluído.
+7. O editor de série é um componente reutilizável, com contrato por props/eventos, pronto para a Phase 46.
+8. Testes de Feature cobrindo: editar série (e o reflexo em "Última"/histórico por exercício/recorde), excluir exercício de um treino, excluir treino, bloqueio entre usuários, e os cálculos ignorando itens excluídos.
+9. Migrations, se existirem, são somente aditivas; nenhum dado existente é alterado no deploy.
+10. O fluxo do treino em andamento continua igual (testes existentes passando).
+11. `php artisan test` passa em 100% de toda a suíte.
+12. `tests/Architecture/ArchitecturalRulesTest.php` passa sem violações.
+13. `npm run build` compila com zero erros.
+
+# Phase 46: Editar Série Já Concluída Durante o Treino
+
+No treino em andamento, tocar em um card de série concluída abre a edição daquela série (carga e reps). Caso de uso: a pessoa concluiu a série "no automático", sem ajustar peso ou reps.
+
+## Regras Obrigatórias (Produção)
+- O app está em produção (Render + Neon) com dados reais de usuários. Nenhum dado existente pode ser perdido ou alterado por deploy. Migrations somente aditivas (criar tabela nova ou adicionar coluna que aceite nulo; nunca remover, renomear ou mudar o tipo de colunas/tabelas; nunca apagar ou reescrever registros existentes).
+- Não mudar o comportamento do que já funciona hoje além do que a phase pede. O fluxo do treino em andamento (série atual, timer, descanso, sugestão de carga, botão Finalizar) deve continuar igual.
+- Usar o design system existente (componentes `Base*` em `resources/js/Components/UI/`, tokens de `resources/css/design-tokens.css`, nenhum hex literal em `.vue`), mobile-first, textos em pt-BR, funcionando bem em Android e iPhone.
+- Cada usuário só vê, edita e exclui os próprios treinos, com checagem no backend (não só na tela), seguindo o padrão de autorização do projeto.
+- Tudo que é calculado a partir das séries (volume total, referência "Última", sugestões de carga/progressão, recordes, histórico por exercício, estatísticas) deve refletir edições e exclusões. Descobrir se esses valores são calculados na hora ou salvos no banco; se forem salvos, recalcular.
+- Rodar os testes existentes e criar testes para o que for novo. Não fazer deploy nem git push.
+
+## Tasks
+1. **Reinvestigar o código antes de implementar:**
+   - Reler o estado atual do treino em andamento (`Pages/WorkoutSessions/Active.vue` e os componentes em `Components/WorkoutSessions/`), já com as mudanças das Phases 40 a 45: cards de série, controles +/− e incrementos, timer, descanso, "Finalizar exercício".
+   - Reler o editor de série criado na Phase 45 e reaproveitá-lo.
+   - Entender como uma série concluída é salva online e offline (rota de registrar série, fila `sync_queue`, registro local da sessão ativa no IndexedDB, cópia local usada pelo volume total). Quando esta phase foi escrita, registrar de novo a mesma série (`exercise_id` + `set_number`) atualizava o registro existente em vez de duplicar — confirmar se continua assim e, se sim, preferir reaproveitar esse caminho.
+
+2. **Abrir a edição a partir do card de série concluída:**
+   - Tocar em um card de série concluída abre a edição daquela série (carga e reps), reaproveitando o editor da Phase 45 e os mesmos controles de ajuste +/− com os incrementos atuais.
+   - Funcionar também para séries salvas sem carga (hoje aparecem como "—kg").
+   - Cards de séries não concluídas mantêm o comportamento atual.
+
+3. **Salvar e cancelar:**
+   - Salvar atualiza o card, o volume total e tudo que depender daquela série.
+   - Cancelar sem salvar não altera nada.
+   - Funcionar online e offline, como o resto do treino em andamento, sem duplicar séries na sincronização.
+
+4. **Isolamento do fluxo atual:**
+   - Editar uma série anterior NÃO muda a série atual, o contador de séries, o timer nem o descanso em andamento.
+   - Não inicia descanso, não toca alarme e não avança exercício.
+
+## Acceptance Criteria
+1. Tocar em um card de série concluída abre o editor com a carga e as reps salvas (ou vazio/"—kg" quando não havia carga).
+2. Salvar atualiza o card, o volume total e os valores derivados daquela série (inclusive depois, no histórico e em "Última").
+3. Cancelar não altera nada.
+4. Editar uma série anterior não muda a série atual, o contador de séries, o timer nem o descanso em andamento.
+5. Funciona online e offline, sem criar série duplicada após sincronizar.
+6. O editor usado é o mesmo componente da Phase 45, com os mesmos controles +/− e incrementos.
+7. Testes cobrindo: atualização de série já concluída sem duplicar (online e via sincronização), bloqueio de edição de série de outro usuário no backend.
+8. O fluxo do treino em andamento continua igual para quem não edita nada (testes existentes passando).
+9. `php artisan test` passa em 100% de toda a suíte.
+10. `tests/Architecture/ArchitecturalRulesTest.php` passa sem violações.
+11. `npm run build` compila com zero erros.
