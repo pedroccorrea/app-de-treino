@@ -33,3 +33,4 @@
 2026-09-17 09:31:23 | Fase 37 | 38a9b6b | 37: Resiliência de Sincronização, Validação Idempotente e Segurança Tenant-Scoped
 2026-09-19 16:43:28 | Fase 38 | 5806a43 | Offline-First Definitivo — Sessão Contínua, Sincronização Resiliente e Causa Raiz Real do "Só Atualiza Quando a Internet Volta"
 2026-09-27 17:28:26 | Fase 40 | 871688e | 40: Total de Séries na Tela de Descanso
+2026-09-27 17:34:12 | Fase 41 | de0a09b | 41: Botão "Finalizar Exercício"
