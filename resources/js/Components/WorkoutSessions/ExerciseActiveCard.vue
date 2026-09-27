@@ -63,6 +63,12 @@ const props = defineProps({
         type: Boolean,
         default: false,
     },
+    // true quando o usuário encerrou o exercício pelo "Finalizar exercício"
+    // antes de concluir todas as séries planejadas.
+    isFinishedEarly: {
+        type: Boolean,
+        default: false,
+    },
 });
 
 defineEmits([
@@ -74,6 +80,7 @@ defineEmits([
     'next-exercise',
     'finish-workout',
     'add-extra-set',
+    'finish-exercise',
     'apply-overload-suggestion',
     'dismiss-overload-suggestion',
 ]);
@@ -280,7 +287,9 @@ const historyUrl = computed(() =>
             <div class="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-center">
                 <p class="text-2xl">🎉</p>
                 <p class="mt-1 font-bold text-emerald-400">Exercício concluído!</p>
-                <p class="text-xs text-gray-500 mt-0.5">Todas as séries foram registradas.</p>
+                <p class="text-xs text-gray-500 mt-0.5">
+                    {{ isFinishedEarly ? 'Só as séries feitas foram registradas.' : 'Todas as séries foram registradas.' }}
+                </p>
             </div>
 
             <button
@@ -312,6 +321,19 @@ const historyUrl = computed(() =>
             class="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-gray-700 py-2.5 text-sm text-gray-400 transition hover:border-violet-500/50 hover:text-violet-400"
         >
             + Adicionar série extra
+        </button>
+
+        <!-- Encerrar o exercício sem concluir todas as séries: mesmo formato
+             tracejado e discreto do "+ Adicionar série extra", só que tingido
+             pelo acento para se diferenciar sem competir com o "Concluir Série". -->
+        <button
+            v-if="!isExerciseDone"
+            type="button"
+            @click="$emit('finish-exercise')"
+            :class="canAddExtraSet ? 'mt-3' : 'mt-4'"
+            class="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-accent-muted py-2.5 text-sm text-accent-label transition hover:border-border-accent hover:text-accent-text-soft"
+        >
+            Finalizar exercício
         </button>
     </div>
 </template>

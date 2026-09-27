@@ -1,4 +1,5 @@
 <script setup>
+import ConfirmationModal from '@/Components/ConfirmationModal.vue';
 import Sidebar from '@/Components/Navigation/Sidebar.vue';
 import ExerciseActiveCard from '@/Components/WorkoutSessions/ExerciseActiveCard.vue';
 import ExerciseOverviewDrawer from '@/Components/WorkoutSessions/ExerciseOverviewDrawer.vue';
@@ -182,6 +183,10 @@ const savedSets = ref({}); // { [exerciseId]: Set<setNumber> }
 // Extra sets added dynamically
 const extraSets = ref({});
 
+// finishedEarly[exerciseId] = true quando o exercício foi encerrado pelo
+// "Finalizar exercício" antes de todas as séries planejadas serem feitas.
+const finishedEarly = ref({});
+
 const initSetsForExercise = (exercise) => {
     const exId = exercise.id;
 
@@ -242,6 +247,7 @@ const isSetSaved = (exId, n) => savedSets.value[exId]?.has(n) ?? false;
 const getSetState = (exId, n) => setStates.value[exId]?.[n] ?? 'waiting';
 
 const isExerciseDone = (exercise) => {
+    if (finishedEarly.value[exercise.id]) return true;
     const total = totalSetsForExercise(exercise);
     if (total === 0) return false;
     for (let n = 1; n <= total; n++) {
@@ -505,6 +511,9 @@ const setReps = (exercise, setNumber, value) => {
 // ─── Add extra set ────────────────────────────────────────────────────────────
 const addExtraSet = (exercise) => {
     const exId = exercise.id;
+    // Uma série extra depois de "Finalizar exercício" reabre o exercício:
+    // ele volta a exigir a conclusão dessa nova série.
+    delete finishedEarly.value[exId];
     extraSets.value[exId] = (extraSets.value[exId] ?? 0) + 1;
     const newSetNum = totalSetsForExercise(exercise);
     const previous = setInputs.value[exId]?.[newSetNum - 1];
@@ -515,6 +524,44 @@ const addExtraSet = (exercise) => {
     };
     setStates.value[exId][newSetNum] = 'waiting';
     autoStartNextSet(exercise);
+};
+
+// ─── Finish exercise early ("Finalizar exercício") ───────────────────────────
+// Encerra o exercício com as séries feitas até aqui. É uma decisão só de
+// interface: nada é enviado ao servidor nem à fila offline — as séries
+// concluídas já foram persistidas uma a uma por `completeSet()`, e as não
+// feitas simplesmente nunca viram SetLog (logo ficam fora de volume,
+// histórico, estatísticas e da análise de progressão da IA).
+const showFinishExerciseModal = ref(false);
+
+const currentDoneSetsCount = computed(() =>
+    currentExercise.value ? (savedSets.value[currentExercise.value.id]?.size ?? 0) : 0,
+);
+
+const finishExerciseModalTitle = computed(() =>
+    `Finalizar exercício com ${currentDoneSetsCount.value} de ${currentTotalSets.value ?? 0} séries feitas?`,
+);
+
+const finishExerciseEarly = (exercise) => {
+    const exId = exercise.id;
+    showFinishExerciseModal.value = false;
+
+    // Descarta a série em execução: volta a "waiting" e o cronômetro zera.
+    for (const n in setStates.value[exId] ?? {}) {
+        if (setStates.value[exId][n] === 'running') setStates.value[exId][n] = 'waiting';
+    }
+    resetExerciseTimer();
+
+    // O total planejado encolhe até a última série feita — assim o
+    // progresso do cabeçalho, o drawer e o stepper contam só o que foi feito.
+    const doneNumbers = [...(savedSets.value[exId] ?? [])];
+    const lastDone = doneNumbers.length ? Math.max(...doneNumbers) : 0;
+    extraSets.value[exId] = lastDone - (exercise.target_sets ?? 3);
+    finishedEarly.value[exId] = true;
+
+    // A partir daqui `isExerciseDone()` é true: o card cai no mesmo estado
+    // de "Exercício concluído" que a última série concluída produz, com o
+    // "Próximo Exercício" ou o "Finalizar Treino" (se for o último).
 };
 
 // ─── Navigation ───────────────────────────────────────────────────────────────
@@ -773,6 +820,7 @@ watch(
                 :is-exercise-done="isExerciseDone(currentExercise)"
                 :is-last-exercise="isLastExercise"
                 :can-add-extra-set="canAddExtraSet"
+                :is-finished-early="!!finishedEarly[currentExercise.id]"
                 @adjust-weight="(n, delta) => adjustWeight(currentExercise, n, delta)"
                 @adjust-reps="(n, delta) => adjustReps(currentExercise, n, delta)"
                 @set-weight="(n, value) => setWeight(currentExercise, n, value)"
@@ -781,6 +829,7 @@ watch(
                 @next-exercise="tryNavigateTo(currentIndex + 1)"
                 @finish-workout="showFinishModal = true"
                 @add-extra-set="addExtraSet(currentExercise)"
+                @finish-exercise="showFinishExerciseModal = true"
                 @apply-overload-suggestion="applyOverloadSuggestion"
                 @dismiss-overload-suggestion="dismissOverloadSuggestion"
             />
@@ -837,6 +886,17 @@ watch(
         :volume-display="volumeDisplay"
         @confirm="finishWorkout"
         @cancel="showFinishModal = false"
+    />
+
+    <ConfirmationModal
+        :show="showFinishExerciseModal"
+        :title="finishExerciseModalTitle"
+        description="As séries não feitas não serão registradas."
+        confirm-text="Finalizar"
+        cancel-text="Cancelar"
+        :danger="false"
+        @confirm="currentExercise && finishExerciseEarly(currentExercise)"
+        @cancel="showFinishExerciseModal = false"
     />
 
     <Sidebar :open="sidebarOpen" @close="sidebarOpen = false" @logout="logout" />
