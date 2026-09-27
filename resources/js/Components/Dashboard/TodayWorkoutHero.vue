@@ -3,6 +3,7 @@ import BaseBadge from '@/Components/UI/BaseBadge.vue';
 import BaseButton from '@/Components/UI/BaseButton.vue';
 import BaseCard from '@/Components/UI/BaseCard.vue';
 import SectionLabel from '@/Components/UI/SectionLabel.vue';
+import { unlockRestAlarm } from '@/Utils/restAlarm';
 import { router } from '@inertiajs/vue3';
 import { ref } from 'vue';
 
@@ -16,6 +17,8 @@ const props = defineProps({
 const starting = ref(false);
 
 const startWorkout = () => {
+    // Toque do usuário: libera o áudio do alarme de descanso para o treino.
+    unlockRestAlarm();
     starting.value = true;
     router.post(
         route('workouts.start', props.workout.id),

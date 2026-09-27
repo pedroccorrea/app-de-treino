@@ -5,8 +5,12 @@
 // mídia ativa e conhecida do sistema operacional. Um elemento <audio loop>
 // tocando uma faixa de silêncio, anunciado via Media Session API, mantém
 // esse canal "acordado" durante toda a contagem — é o que garante que o
-// apito agendado em `useAudioChime.js` realmente chegue a soar no segundo
+// alarme agendado em `useRestAlarm.js` realmente chegue a soar no segundo
 // zero, mesmo com o celular no bolso e a tela bloqueada.
+//
+// Hoje o alarme em si é um <audio> (ver `restAlarm.js`); este loop continua
+// servindo para manter a página "tocando mídia" durante a contagem, o que no
+// Android evita que o navegador congele o setTimeout que dispara o alarme.
 
 // WAV de 0,1s de silêncio (PCM 8-bit mono, 8kHz) — pequeno o bastante para
 // embutir como data URI, sem depender de um arquivo de asset separado.
@@ -46,7 +50,23 @@ export function startAudioKeepAlive() {
     audio.play().catch(() => {});
 }
 
-// Pausa o loop de silêncio — chamado logo após o apito de alerta soar,
+// "Desbloqueia" o elemento do loop de silêncio: precisa rodar DENTRO de um
+// toque do usuário. Celulares só deixam um <audio> tocar sozinho depois que
+// ele tocou uma vez a partir de um gesto — e `startAudioKeepAlive()` roda
+// depois de uma ida ao servidor, fora do gesto.
+export function unlockAudioKeepAlive() {
+    const audio = getSilentAudioElement();
+    if (!audio.paused) return;
+
+    audio.play()
+        .then(() => {
+            audio.pause();
+            audio.currentTime = 0;
+        })
+        .catch(() => {});
+}
+
+// Pausa o loop de silêncio — chamado logo antes do alarme tocar,
 // já que a sessão de áudio não precisa mais ficar acordada.
 export function stopAudioKeepAlive() {
     if (!silentAudioEl) return;

@@ -11,6 +11,8 @@ const APP_SHELL_ASSETS = [
     '/favicon.ico',
     '/icons/icon-192x192.png',
     '/icons/icon-512x512.png',
+    // Alarme de fim do descanso: precisa tocar mesmo sem rede.
+    '/sounds/rest-alarm.wav',
 ];
 
 // Servido apenas quando o navegador pede uma navegação de documento completo
@@ -1420,8 +1422,12 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // Demais assets do app shell (manifest, ícones).
-    if (APP_SHELL_ASSETS.includes(requestUrl.pathname)) {
+    // Demais assets do app shell (manifest, ícones, som do alarme). Pedidos
+    // com Range (o <audio> do Safari) seguem para a rede: o cache só guarda a
+    // resposta inteira, e o Safari recusa um 200 onde esperava um 206. O
+    // frontend toca o alarme a partir de um blob baixado por `fetch` comum
+    // (ver `resources/js/Utils/restAlarm.js`), que cai aqui sem Range.
+    if (APP_SHELL_ASSETS.includes(requestUrl.pathname) && !request.headers.has('Range')) {
         event.respondWith(cacheFirst(request, APP_SHELL_CACHE));
     }
 });

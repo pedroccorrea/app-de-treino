@@ -13,6 +13,7 @@ import {
     getActiveSessionSetLogs,
     getCachedLastLogs,
 } from '@/Utils/offlineStorage';
+import { unlockRestAlarm } from '@/Utils/restAlarm';
 import { Head, Link, router } from '@inertiajs/vue3';
 import { computed, onMounted, ref } from 'vue';
 
@@ -186,6 +187,9 @@ onMounted(async () => {
 });
 
 const startWorkout = async () => {
+    // Toque do usuário: libera o áudio do alarme de descanso para o treino.
+    unlockRestAlarm();
+
     if (!navigator.onLine) {
         starting.value = true;
 

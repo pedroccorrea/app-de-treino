@@ -7,18 +7,20 @@ import FinishWorkoutModal from '@/Components/WorkoutSessions/FinishWorkoutModal.
 import NavigationGuardModal from '@/Components/WorkoutSessions/NavigationGuardModal.vue';
 import RestTimerOverlay from '@/Components/WorkoutSessions/RestTimerOverlay.vue';
 import SessionHeader from '@/Components/WorkoutSessions/SessionHeader.vue';
-import { useAudioChime } from '@/Composables/useAudioChime';
 import { useNowTicker } from '@/Composables/useNowTicker';
 import { useOfflineSync } from '@/Composables/useOfflineSync';
+import { useRestAlarm } from '@/Composables/useRestAlarm';
 import { useWakeLock } from '@/Composables/useWakeLock';
 import { cacheLastLogs, cacheWorkout, generateUuid, recordActiveSessionSetLog } from '@/Utils/offlineStorage';
+import { playRestAlarm, stopRestAlarm, unlockRestAlarm } from '@/Utils/restAlarm';
+import { getKeepScreenOn } from '@/Utils/workoutPreferences';
 import { Head, router } from '@inertiajs/vue3';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 
 // ─── Relógio compartilhado (delta de Date.now(), resiliente a segundo plano) ──
 const { now } = useNowTicker();
 const { requestWakeLock, releaseWakeLock } = useWakeLock();
-const { scheduleChime, cancelChime } = useAudioChime();
+const { armRestAlarm, disarmRestAlarm } = useRestAlarm();
 // Agrupa esta sessão (já real no banco) na fila de sincronização caso a
 // conexão caia no meio do treino — nesse cenário `client_session_id` é só
 // uma etiqueta de agrupamento, já que `session_id` real é sempre enviado.
@@ -422,6 +424,11 @@ const clientSessionId = computed(() =>
 );
 
 const completeSet = async (exercise, setNumber) => {
+    // Ainda dentro do toque em "Concluir série": é a chance de liberar o
+    // áudio antes do descanso — `startRest()` só roda depois do servidor
+    // responder, fora do gesto, e aí o celular recusaria o play().
+    unlockRestAlarm();
+
     const exId = exercise.id;
     const inputs = setInputs.value[exId]?.[setNumber] ?? {};
     savingSet.value = `${exId}-${setNumber}`;
@@ -537,9 +544,11 @@ const confirmNavigation = () => {
 // ─── Rest timer (full-screen overlay) ────────────────────────────────────────
 // Baseado em delta contra um `targetEndTimestamp`: o tempo restante é sempre
 // recalculado a partir de Date.now(), então volta correto instantaneamente
-// ao ligar a tela. O bipe sonoro é agendado à parte, direto no relógio de
-// hardware do AudioContext (ver useAudioChime), então toca no segundo exato
-// mesmo que este timer de UI atrase ou fique pausado em segundo plano.
+// ao ligar a tela. O alarme (<audio>, ver `Utils/restAlarm.js`) é disparado
+// por dois caminhos que convergem em `finishRestNaturally()`: um setTimeout
+// armado para o timestamp final (preciso enquanto a página está viva) e o
+// `watch` do tempo restante (que cobre a volta de uma tela bloqueada, quando
+// o navegador pode ter congelado o setTimeout).
 const restActive = ref(false);
 const restTotal = ref(60);
 const restTargetEnd = ref(null);
@@ -554,25 +563,44 @@ const restPercent = computed(() =>
     restTotal.value > 0 ? (restRemaining.value / restTotal.value) * 100 : 0,
 );
 
+const closeRest = () => {
+    restActive.value = false;
+    restTargetEnd.value = null;
+    autoStartNextSet(currentExercise.value);
+};
+
+// Idempotente: o setTimeout e o watch podem chamar no mesmo fim de descanso.
+const finishRestNaturally = () => {
+    if (!restActive.value || restEndHandled) return;
+    restEndHandled = true;
+    disarmRestAlarm();
+    playRestAlarm();
+    // O overlay fecha, mas o alarme segue tocando até o fim do arquivo.
+    setTimeout(() => {
+        if (restActive.value) closeRest();
+    }, 800);
+};
+
 const startRest = (seconds = 60) => {
+    stopRestAlarm();
     restTotal.value = seconds;
     restTargetEnd.value = Date.now() + seconds * 1000;
     restActive.value = true;
     restEndHandled = false;
-    scheduleChime(seconds);
+    armRestAlarm(restTargetEnd.value, finishRestNaturally);
 };
 
 const addRestTime = (secs) => {
     restTotal.value += secs;
     restTargetEnd.value += secs * 1000;
-    scheduleChime(Math.max(0, (restTargetEnd.value - Date.now()) / 1000));
+    armRestAlarm(restTargetEnd.value, finishRestNaturally);
 };
 
+// "Encerrar Descanso" (toque do usuário): encerra sem alarme.
 const endRest = () => {
-    cancelChime();
-    restActive.value = false;
-    restTargetEnd.value = null;
-    autoStartNextSet(currentExercise.value);
+    disarmRestAlarm();
+    stopRestAlarm();
+    closeRest();
 };
 
 const restDisplay = computed(() => {
@@ -582,15 +610,11 @@ const restDisplay = computed(() => {
     return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
 });
 
-// Assim que o tempo restante chega a zero (recalculado a cada tick do
-// relógio compartilhado, inclusive ao voltar da visibilidade oculta),
-// dispara a vibração e fecha o overlay — o áudio já foi agendado à parte.
+// Recalculado a cada tick do relógio compartilhado — inclusive no instante
+// em que a tela volta a ficar visível: se o descanso acabou enquanto o
+// celular estava bloqueado, o alarme toca na hora.
 watch(restRemaining, (seconds) => {
-    if (restActive.value && seconds <= 0 && !restEndHandled) {
-        restEndHandled = true;
-        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-        setTimeout(() => { endRest(); }, 800);
-    }
+    if (restActive.value && seconds <= 0) finishRestNaturally();
 });
 
 // ─── Finish workout ───────────────────────────────────────────────────────────
@@ -601,6 +625,7 @@ watch(restRemaining, (seconds) => {
 // a sincronização real acontece em segundo plano assim que a conexão voltar.
 const finishWorkout = async () => {
     finishing.value = true;
+    releaseWakeLock();
 
     // Encerra a sessão ativa localmente (IndexedDB) e expurga as páginas
     // Inertia cacheadas de imediato — antes mesmo da confirmação do
@@ -631,7 +656,14 @@ const finishWorkout = async () => {
 onMounted(() => {
     sortedExercises.value.forEach((ex) => initSetsForExercise(ex));
     autoStartNextSet(currentExercise.value);
-    requestWakeLock();
+    // Opt-in em Perfil → "Manter tela ligada durante o treino".
+    if (getKeepScreenOn()) requestWakeLock();
+
+    // Sessão reaberta (reload, banner, retomada offline): não houve o toque
+    // em "Iniciar Treino" nesta página, então o primeiro toque em qualquer
+    // lugar da tela é que libera o áudio do alarme.
+    document.addEventListener('touchend', unlockRestAlarm, { capture: true, once: true });
+    document.addEventListener('click', unlockRestAlarm, { capture: true, once: true });
 
     // Sessão sem WorkoutSession real no servidor ainda: não há o que
     // consultar para sugestões de sobrecarga. O card já sabe se degradar
@@ -673,7 +705,8 @@ onMounted(() => {
 
 onUnmounted(() => {
     releaseWakeLock();
-    cancelChime();
+    document.removeEventListener('touchend', unlockRestAlarm, { capture: true });
+    document.removeEventListener('click', unlockRestAlarm, { capture: true });
 });
 
 // A sessão abriu offline (sugestões puladas) e a rede voltou: busca agora.
