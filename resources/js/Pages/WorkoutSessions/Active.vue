@@ -367,6 +367,10 @@ const currentNextWaitingSet = computed(() =>
     currentExercise.value ? nextWaitingSet(currentExercise.value) : null,
 );
 
+const currentTotalSets = computed(() =>
+    currentExercise.value ? totalSetsForExercise(currentExercise.value) : null,
+);
+
 // ─── Start a set (waiting → running) ─────────────────────────────────────────
 const startSet = (exercise, setNumber) => {
     const exId = exercise.id;
@@ -806,6 +810,7 @@ watch(
         :display="restDisplay"
         :percent="restPercent"
         :next-set-number="currentNextWaitingSet"
+        :total-sets="currentTotalSets"
         @end-rest="endRest"
         @add-time="addRestTime"
     />

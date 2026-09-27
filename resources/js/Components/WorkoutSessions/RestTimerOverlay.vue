@@ -16,6 +16,11 @@ defineProps({
         type: Number,
         default: null,
     },
+    // Mesmo total exibido em "SÉRIE X DE Y" (planejadas + extras).
+    totalSets: {
+        type: Number,
+        default: null,
+    },
 });
 
 defineEmits(['end-rest', 'add-time']);
@@ -66,7 +71,7 @@ defineEmits(['end-rest', 'add-time']);
                         v-if="nextSetNumber"
                         class="mt-4 text-center text-xs text-gray-500"
                     >
-                        Próxima: Série {{ nextSetNumber }}
+                        Próxima: Série {{ nextSetNumber }}<template v-if="totalSets">/{{ totalSets }}</template>
                     </p>
                 </div>
             </div>
