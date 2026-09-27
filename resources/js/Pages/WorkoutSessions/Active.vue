@@ -637,7 +637,10 @@ onMounted(() => {
     // consultar para sugestões de sobrecarga. O card já sabe se degradar
     // graciosamente para o estado 'error' (mesmo texto neutro exibido quando
     // a chamada real falha por qualquer outro motivo).
-    if (props.offlineOnly) {
+    // Sem conexão também não: a chamada só produziria um 504 "Indisponível
+    // offline" no console. O `watch(isOnline)` abaixo busca assim que a rede
+    // voltar.
+    if (props.offlineOnly || !isOnline.value) {
         overloadStatus.value = 'error';
     } else {
         fetchOverloadSuggestions();
@@ -671,6 +674,13 @@ onMounted(() => {
 onUnmounted(() => {
     releaseWakeLock();
     cancelChime();
+});
+
+// A sessão abriu offline (sugestões puladas) e a rede voltou: busca agora.
+watch(isOnline, (online) => {
+    if (online && !props.offlineOnly && overloadStatus.value === 'error' && overloadSuggestions.value.length === 0) {
+        fetchOverloadSuggestions();
+    }
 });
 
 watch(

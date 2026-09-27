@@ -168,9 +168,14 @@ test('a user cannot sync actions against another users workout or session', func
         ],
     ];
 
+    // A ficha alheia nunca é aceita — só deixa de derrubar o lote (a ação
+    // fica de fora de `results`).
     $this->actingAs($intruder)
         ->postJson(route('sync.workout-sessions'), ['actions' => $actions])
-        ->assertStatus(422);
+        ->assertOk()
+        ->assertExactJson(['results' => []]);
+
+    expect(WorkoutSession::where('user_id', $intruder->id)->count())->toBe(0);
 });
 
 test('starting an offline session closes any ghost session left open for the same user', function () {

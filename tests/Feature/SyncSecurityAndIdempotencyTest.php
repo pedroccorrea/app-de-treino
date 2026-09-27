@@ -100,7 +100,7 @@ test('resubmitting the exact same batch is idempotent and never duplicates the s
     expect(SetLog::where('client_uuid', 'set-uuid-idem-1')->count())->toBe(1);
 });
 
-test('a batch cannot sync a workout session belonging to another user, and nothing from that batch is persisted', function () {
+test('a batch cannot sync a workout session belonging to another user: the action is left out of results and nothing is persisted', function () {
     $this->seed(ExerciseSeeder::class);
     $owner = User::factory()->create();
     $intruder = User::factory()->create();
@@ -119,7 +119,8 @@ test('a batch cannot sync a workout session belonging to another user, and nothi
 
     $this->actingAs($intruder)
         ->postJson(route('sync.workout-sessions'), ['actions' => $actions])
-        ->assertStatus(422);
+        ->assertOk()
+        ->assertExactJson(['results' => []]);
 
     expect(WorkoutSession::where('workout_id', $workout->id)->count())->toBe(0);
     expect(WorkoutSession::where('user_id', $intruder->id)->count())->toBe(0);
@@ -155,7 +156,8 @@ test('an owned session but a foreign orphan set inside the same batch is rejecte
 
     $this->actingAs($intruder)
         ->postJson(route('sync.workout-sessions'), ['actions' => $actions])
-        ->assertStatus(422);
+        ->assertOk()
+        ->assertExactJson(['results' => []]);
 
     expect($ownerSession->refresh()->setLogs()->count())->toBe(0);
 });

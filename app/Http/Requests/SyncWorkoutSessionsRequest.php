@@ -2,7 +2,6 @@
 
 namespace App\Http\Requests;
 
-use App\Models\Workout;
 use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
@@ -65,30 +64,24 @@ class SyncWorkoutSessionsRequest extends FormRequest
     }
 
     /**
-     * Valida a referência a uma ficha dentro de uma ação de sessão, nas duas
-     * formas possíveis: ID real do banco (escopado ao usuário) ou
-     * `tmp_<client_uuid>` de uma ficha criada offline — que a esta altura já
-     * deve existir no banco, carimbada com aquele mesmo `client_uuid`.
+     * Checagem ESTRUTURAL da referência a uma ficha: ID inteiro do banco ou
+     * `tmp_<client_uuid>` de uma ficha criada offline. Existência e posse
+     * (tenant-scoped) NÃO são verificadas aqui de propósito — isso acontece
+     * ação a ação em `SyncService::startSession`. Uma referência irresolúvel
+     * (ficha excluída, de outro usuário ou ainda não sincronizada) não pode
+     * derrubar o lote inteiro com 422: ela só fica de fora de `results`.
      */
-    private function validateWorkoutReference(mixed $value, Closure $fail): void
+    private function validateWorkoutReferenceFormat(mixed $value, Closure $fail): void
     {
-        if ($value === null) {
+        if ($value === null || is_int($value)) {
             return;
         }
 
-        $query = Workout::query()->where('user_id', $this->user()->id);
-
-        if (is_string($value) && str_starts_with($value, 'tmp_')) {
-            if (! $query->where('client_uuid', substr($value, 4))->exists()) {
-                $fail('A ficha desta sessão de treino ainda não foi sincronizada.');
-            }
-
+        if (is_string($value) && preg_match('/^tmp_[A-Za-z0-9-]{1,60}$/', $value) === 1) {
             return;
         }
 
-        if (! is_int($value) || ! $query->whereKey($value)->exists()) {
-            $fail('A ficha informada para esta sessão de treino não foi encontrada.');
-        }
+        $fail('A referência de ficha desta sessão de treino tem formato inválido.');
     }
 
     /**
@@ -99,6 +92,13 @@ class SyncWorkoutSessionsRequest extends FormRequest
      * criada online e o dispositivo apenas perdeu conexão no meio do treino.
      * `client_set_id` identifica de forma única (UUID) cada série registrada,
      * suportando reenvios idempotentes de `log_set`.
+     *
+     * Estas regras cobrem só a ESTRUTURA do payload (tipos e campos
+     * obrigatórios). Existência e posse de `session_id`, `workout_id` e
+     * `exercise_id` são verificadas ação a ação no `SyncService`: uma
+     * referência inválida isola apenas aquela ação (fica de fora de
+     * `results`), em vez de devolver 422 para o lote inteiro — o que travava
+     * a fila local para sempre atrás de uma única ação velha.
      *
      * @return array<string, ValidationRule|array<mixed>|string>
      */
@@ -112,32 +112,18 @@ class SyncWorkoutSessionsRequest extends FormRequest
             'actions.*.client_set_id' => ['nullable', 'string', 'max:64'],
             'actions.*.occurred_at' => ['required', 'date'],
 
-            'actions.*.session_id' => [
-                'nullable',
-                'integer',
-                Rule::exists('workout_sessions', 'id')->where('user_id', $this->user()->id),
-            ],
+            'actions.*.session_id' => ['nullable', 'integer'],
 
             // `workout_id` aceita duas formas: o ID real do banco, ou a
             // referência temporária `tmp_<client_uuid>` de uma ficha criada
-            // offline e treinada antes de qualquer sincronização. O segundo
-            // caso é resolvido pelo `client_uuid` já gravado no banco — as
-            // mutações de recurso são sempre sincronizadas primeiro (ver
-            // `flushQueue` em `useOfflineSync.js`).
+            // offline e treinada antes de qualquer sincronização.
             'actions.*.workout_id' => [
                 'required_if:actions.*.type,start_session',
                 'nullable',
-                fn (string $attribute, mixed $value, Closure $fail) => $this->validateWorkoutReference($value, $fail),
+                fn (string $attribute, mixed $value, Closure $fail) => $this->validateWorkoutReferenceFormat($value, $fail),
             ],
 
-            'actions.*.exercise_id' => [
-                'required_if:actions.*.type,log_set',
-                'nullable',
-                'integer',
-                Rule::exists('exercises', 'id')->where(function ($query) {
-                    $query->whereNull('user_id')->orWhere('user_id', $this->user()->id);
-                }),
-            ],
+            'actions.*.exercise_id' => ['required_if:actions.*.type,log_set', 'nullable', 'integer'],
             'actions.*.set_number' => ['required_if:actions.*.type,log_set', 'nullable', 'integer', 'min:1', 'max:50'],
             'actions.*.reps' => ['required_if:actions.*.type,log_set', 'nullable', 'integer', 'min:1', 'max:999'],
             'actions.*.weight' => ['nullable', 'numeric', 'min:0', 'max:999.99'],

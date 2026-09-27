@@ -1023,3 +1023,41 @@ Duas correções independentes, versionadas em commits separados: o layout do PW
 1. No PWA instalado no iPhone, nenhuma barra superior, banner ou Toast fica escondido sob o notch/Dynamic Island.
 2. Em aparelhos sem notch e no desktop (`env(safe-area-inset-top)` = 0) o layout permanece idêntico ao anterior.
 3. `npm run build` compila com zero erros.
+
+## Etapa 39.2 — Isolamento por Ação Também na Validação: `workout_id` Irresolúvel Não Derruba Mais o Lote
+### Tasks
+1. **Causa raiz (investigada com os dados reais do banco local):**
+   - Cenário: treino iniciado ONLINE (sessão 66), séries e finalização feitas offline, reconexão. `POST /api/sync/workout-sessions` voltava 422 com `actions.3.workout_id` e `actions.6.workout_id` — "A ficha informada para esta sessão de treino não foi encontrada." — e a sessão continuava aberta no servidor, trazendo o banner "Treino em andamento" de volta.
+   - Nesse fluxo o front só emite `log_set`/`finish_session` (sem `workout_id`): as ações 3 e 6 eram `start_session` ANTIGOS presos na `sync_queue`, apontando para fichas que não existem mais no banco (ex.: `POST /workouts/1/start` enfileirado pelo `start_session_fallback` do Service Worker; o usuário só possui as fichas 38, 41, 42 e 43). Descartadas as hipóteses de referência `tmp_` (mensagem seria outra) e de `workout_id` ausente no `active_session` local.
+   - A Etapa 38.3 isolou falhas por ação dentro do `SyncService`, mas `SyncWorkoutSessionsRequest` continuava verificando existência/posse de `workout_id`, `session_id` e `exercise_id` ANTES do processamento — uma única referência irresolúvel ainda derrubava o lote inteiro com 422.
+
+2. **Request apenas estrutural (`SyncWorkoutSessionsRequest.php`):**
+   - Removidas as checagens de existência/posse (`Rule::exists` de `session_id` e `exercise_id`, closure de `workout_id`). `workout_id` só valida o formato (inteiro ou `tmp_<uuid>`). O 422 fica reservado para tipos errados e campos obrigatórios ausentes.
+
+3. **Posse verificada por ação no `SyncService.php`, com segurança tenant-scoped mantida:**
+   - `resolveOwnedWorkoutForSession()` resolve o `workout_id` (ID real ou `tmp_<client_uuid>`) estritamente via `$user->workouts()`; `logSet()` aceita apenas exercícios `Exercise::forUser($user)`. Referência alheia, excluída ou órfã é logada (`Log::warning`, com `action_uuid` e `workout_id`) e fica fora de `results` — nunca é aceita, só deixa de derrubar o lote.
+   - Cada ação roda em sua própria `DB::transaction()` aninhada (savepoint): uma falha no meio desfaz só o que aquela ação escreveu.
+
+4. **Política de falha definitiva na fila (`useOfflineSync.js`, `offlineStorage.js`):**
+   - Cada ação recusada pelo servidor (fora de `results` numa resposta 200, ou apontada por um 422 estrutural via `actions.N.*`) ganha +1 em `attempts` (`registerSyncRejections`). Ao atingir `MAX_SYNC_ATTEMPTS` (5), sai da fila com `console.warn` de falha definitiva. Quedas de rede e 5xx não contam tentativa. `attempts` é removido do payload enviado.
+
+5. **Banner e reconexão (`ActiveSessionBanner.vue`, `useOfflineSync.js`):**
+   - Com um `finish_session` pendente na fila para a sessão que o servidor diz estar aberta (`hasPendingFinishForSession`), o estado local vence a prop do servidor e o banner fica oculto, mesmo online. Reavaliado a cada mudança de `pendingCount`.
+   - Ao reconectar (`handleReconnect`), a fila é esvaziada ANTES de `router.reload()` recarregar as props do servidor.
+
+6. **Sugestões de sobrecarga offline (`WorkoutSessions/Active.vue`):**
+   - `overload-suggestions` não é mais requisitado sem conexão (evita o 504 "Indisponível offline" no console); um `watch(isOnline)` busca as sugestões quando a rede volta.
+
+7. **Service Worker:** nenhuma alteração em `resources/pwa/sw.js`, portanto sem incremento de `CACHE_VERSION` — navegação e requisições Inertia são network-first e os assets do Vite têm hash no nome, então o novo bundle chega aos PWAs instalados na próxima abertura online. Nenhuma migration nova.
+
+### Acceptance Criteria
+1. `tests/Feature/SyncActionIsolationTest.php` valida que:
+   - Um lote com uma ação de `workout_id` inválido + ações válidas retorna 200, processa as válidas e omite só a inválida de `results`.
+   - Uma sessão iniciada online, com séries e `finish_session` enviados em lote posterior (misturados a `start_session` velhos nas posições 3 e 6), é finalizada no servidor sem 422.
+   - Um `workout_id` (ou exercício personalizado) de outro usuário continua rejeitado — fora de `results` — sem afetar o resto do lote.
+   - Um payload estruturalmente inválido continua recebendo 422.
+2. Após finalizar offline um treino iniciado online e reconectar, o banner "Treino em andamento" não reaparece.
+3. Ações permanentemente irresolúveis saem da `sync_queue` após 5 rejeições, com log no console.
+4. `php artisan test` passa em 100% de toda a suíte.
+5. `tests/Architecture/ArchitecturalRulesTest.php` passa sem violações.
+6. `npm run build` compila com zero erros.

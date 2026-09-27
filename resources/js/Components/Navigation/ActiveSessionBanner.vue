@@ -1,5 +1,6 @@
 <script setup>
-import { getActiveSession } from '@/Utils/offlineStorage';
+import { useOfflineSync } from '@/Composables/useOfflineSync';
+import { getActiveSession, hasPendingFinishForSession } from '@/Utils/offlineStorage';
 import { Link, router, usePage } from '@inertiajs/vue3';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 
@@ -19,20 +20,38 @@ const serverSession = computed(() => page.props.activeWorkoutSession ?? null);
 const isOnline = ref(typeof navigator === 'undefined' || navigator.onLine);
 const localSession = ref(null);
 
+// true quando a sessão que o SERVIDOR diz estar aberta já foi finalizada
+// neste aparelho, mas o `finish_session` ainda está na fila esperando
+// sincronizar. É a janela logo após reconectar: sem isto, a prop velha do
+// servidor trazia o banner de volta para um treino já encerrado.
+const serverSessionFinishedLocally = ref(false);
+
+// A contagem da fila muda a cada enfileiramento e a cada lote confirmado —
+// é o sinal para reavaliar se aquele `finish_session` ainda está pendente.
+const { pendingCount } = useOfflineSync();
+
 async function syncLocalSession() {
     try {
         localSession.value = await getActiveSession();
+        serverSessionFinishedLocally.value = await hasPendingFinishForSession(serverSession.value?.id);
     } catch (_) {
         localSession.value = null;
+        serverSessionFinishedLocally.value = false;
     }
 }
 
 // Online a prop do servidor manda, com o registro local como rede de
 // segurança para o caso clássico de `navigator.onLine` mentir (o navegador
-// se diz conectado, mas a resposta veio do cache do Service Worker).
-const activeSession = computed(() =>
-    isOnline.value ? (serverSession.value ?? localSession.value) : localSession.value,
-);
+// se diz conectado, mas a resposta veio do cache do Service Worker). A
+// exceção é um `finish_session` pendente para a sessão do servidor: aí o
+// estado local vence, mesmo online.
+const activeSession = computed(() => {
+    if (!isOnline.value) return localSession.value;
+
+    const trustedServerSession = serverSessionFinishedLocally.value ? null : serverSession.value;
+
+    return trustedServerSession ?? localSession.value;
+});
 
 // Sessão nascida offline: o `id` ainda é o UUID gerado no aparelho, não
 // existe `WorkoutSession` no servidor, e a tela do treino é renderizada por
@@ -71,6 +90,7 @@ const showBanner = computed(() => Boolean(sessionHref.value) && !isOnSessionPage
 // prop — exatamente o que nunca acontece numa navegação offline servida pelo
 // cache, deixando o botão flutuante sumido até a rede voltar.
 watch(serverSession, syncLocalSession, { immediate: true });
+watch(pendingCount, syncLocalSession);
 
 function updateOnlineStatus() {
     isOnline.value = navigator.onLine;

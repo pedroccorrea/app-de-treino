@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Exercise;
 use App\Models\User;
 use App\Models\Workout;
 use App\Models\WorkoutProgram;
@@ -74,10 +75,15 @@ class SyncService
                 $clientSessionId = $action['client_session_id'];
                 $occurredAt = Carbon::parse($action['occurred_at']);
 
+                // Cada ação roda no seu próprio savepoint (transação
+                // aninhada): se ela falhar no meio do caminho, só o que ELA
+                // escreveu é desfeito — as ações anteriores do lote seguem
+                // confirmadas.
                 try {
-                    $session = match ($action['type']) {
+                    $session = DB::transaction(fn () => match ($action['type']) {
                         'start_session' => $this->startSession($user, $action, $occurredAt),
                         'log_set' => $this->logSet(
+                            $user,
                             $this->resolveSession($user, $sessionsByClientId, $clientSessionId, $action['session_id'] ?? null),
                             $action,
                             $occurredAt
@@ -86,12 +92,14 @@ class SyncService
                             $this->resolveSession($user, $sessionsByClientId, $clientSessionId, $action['session_id'] ?? null),
                             $occurredAt
                         ),
-                    };
+                    });
                 } catch (Throwable $e) {
                     Log::warning('[sync] Ação de sessão de treino não pôde ser sincronizada agora; permanece na fila do dispositivo.', [
                         'user_id' => $user->id,
+                        'action_uuid' => $action['uuid'],
                         'action_type' => $action['type'],
                         'client_session_id' => $clientSessionId,
+                        'workout_id' => $action['workout_id'] ?? null,
                         'message' => $e->getMessage(),
                     ]);
 
@@ -131,18 +139,7 @@ class SyncService
             return $existing;
         }
 
-        // Escopo estrito por usuário via relação, não uma query solta em
-        // `Workout` — garante que um `workout_id` de outro usuário (ou
-        // órfão) nunca seja aceito aqui, mesmo que a validação da request já
-        // tenha barrado a maioria dos casos antes de chegar neste ponto.
-        // `tmp_<client_uuid>` é a ficha criada offline e treinada na mesma
-        // janela sem internet: ela já foi criada pelo lote de mutações de
-        // recurso, sincronizado antes deste.
-        $rawWorkoutId = $action['workout_id'];
-
-        $workout = is_string($rawWorkoutId) && str_starts_with($rawWorkoutId, 'tmp_')
-            ? $user->workouts()->where('client_uuid', substr($rawWorkoutId, 4))->firstOrFail()
-            : $user->workouts()->whereKey($rawWorkoutId)->firstOrFail();
+        $workout = $this->resolveOwnedWorkoutForSession($user, $action['workout_id']);
 
         $this->workoutSessionService->closeOpenSessionsForUser($user);
 
@@ -158,9 +155,41 @@ class SyncService
         return $session;
     }
 
-    private function logSet(?WorkoutSession $session, array $action, Carbon $occurredAt): WorkoutSession
+    /**
+     * Esta é a ÚNICA barreira de posse do `workout_id` de um `start_session`
+     * (a request só valida o formato). Escopo estrito por usuário via
+     * relação, não uma query solta em `Workout`: uma ficha de outro usuário,
+     * excluída ou órfã nunca é aceita — ela só isola esta ação, sem derrubar
+     * o lote. `tmp_<client_uuid>` é a ficha criada offline e treinada na
+     * mesma janela sem internet: ela já foi criada pelo lote de mutações de
+     * recurso, sincronizado antes deste.
+     */
+    private function resolveOwnedWorkoutForSession(User $user, int|string $rawWorkoutId): Workout
+    {
+        $workout = is_string($rawWorkoutId) && str_starts_with($rawWorkoutId, 'tmp_')
+            ? $user->workouts()->where('client_uuid', substr($rawWorkoutId, 4))->first()
+            : $user->workouts()->whereKey($rawWorkoutId)->first();
+
+        if ($workout === null) {
+            throw ValidationException::withMessages([
+                'workout_id' => 'A ficha informada para esta sessão de treino não foi encontrada.',
+            ]);
+        }
+
+        return $workout;
+    }
+
+    private function logSet(User $user, ?WorkoutSession $session, array $action, Carbon $occurredAt): WorkoutSession
     {
         $session = $this->requireSession($session);
+
+        // Mesma barreira tenant-scoped que a request fazia antes: só
+        // exercícios do catálogo global ou criados por este usuário.
+        if (! Exercise::query()->forUser($user)->whereKey($action['exercise_id'])->exists()) {
+            throw ValidationException::withMessages([
+                'exercise_id' => 'O exercício informado para esta série não foi encontrado.',
+            ]);
+        }
 
         $log = $session->setLogs()->updateOrCreate(
             [

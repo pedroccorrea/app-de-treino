@@ -658,6 +658,52 @@ export async function removeSyncActions(uuids) {
     });
 }
 
+/**
+ * Registra mais uma rejeição do servidor para cada ação em `uuids` (ação
+ * fora de `results` numa resposta 200, ou apontada pelo 422 estrutural).
+ * As que atingem `maxAttempts` são consideradas falha definitiva: saem da
+ * fila e são devolvidas para quem chamou poder registrá-las no console.
+ * Sem esse teto, uma ação permanentemente irresolúvel (ex.: `start_session`
+ * de uma ficha já excluída) seria reenviada para sempre.
+ */
+export async function registerSyncRejections(uuids, maxAttempts) {
+    if (uuids.length === 0) return [];
+
+    const wanted = new Set(uuids);
+    const rows = (await getSyncQueue()).filter((row) => wanted.has(row.uuid));
+    const discarded = [];
+
+    await withStore(STORE_SYNC_QUEUE, 'readwrite', (store) => {
+        for (const row of rows) {
+            const attempts = (row.attempts ?? 0) + 1;
+
+            if (attempts >= maxAttempts) {
+                store.delete(row.uuid);
+                discarded.push({ ...row, attempts });
+            } else {
+                store.put({ ...row, attempts });
+            }
+        }
+    });
+
+    return discarded;
+}
+
+/**
+ * Há um `finish_session` ainda não sincronizado para esta sessão real? Nesse
+ * caso o aparelho já sabe que o treino acabou, mesmo que o servidor (que
+ * ainda não recebeu a finalização) continue dizendo que ele está aberto.
+ */
+export async function hasPendingFinishForSession(sessionId) {
+    if (sessionId === null || sessionId === undefined) return false;
+
+    const id = String(sessionId);
+    const rows = await getSyncQueue();
+
+    return rows.some((row) => row.type === 'finish_session'
+        && (String(row.session_id) === id || row.client_session_id === id || row.client_session_id === `session-${id}`));
+}
+
 export async function clearSyncQueue() {
     return withStore(STORE_SYNC_QUEUE, 'readwrite', (store) => {
         store.clear();

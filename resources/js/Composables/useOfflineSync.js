@@ -1,3 +1,4 @@
+import { router } from '@inertiajs/vue3';
 import { ref } from 'vue';
 import * as offlineStorage from '@/Utils/offlineStorage';
 import { evictInertiaCache } from '@/Utils/serviceWorkerMessaging';
@@ -44,21 +45,61 @@ async function forgetTemporaryRecord(result) {
     }
 }
 
+// Quantas vezes o servidor pode RECUSAR uma mesma ação (resposta recebida,
+// mas a ação ficou de fora de `results` ou foi apontada por um 422) antes de
+// ela ser tratada como falha definitiva e removida da fila. Quedas de rede e
+// erros 5xx não contam: nesses casos o servidor nem chegou a avaliar a ação.
+// A margem acima de 1 existe para rejeições temporárias legítimas — ex.: um
+// `start_session` apontando para `tmp_<uuid>` cuja ficha ainda não subiu.
+const MAX_SYNC_ATTEMPTS = 5;
+
+/**
+ * Índices das ações apontadas por um 422 estrutural (`actions.3.reps` → 3).
+ */
+function rejectedIndexesFrom422(error) {
+    const keys = Object.keys(error?.response?.data?.errors ?? {});
+    const indexes = keys
+        .map((key) => key.match(/^actions\.(\d+)\./)?.[1])
+        .filter((index) => index !== undefined)
+        .map(Number);
+
+    return [...new Set(indexes)];
+}
+
+async function registerRejections(actions) {
+    const discarded = await offlineStorage.registerSyncRejections(
+        actions.map((action) => action.uuid),
+        MAX_SYNC_ATTEMPTS,
+    );
+
+    for (const action of discarded) {
+        console.warn(
+            `[sync] Ação descartada da fila após ${action.attempts} rejeições do servidor (falha definitiva).`,
+            action,
+        );
+    }
+}
+
 /**
  * Envia um grupo de ações (sessões OU mutações de recurso) para `url` e
  * remove da fila local SOMENTE as que o servidor confirmou explicitamente
- * (HTTP 200 com o `uuid` da ação presente em `results`). Qualquer falha —
- * erro de validação (422), erro de servidor (500) ou queda de rede — deixa
- * esse grupo inteiro intacto na fila local: nada é perdido, e a tentativa
- * será repetida no próximo flush. Retorna `true` só quando o grupo inteiro
- * foi confirmado, usado por `flushQueue` para decidir se já pode buscar a
- * foto completa do estado (`fetchAndStoreFullSyncState`).
+ * (HTTP 200 com o `uuid` da ação presente em `results`). As que o servidor
+ * avaliou e recusou ganham +1 tentativa (ver `MAX_SYNC_ATTEMPTS`). Queda de
+ * rede ou erro 5xx deixa o grupo intacto, sem contar tentativa.
+ *
+ * Retorna `{ reachedServer, allSynced }`: `allSynced` decide, em
+ * `flushQueue`, se já dá para buscar a foto completa do estado
+ * (`fetchAndStoreFullSyncState`); `reachedServer` decide se vale recarregar
+ * as props da página atual.
  */
 async function syncActionGroup(url, actions, onResult) {
-    if (actions.length === 0) return true;
+    if (actions.length === 0) return { reachedServer: false, allSynced: true };
+
+    // `attempts` é contabilidade local da fila, não faz parte do contrato.
+    const payload = actions.map(({ attempts, ...action }) => action);
 
     try {
-        const response = await window.axios.post(url, { actions });
+        const response = await window.axios.post(url, { actions: payload });
         const results = response.data?.results ?? [];
 
         if (onResult) {
@@ -67,19 +108,24 @@ async function syncActionGroup(url, actions, onResult) {
             }
         }
 
-        await offlineStorage.removeSyncActions(results.map((result) => result.uuid));
+        const synced = new Set(results.map((result) => result.uuid));
+        await offlineStorage.removeSyncActions([...synced]);
+        await registerRejections(actions.filter((action) => !synced.has(action.uuid)));
 
-        return results.length === actions.length;
+        return { reachedServer: true, allSynced: synced.size === actions.length };
     } catch (error) {
         const status = error?.response?.status;
 
         if (status === 422) {
-            console.error('[sync] Lote rejeitado por validação (422); dados mantidos na fila local para nova tentativa.', error.response?.data);
-        } else {
-            console.error('[sync] Falha ao sincronizar com o servidor; dados mantidos na fila local para nova tentativa.', error);
+            console.error('[sync] Lote rejeitado por validação estrutural (422); dados mantidos na fila local para nova tentativa.', error.response?.data);
+            await registerRejections(rejectedIndexesFrom422(error).map((index) => actions[index]).filter(Boolean));
+
+            return { reachedServer: true, allSynced: false };
         }
 
-        return false;
+        console.warn('[sync] Falha ao sincronizar com o servidor; dados mantidos na fila local para nova tentativa.', error?.message ?? error);
+
+        return { reachedServer: false, allSynced: false };
     }
 }
 
@@ -108,15 +154,19 @@ async function reconcileSyncedSession(result) {
  * estado (`fetchAndStoreFullSyncState`) para que os IDs temporários usados
  * enquanto offline sejam substituídos pelos IDs reais em toda a UI, em
  * silêncio.
+ *
+ * Retorna `true` quando algum lote chegou de fato ao servidor — ou seja, o
+ * estado do servidor pode ter mudado e as props da página atual ficaram
+ * velhas.
  */
 async function flushQueue() {
-    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
-    if (syncing.value) return;
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return false;
+    if (syncing.value) return false;
 
     const actions = await offlineStorage.getSyncQueue();
     if (actions.length === 0) {
         await refreshPendingCount();
-        return;
+        return false;
     }
 
     syncing.value = true;
@@ -128,15 +178,33 @@ async function flushQueue() {
         // treinada na mesma janela sem internet produz um `start_session`
         // que aponta para `tmp_<uuid>`: só depois que a ficha existe de
         // verdade no banco é que essa referência tem como ser resolvida.
-        const resourcesOk = await syncActionGroup(route('sync.mutations'), resourceActions, forgetTemporaryRecord);
-        const sessionsOk = await syncActionGroup(route('sync.workout-sessions'), sessionActions, reconcileSyncedSession);
+        const resources = await syncActionGroup(route('sync.mutations'), resourceActions, forgetTemporaryRecord);
+        const sessions = await syncActionGroup(route('sync.workout-sessions'), sessionActions, reconcileSyncedSession);
 
-        if (sessionsOk && resourcesOk) {
+        if (sessions.allSynced && resources.allSynced) {
             await fetchAndStoreFullSyncState();
         }
+
+        return sessions.reachedServer || resources.reachedServer;
     } finally {
         syncing.value = false;
         await refreshPendingCount();
+    }
+}
+
+/**
+ * Reconexão: primeiro esvazia a fila, SÓ DEPOIS recarrega as props da
+ * página atual. Na ordem inversa, o servidor responderia antes de receber o
+ * `finish_session` feito offline — e a prop `activeWorkoutSession` traria
+ * de volta o banner "Treino em andamento" de um treino já finalizado.
+ */
+async function handleReconnect() {
+    isOnline.value = true;
+
+    const serverStateChanged = await flushQueue();
+
+    if (serverStateChanged) {
+        router.reload();
     }
 }
 
@@ -144,10 +212,7 @@ function registerGlobalListeners() {
     if (listenersRegistered || typeof window === 'undefined') return;
     listenersRegistered = true;
 
-    window.addEventListener('online', () => {
-        isOnline.value = true;
-        flushQueue();
-    });
+    window.addEventListener('online', handleReconnect);
     window.addEventListener('offline', () => {
         isOnline.value = false;
     });
