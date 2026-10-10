@@ -35,3 +35,4 @@
 2026-09-27 17:28:26 | Fase 40 | 871688e | 40: Total de Séries na Tela de Descanso
 2026-09-27 17:34:12 | Fase 41 | de0a09b | 41: Botão "Finalizar Exercício"
 2026-09-27 17:48:04 | Fase 42 | 07f88b5 | 42: IA de Progressão Sugere Apenas Cargas que Existem de Verdade
+2026-10-10 20:52:16 | Fase 43 | 7091db3 | 43: IA Preparada para Troca de Exercícios e de Programa
