@@ -77,20 +77,49 @@ class StartingLoadService
             return collect();
         }
 
+        $similarByExercise = $this->similarWithHistory($user, $exercises);
+
+        $withSimilar = $exercises->filter(fn (Exercise $exercise) => $similarByExercise[$exercise->id]->isNotEmpty())->values();
+        $starting = $withSimilar->isEmpty() ? collect() : $this->askAi($withSimilar, $similarByExercise);
+
+        return $exercises
+            ->map(fn (Exercise $exercise) => $starting->get($exercise->id) ?? $this->firstTime($exercise))
+            ->values();
+    }
+
+    /**
+     * Para cada exercício informado, até $maxSimilar exercícios PARECIDOS que
+     * o usuário já fez (mesmo padrão de movimento e mesmo grupo muscular
+     * principal, os mais recentes primeiro), cada um com o resumo curto do
+     * seu histórico recente. Grafias equivalentes do próprio exercício nunca
+     * contam como "parecido".
+     *
+     * Reaproveitado pela progressão (Phase 48) para complementar exercícios
+     * com histórico próprio curto. Ali $allowAi = false: nenhuma chamada de
+     * IA e nenhuma gravação — o padrão de movimento ainda não classificado é
+     * resolvido só por palavra-chave, em memória.
+     *
+     * @param  Collection<int, Exercise>  $exercises
+     * @return Collection<int, Collection<int, array{exercise: Exercise, summary: RecentPerformanceSummary}>> indexada por exercise_id
+     */
+    public function similarWithHistory(User $user, Collection $exercises, int $maxSimilar = self::MAX_SIMILAR, bool $allowAi = true): Collection
+    {
         $pool = $this->recentlyTrainedExercises($user, $exercises->pluck('id')->all());
 
         if ($pool->isEmpty()) {
-            return $exercises->map(fn (Exercise $exercise) => $this->firstTime($exercise))->values();
+            return $exercises->mapWithKeys(fn (Exercise $exercise) => [$exercise->id => collect()]);
         }
 
-        // Palavras-chave primeiro; no máximo UMA chamada à IA por
-        // classificação (equipamento e padrão de movimento) para o que sobrar
-        // — e só para exercícios que nunca foram classificados.
-        $this->equipmentService->ensureClassified($exercises->concat($pool));
-        $this->movementPatternService->ensureClassified($exercises->concat($pool));
+        if ($allowAi) {
+            // Palavras-chave primeiro; no máximo UMA chamada à IA por
+            // classificação (equipamento e padrão de movimento) para o que
+            // sobrar — e só para exercícios que nunca foram classificados.
+            $this->equipmentService->ensureClassified($exercises->concat($pool));
+            $this->movementPatternService->ensureClassified($exercises->concat($pool));
+        }
 
         $candidatesByExercise = $exercises->mapWithKeys(fn (Exercise $exercise) => [
-            $exercise->id => $this->similarCandidates($exercise, $pool),
+            $exercise->id => $this->similarCandidates($exercise, $pool, $maxSimilar),
         ]);
 
         $summaries = $this->recentPerformanceService->summarize(
@@ -99,17 +128,10 @@ class StartingLoadService
             self::MAX_SESSIONS_PER_SIMILAR,
         );
 
-        $similarByExercise = $candidatesByExercise->map(fn (Collection $candidates) => $candidates
+        return $candidatesByExercise->map(fn (Collection $candidates) => $candidates
             ->filter(fn (Exercise $candidate) => $summaries->has($candidate->id))
             ->map(fn (Exercise $candidate) => ['exercise' => $candidate, 'summary' => $summaries->get($candidate->id)])
             ->values());
-
-        $withSimilar = $exercises->filter(fn (Exercise $exercise) => $similarByExercise[$exercise->id]->isNotEmpty())->values();
-        $starting = $withSimilar->isEmpty() ? collect() : $this->askAi($withSimilar, $similarByExercise);
-
-        return $exercises
-            ->map(fn (Exercise $exercise) => $starting->get($exercise->id) ?? $this->firstTime($exercise))
-            ->values();
     }
 
     /**
@@ -153,25 +175,40 @@ class StartingLoadService
     }
 
     /**
-     * Até 5 candidatos a parecido: mesmo padrão de movimento e mesmo grupo
-     * muscular principal, já em ordem de recência (herdada do pool).
+     * Até $maxSimilar candidatos a parecido: mesmo padrão de movimento e
+     * mesmo grupo muscular principal, já em ordem de recência (herdada do
+     * pool). Uma grafia equivalente do próprio exercício não é "parecido":
+     * ela já é o mesmo exercício.
      *
      * @param  Collection<int, Exercise>  $pool
      * @return Collection<int, Exercise>
      */
-    private function similarCandidates(Exercise $exercise, Collection $pool): Collection
+    private function similarCandidates(Exercise $exercise, Collection $pool, int $maxSimilar): Collection
     {
-        $pattern = $exercise->resolvedMovementPattern();
+        $pattern = $this->movementPatternOf($exercise);
 
         if ($pattern === MovementPattern::Other) {
             return collect();
         }
 
         return $pool
-            ->filter(fn (Exercise $candidate) => $candidate->resolvedMovementPattern() === $pattern
-                && $candidate->primary_muscle_group === $exercise->primary_muscle_group)
-            ->take(self::MAX_SIMILAR)
+            ->filter(fn (Exercise $candidate) => $this->movementPatternOf($candidate) === $pattern
+                && $candidate->primary_muscle_group === $exercise->primary_muscle_group
+                && ! $this->identityService->sameExercise($candidate->name, $exercise->name))
+            ->take($maxSimilar)
             ->values();
+    }
+
+    /**
+     * Padrão salvo; sem classificação, tenta as palavras-chave só em memória
+     * (depois de ensureClassified isso já não acontece: ou está salvo, ou
+     * nem a palavra-chave resolveu).
+     */
+    private function movementPatternOf(Exercise $exercise): MovementPattern
+    {
+        return $exercise->movement_pattern
+            ?? $this->movementPatternService->classifyByKeywords($exercise->name)
+            ?? MovementPattern::Other;
     }
 
     /**

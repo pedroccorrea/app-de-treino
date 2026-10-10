@@ -123,3 +123,27 @@ test('a forma de registro da carga é deduzida do equipamento', function () {
     expect(Equipment::SelectorizedMachine->loadMode())->toBe(LoadMode::Total);
     expect(Equipment::Other->loadMode())->toBe(LoadMode::Total);
 });
+
+// ─── Phase 48: piso (referência) e teto (queda repetida) ───────────────────
+
+test('ceilToValid: menor carga válida que não fica abaixo do valor (piso da referência)', function () {
+    $service = validLoads();
+
+    expect($service->ceilToValid(Equipment::Dumbbells, LoadMode::PerDumbbell, 14, 14))->toBe(14.0);
+    expect($service->ceilToValid(Equipment::Dumbbells, LoadMode::PerDumbbell, 11, 11))->toBe(12.0);
+    expect($service->ceilToValid(Equipment::SelectorizedMachine, LoadMode::Total, 42, 42))->toBe(45.0);
+    expect($service->ceilToValid(Equipment::BarbellPlates, LoadMode::Total, 40, 41))->toBe(45.0);
+    expect($service->ceilToValid(Equipment::Kettlebell, LoadMode::PerDumbbell, 40, 40))->toBe(32.0);
+    expect($service->ceilToValid(Equipment::Other, LoadMode::Total, 41.3, 41.3))->toBe(41.3);
+});
+
+test('floorToValid: maior carga válida que não passa do valor (teto da queda repetida)', function () {
+    $service = validLoads();
+
+    expect($service->floorToValid(Equipment::Dumbbells, LoadMode::PerDumbbell, 14, 14))->toBe(14.0);
+    expect($service->floorToValid(Equipment::Dumbbells, LoadMode::PerDumbbell, 13, 13))->toBe(12.0);
+    expect($service->floorToValid(Equipment::SelectorizedMachine, LoadMode::Total, 48, 48))->toBe(45.0);
+    expect($service->floorToValid(Equipment::BarbellPlates, LoadMode::Total, 40, 44))->toBe(40.0);
+    expect($service->floorToValid(Equipment::Dumbbells, LoadMode::PerDumbbell, 0.5, 0.5))->toBe(1.0);
+    expect($service->floorToValid(Equipment::Other, LoadMode::Total, 41.3, 41.3))->toBe(41.3);
+});

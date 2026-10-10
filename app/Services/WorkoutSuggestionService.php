@@ -10,8 +10,9 @@ use Illuminate\Support\Collection;
 
 /**
  * Junta as duas fontes de sugestão de carga da sessão ativa:
- * - exercícios com histórico próprio → progressão normal da Phase 42
- *   (ProgressiveOverloadService, inalterada);
+ * - exercícios com histórico próprio → progressão normal a partir do
+ *   histórico recente do exercício (ProgressiveOverloadService, Phase 48:
+ *   referência = melhor desempenho recente, não o último treino);
  * - exercícios NOVOS para o usuário → carga inicial por exercícios parecidos
  *   ou "Primeira vez" (StartingLoadService).
  *

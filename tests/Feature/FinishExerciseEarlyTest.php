@@ -156,14 +156,15 @@ test('séries não feitas não chegam à análise de progressão da IA, nem como
 
     app(ProgressiveOverloadService::class)->analyzeWorkout($user, $workout->fresh());
 
+    // Desde a Phase 48 o prompt leva o resumo (melhor série da sessão), não
+    // as séries cruas: a referência sai das 2 séries feitas (50 × 10) e as
+    // 2 ausentes não aparecem em lugar nenhum.
     Http::assertSent(function (Request $request) {
-        $prompt = json_encode($request->data(), JSON_UNESCAPED_UNICODE);
+        $prompt = (string) data_get($request->data(), 'contents.0.parts.0.text');
 
-        return str_contains($prompt, '\"set_number\": 1')
-            && str_contains($prompt, '\"set_number\": 2')
-            && ! str_contains($prompt, '\"set_number\": 3')
-            && ! str_contains($prompt, '\"set_number\": 4')
-            && ! str_contains($prompt, '\"reps\": null')
-            && ! str_contains($prompt, '\"reps\": 0');
+        return preg_match('/"reference_set":\s*\{\s*"weight":\s*50(\.0)?,\s*"reps":\s*10,/', $prompt) === 1
+            && substr_count($prompt, '"date":') === 2 // referência + a única sessão
+            && ! str_contains($prompt, '"reps": null')
+            && ! str_contains($prompt, '"reps": 0');
     });
 });

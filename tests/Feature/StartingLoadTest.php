@@ -222,15 +222,20 @@ test('trocar de programa mantém o histórico dos exercícios que continuam, mes
     ]);
     $newWorkout = slWorkout($user, 'Programa Novo - A', [[$bench, '8-10'], [$sameBench, '8-10']]);
 
-    Http::fake();
+    slFakeAi(['recommendations' => [
+        ['exercise_id' => $bench->id, 'suggested_load' => 45, 'suggested_reps' => 8, 'rationale' => 'Suba um par de anilhas.', 'confidence' => 'high'],
+        ['exercise_id' => $sameBench->id, 'suggested_load' => 45, 'suggested_reps' => 8, 'rationale' => 'Suba um par de anilhas.', 'confidence' => 'high'],
+    ]]);
 
     $suggestions = slSuggestionsFor($user, $newWorkout);
 
     // Nenhum dos dois é tratado como exercício novo: nada de carga estimada
-    // nem de "Primeira vez" (a ficha nova ainda não tem sessões próprias,
-    // então a progressão da Phase 42 também não roda).
-    expect($suggestions)->toBe([]);
-    Http::assertNothingSent();
+    // nem de "Primeira vez". Desde a Phase 48 a progressão normal parte do
+    // histórico do EXERCÍCIO (feito na ficha antiga), numa única chamada.
+    expect(collect($suggestions)->pluck('kind')->all())->toBe(['progressao', 'progressao']);
+    expect(collect($suggestions)->pluck('previous_load')->all())->toEqual([40, 40]);
+    Http::assertSentCount(1);
+    expect(slSentPrompts()[0])->toContain('sobrecarga progressiva')->not->toContain('pela primeira vez');
 
     // O histórico continua aparecendo na sessão da ficha nova.
     $session = $user->workoutSessions()->whereNull('completed_at')->latest('id')->first();
@@ -240,7 +245,9 @@ test('trocar de programa mantém o histórico dos exercícios que continuam, mes
 
     // Ficha que só tem a grafia nova: o histórico da antiga vem junto.
     $onlyAlias = slWorkout($user, 'Programa Novo - B', [[$sameBench, '8-10']]);
-    expect(slSuggestionsFor($user, $onlyAlias))->toBe([]);
+    $aliasSuggestions = slSuggestionsFor($user, $onlyAlias);
+    expect($aliasSuggestions)->toHaveCount(1);
+    expect($aliasSuggestions[0])->toMatchArray(['exercise_id' => $sameBench->id, 'kind' => 'progressao', 'previous_load' => 40]);
     $aliasSession = $user->workoutSessions()->whereNull('completed_at')->latest('id')->first();
     $this->actingAs($user)
         ->get(route('workout-sessions.show', $aliasSession))

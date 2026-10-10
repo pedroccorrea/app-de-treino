@@ -149,6 +149,52 @@ class ValidLoadService
     }
 
     /**
+     * Maior carga válida que NÃO passa de $candidate (ele próprio, se já for
+     * válido). Sem nenhuma válida abaixo, fica com a menor que existe. É o
+     * teto da progressão em queda repetida (Phase 48).
+     */
+    public function floorToValid(Equipment $equipment, LoadMode $mode, float $current, float $candidate): float
+    {
+        if (! $this->isRestricted($equipment)) {
+            return $candidate;
+        }
+
+        $anchor = $this->toCents($current);
+        $cents = $this->toCents($candidate);
+
+        if ($this->isValidCents($equipment, $mode, $anchor, $cents)) {
+            return $this->fromCents($cents);
+        }
+
+        return $this->fromCents($this->belowCents($equipment, $mode, $anchor, $cents)
+            ?? $this->aboveCents($equipment, $mode, $anchor, $cents)
+            ?? $anchor);
+    }
+
+    /**
+     * Menor carga válida que NÃO fica abaixo de $candidate (ele próprio, se
+     * já for válido). Sem nenhuma válida acima, fica com a maior que existe.
+     * É o piso da progressão: a sugestão volta à referência (Phase 48).
+     */
+    public function ceilToValid(Equipment $equipment, LoadMode $mode, float $current, float $candidate): float
+    {
+        if (! $this->isRestricted($equipment)) {
+            return $candidate;
+        }
+
+        $anchor = $this->toCents($current);
+        $cents = $this->toCents($candidate);
+
+        if ($this->isValidCents($equipment, $mode, $anchor, $cents)) {
+            return $this->fromCents($cents);
+        }
+
+        return $this->fromCents($this->aboveCents($equipment, $mode, $anchor, $cents)
+            ?? $this->belowCents($equipment, $mode, $anchor, $cents)
+            ?? $anchor);
+    }
+
+    /**
      * Próxima carga ao tocar + ($direction > 0) ou − ($direction < 0) na
      * sessão ativa. Um incremento configurado pelo usuário tem prioridade;
      * sem ele, o passo segue o equipamento (halteres acima de 10 kg sobem de
