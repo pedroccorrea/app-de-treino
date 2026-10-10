@@ -30,6 +30,10 @@ if (!file_exists($progressFile)) {
     file_put_contents($progressFile, '0');
 }
 
+// --retomar: audita o trabalho que já está no disco (árvore suja) sem chamar o Implementador
+// no 1º ciclo. Usado quando uma execução anterior parou depois do Implementador.
+$resume = in_array('--retomar', $argv, true);
+
 if (isset($argv[1]) && is_numeric($argv[1])) {
     file_put_contents($progressFile, (string) (int) $argv[1]);
 }
@@ -51,7 +55,12 @@ $dirtyCodeFiles = array_filter($dirtyPreflight, function ($line) {
     return !str_starts_with($trimmed, '.phases/') && !str_starts_with($trimmed, '.spec/.active_task.tmp');
 });
 
-if (!empty($dirtyCodeFiles)) {
+if ($resume && empty($dirtyCodeFiles)) {
+    echo "🛑 --retomar exige alterações de código não commitadas para auditar, mas a árvore está limpa.\n";
+    exit(1);
+}
+
+if (!$resume && !empty($dirtyCodeFiles)) {
     echo "🛑 A árvore do git tem alterações de código não commitadas:\n";
     echo implode("\n", $dirtyCodeFiles) . "\n";
     echo "Commite ou descarte antes de rodar o harness.\n";
@@ -102,11 +111,16 @@ while (true) {
 
         file_put_contents($tempTaskFile, $promptContent);
 
-        echo "🤖 Agente 1 (Implementador) aplicando alterações no disco...\n";
-
         $implOutput = [];
         $implCode = 0;
-        exec('claude -p --dangerously-skip-permissions < ' . escapeshellarg($tempTaskFile) . ' 2>&1', $implOutput, $implCode);
+
+        if ($resume) {
+            $resume = false;
+            echo "⏭️  Retomada: pulando o Agente 1 e verificando o trabalho que já está no disco...\n";
+        } else {
+            echo "🤖 Agente 1 (Implementador) aplicando alterações no disco...\n";
+            exec('claude -p --dangerously-skip-permissions < ' . escapeshellarg($tempTaskFile) . ' 2>&1', $implOutput, $implCode);
+        }
 
         $implText = implode("\n", $implOutput);
         echo $implText . "\n";
