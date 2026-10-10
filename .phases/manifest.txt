@@ -41,3 +41,4 @@
 2026-10-10 22:12:59 | Fase 46 | 7faf30d | 46: Editar Série Já Concluída Durante o Treino
 2026-10-10 22:23:51 | Fase 47 | 1f61eae | 47: Repetições Sempre um Número no Treino (Faixa da Ficha Vira Meta)
 2026-10-10 22:38:37 | Fase 48 | 991f0c9 | 48: Sugestões de Progressão que Analisam o Histórico, Não Só o Último Treino
+2026-10-10 22:57:03 | Fase 49 | 8ff9e00 | 49: OpenAI GPT-6 Luna como IA Principal e Gemini 3.8 Flash (Gratuito) como Reserva
