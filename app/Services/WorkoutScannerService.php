@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\DataTransferObjects\RepRange;
 use App\Enums\AiTask;
 use App\Enums\MuscleGroup;
 use App\Exceptions\AiException;
@@ -54,11 +55,14 @@ class WorkoutScannerService
             foreach ($parsed['exercises'] ?? [] as $index => $exerciseData) {
                 $exercise = $this->resolveExercise($exerciseData, $catalog, $user);
 
+                $targetReps = $this->targetRepsText($exerciseData);
+
                 $workout->workoutExercises()->create([
                     'exercise_id' => $exercise->id,
                     'order' => $index,
                     'target_sets' => $exerciseData['target_sets'] ?? null,
-                    'target_reps' => isset($exerciseData['target_reps']) ? (string) $exerciseData['target_reps'] : null,
+                    'target_reps' => $targetReps,
+                    ...RepRange::columnsFor($targetReps),
                     'notes' => $exerciseData['notes'] ?? null,
                 ]);
             }
@@ -75,8 +79,42 @@ class WorkoutScannerService
     }
 
     /**
+     * Texto da meta como a ficha dizia (é o que a pessoa vê). Não confia na
+     * IA: o mínimo/máximo gravados saem SEMPRE desse texto pela regra única
+     * (RepRange). Os números que a IA devolve só servem para remontar o
+     * texto quando ela omitiu o original — e só se forem inteiros válidos,
+     * então "até a falha" continua sem meta numérica.
+     *
+     * @param  array{target_reps?: mixed, target_reps_min?: mixed, target_reps_max?: mixed}  $exerciseData
+     */
+    private function targetRepsText(array $exerciseData): ?string
+    {
+        $text = $exerciseData['target_reps'] ?? null;
+
+        if (is_scalar($text) && ! is_bool($text) && trim((string) $text) !== '') {
+            return mb_substr(trim((string) $text), 0, 50);
+        }
+
+        $positive = ['options' => ['min_range' => 1]];
+        $min = filter_var($exerciseData['target_reps_min'] ?? null, FILTER_VALIDATE_INT, $positive);
+        $max = filter_var($exerciseData['target_reps_max'] ?? null, FILTER_VALIDATE_INT, $positive);
+
+        if ($min === false && $max === false) {
+            return null;
+        }
+
+        $range = RepRange::parse(implode('-', array_filter([$min, $max], fn ($n) => $n !== false)));
+
+        if ($range === null) {
+            return null;
+        }
+
+        return $range->min === $range->max ? (string) $range->min : "{$range->min}-{$range->max}";
+    }
+
+    /**
      * @param  Collection<int, string>  $catalog
-     * @return array{workout_name?: string, exercises?: array<int, array{name: string, target_sets?: int, target_reps?: int|string, muscle_group?: string, notes?: string}>}
+     * @return array{workout_name?: string, exercises?: array<int, array{name: string, target_sets?: int, target_reps?: int|string, target_reps_min?: ?int, target_reps_max?: ?int, muscle_group?: string, notes?: string}>}
      */
     private function transcribeWithAi(UploadedFile $image, Collection $catalog): array
     {
@@ -133,7 +171,11 @@ class WorkoutScannerService
 
         5. SÉRIES E REPETIÇÕES:
            - "S: 3" ou "Séries: 3" -> "target_sets": 3.
-           - "R: 10-12" ou "Reps: 10 a 12" -> "target_reps": "10-12" (preserve faixas de repetições como string).
+           - "target_reps" é a meta EXATAMENTE como escrita na ficha, sempre como string (ex: "10", "8-10", "até a falha").
+           - Separe também a meta em números inteiros:
+             * Número único: "R: 10" -> "target_reps": "10", "target_reps_min": 10, "target_reps_max": 10.
+             * Faixa: "R: 10-12" ou "Reps: 10 a 12" -> "target_reps": "10-12", "target_reps_min": 10, "target_reps_max": 12.
+             * Sem número claro (ex: "até a falha", "AMRAP"): "target_reps" com o texto e "target_reps_min"/"target_reps_max" null. NUNCA invente números.
            - Se houver notas de método/técnica adicionais (ex: "Drop-set na última", "Rest-pause", "Pico de contração 2s"), coloque no campo "notes".
 
         Exercícios já cadastrados no catálogo:
@@ -146,7 +188,9 @@ class WorkoutScannerService
             {
               "name": "string",
               "target_sets": number,
-              "target_reps": "string ou number",
+              "target_reps": "string",
+              "target_reps_min": number ou null,
+              "target_reps_max": number ou null,
               "muscle_group": "string",
               "notes": "string opcional"
             }

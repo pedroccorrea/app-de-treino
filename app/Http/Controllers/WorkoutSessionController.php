@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\DataTransferObjects\RepRange;
 use App\Http\Requests\LogSetRequest;
 use App\Models\SetLog;
 use App\Models\User;
@@ -48,6 +49,10 @@ class WorkoutSessionController extends Controller
                 'equipment' => $exercise->equipment?->value,
                 'target_sets' => $exercise->pivot->target_sets ?? 3,
                 'target_reps' => $exercise->pivot->target_reps ?? '10',
+                // Meta numérica: o REPS inicial de um exercício sem sugestão da IA
+                // e sem histórico começa no mínimo da faixa (nunca no texto "8-10").
+                'target_reps_min' => RepRange::fromWorkoutExercise($exercise->pivot)?->min,
+                'target_reps_max' => RepRange::fromWorkoutExercise($exercise->pivot)?->max,
                 'rest_seconds' => $exercise->pivot->rest_seconds ?? 60,
                 'notes' => $exercise->pivot->notes,
                 // `order` viaja junto porque esta mesma lista é gravada no

@@ -365,6 +365,11 @@ async function buildExercisesForWorkout(exercisesInput) {
             equipment: meta.equipment ?? null,
             target_sets: exercise.target_sets ?? null,
             target_reps: exercise.target_reps ?? null,
+            // Mínimo/máximo só o servidor calcula (RepRange); ficha montada
+            // offline fica sem eles e a sessão ativa interpreta o texto com a
+            // mesma regra (`resources/js/Utils/repTarget.js`).
+            target_reps_min: null,
+            target_reps_max: null,
             order: exercise.order ?? index,
         };
     });
@@ -1024,6 +1029,10 @@ async function buildActiveSessionProps(params) {
             equipment: exercise.equipment ?? null,
             target_sets: exercise.target_sets ?? 3,
             target_reps: exercise.target_reps ?? '10',
+            // Fichas cacheadas antes da Phase 47 não trazem estes campos: a
+            // sessão ativa cai na interpretação do texto (`Utils/repTarget.js`).
+            target_reps_min: exercise.target_reps_min ?? null,
+            target_reps_max: exercise.target_reps_max ?? null,
             rest_seconds: exercise.rest_seconds ?? 60,
             notes: exercise.notes ?? null,
             order: exercise.order ?? index,

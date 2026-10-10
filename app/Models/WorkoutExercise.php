@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['workout_id', 'exercise_id', 'order', 'target_sets', 'target_reps', 'rest_seconds', 'notes'])]
+#[Fillable(['workout_id', 'exercise_id', 'order', 'target_sets', 'target_reps', 'target_reps_min', 'target_reps_max', 'rest_seconds', 'notes'])]
 class WorkoutExercise extends Model
 {
     public function workout(): BelongsTo

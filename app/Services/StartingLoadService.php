@@ -281,7 +281,7 @@ class StartingLoadService
      */
     private function coherentLoadAndReps(Exercise $exercise, float $load, mixed $aiReps): array
     {
-        $range = RepRange::parse($exercise->pivot?->target_reps);
+        $range = RepRange::fromWorkoutExercise($exercise->pivot);
         $proposed = is_numeric($aiReps) && (float) $aiReps >= 1 ? (int) round((float) $aiReps) : null;
 
         $reps = match (true) {
@@ -305,7 +305,7 @@ class StartingLoadService
     {
         $summary = $exercises->map(function (Exercise $exercise) use ($similarByExercise) {
             $equipment = $exercise->resolvedEquipment();
-            $range = RepRange::parse($exercise->pivot?->target_reps);
+            $range = RepRange::fromWorkoutExercise($exercise->pivot);
 
             return [
                 'exercise_id' => $exercise->id,
@@ -313,7 +313,7 @@ class StartingLoadService
                 'equipment' => $equipment->value,
                 'load_mode' => $equipment->loadMode()->value,
                 'movement_pattern' => $exercise->resolvedMovementPattern()->value,
-                'target_reps' => $range === null ? null : ['min' => $range->min, 'max' => $range->max],
+                'target_reps' => $range?->toArray(),
                 'similar' => $similarByExercise[$exercise->id]->map(fn (array $item) => [
                     'exercise_id' => $item['exercise']->id,
                     'name' => $item['exercise']->name,

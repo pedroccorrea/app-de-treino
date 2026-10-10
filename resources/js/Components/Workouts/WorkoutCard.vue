@@ -2,6 +2,7 @@
 import BaseBadge from '@/Components/UI/BaseBadge.vue';
 import BaseButton from '@/Components/UI/BaseButton.vue';
 import BaseCard from '@/Components/UI/BaseCard.vue';
+import { formatRepTarget } from '@/Utils/repTarget';
 import { Link } from '@inertiajs/vue3';
 
 defineProps({
@@ -103,7 +104,7 @@ defineEmits(['open', 'toggle-archive', 'delete']);
                     <template v-if="exercise.target_sets">
                         {{ exercise.target_sets }}x
                     </template>
-                    {{ exercise.target_reps }}
+                    {{ formatRepTarget(exercise.target_reps) }}
                 </span>
             </li>
             <li

@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\DataTransferObjects\RepRange;
 use App\Enums\DayOfWeek;
 use App\Enums\MuscleGroup;
 use App\Models\Exercise;
@@ -99,6 +100,7 @@ class WorkoutService
                     'order' => $exercise['order'] ?? $index,
                     'target_sets' => $exercise['target_sets'] ?? null,
                     'target_reps' => $exercise['target_reps'] ?? null,
+                    ...RepRange::columnsFor($exercise['target_reps'] ?? null),
                 ]);
             }
 
@@ -114,6 +116,8 @@ class WorkoutService
      * Updates a workout's own data and syncs its exercises against the
      * `workout_exercises` pivot: exercises no longer submitted are removed,
      * the rest are upserted with their (possibly new) order/sets/reps.
+     * target_reps_min/max are derived from the submitted text on every save
+     * through the single interpretation rule (RepRange).
      */
     public function updateWorkout(Workout $workout, array $data): Workout
     {
@@ -137,6 +141,7 @@ class WorkoutService
                         'order' => $exercise['order'] ?? $index,
                         'target_sets' => $exercise['target_sets'] ?? null,
                         'target_reps' => $exercise['target_reps'] ?? null,
+                        ...RepRange::columnsFor($exercise['target_reps'] ?? null),
                     ]
                 );
             }

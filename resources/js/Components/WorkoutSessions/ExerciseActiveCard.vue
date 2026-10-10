@@ -8,6 +8,7 @@ import LoadRepsStepper from '@/Components/WorkoutSessions/LoadRepsStepper.vue';
 import OverloadSuggestionCard from '@/Components/WorkoutSessions/OverloadSuggestionCard.vue';
 import SetWaveProgress from '@/Components/WorkoutSessions/SetWaveProgress.vue';
 import { DEFAULT_LOAD_INCREMENT, stepLoad } from '@/Utils/loadSteps';
+import { formatRepTarget } from '@/Utils/repTarget';
 
 const props = defineProps({
     exercise: {
@@ -174,7 +175,7 @@ const historyUrl = computed(() =>
                     <span class="font-semibold text-violet-400">
                         {{ exercise.target_sets }} séries
                         <template v-if="exercise.target_reps">
-                            × {{ exercise.target_reps }} reps
+                            × {{ formatRepTarget(exercise.target_reps) }} reps
                         </template>
                     </span>
                 </p>

@@ -15,6 +15,7 @@ import { useOfflineSync } from '@/Composables/useOfflineSync';
 import { useRestAlarm } from '@/Composables/useRestAlarm';
 import { useWakeLock } from '@/Composables/useWakeLock';
 import { cacheLastLogs, cacheWorkout, generateUuid, recordActiveSessionSetLog } from '@/Utils/offlineStorage';
+import { initialRepsFor, suggestedRepsFor } from '@/Utils/repTarget';
 import { playRestAlarm, stopRestAlarm, unlockRestAlarm } from '@/Utils/restAlarm';
 import { getKeepScreenOn } from '@/Utils/workoutPreferences';
 import { Head, router } from '@inertiajs/vue3';
@@ -80,6 +81,7 @@ const fetchOverloadSuggestions = async () => {
         const data = await response.json();
         overloadSuggestions.value = Array.isArray(data.suggestions) ? data.suggestions : [];
         overloadStatus.value = 'ready';
+        applySuggestedRepsToUntouchedSets();
     } catch (_) {
         overloadSuggestions.value = [];
         overloadStatus.value = 'error';
@@ -90,6 +92,9 @@ const currentOverloadSuggestion = computed(() => {
     if (dismissedSuggestions.value[currentExercise.value?.id]) return null;
     return overloadSuggestions.value.find((s) => s.exercise_id === currentExercise.value?.id) ?? null;
 });
+
+const suggestionForExercise = (exerciseId) =>
+    overloadSuggestions.value.find((s) => s.exercise_id === exerciseId) ?? null;
 
 const dismissOverloadSuggestion = () => {
     if (currentExercise.value) dismissedSuggestions.value[currentExercise.value.id] = true;
@@ -102,6 +107,8 @@ const applyOverloadSuggestion = ({ load, reps }) => {
 
     const runningSet = currentSets.value.find((s) => s.state === 'running');
     if (!runningSet) return;
+
+    markSetTouched(exercise.id, runningSet.number);
 
     // A carga inicial pode vir sem número (ex: "Primeira vez"): o que vier
     // nulo mantém o valor que já estava na série.
@@ -196,6 +203,36 @@ const extraSets = ref({});
 // "Finalizar exercício" antes de todas as séries planejadas serem feitas.
 const finishedEarly = ref({});
 
+// pristineReps[exerciseId] = Set de séries cujo REPS ainda é só o valor
+// inicial (ninguém tocou, nem veio de uma série concluída nesta sessão). Só
+// essas recebem as repetições sugeridas pela IA quando a sugestão chega
+// depois da tela abrir — o que a pessoa editou ou registrou nunca é
+// sobrescrito.
+const pristineReps = {};
+
+const markSetPristine = (exId, n) => {
+    if (!pristineReps[exId]) pristineReps[exId] = new Set();
+    pristineReps[exId].add(n);
+};
+
+const markSetTouched = (exId, n) => {
+    pristineReps[exId]?.delete(n);
+};
+
+const isSetPristine = (exId, n) => pristineReps[exId]?.has(n) ?? false;
+
+const applySuggestedRepsToUntouchedSets = () => {
+    for (const exercise of sortedExercises.value) {
+        const reps = suggestedRepsFor(exercise, suggestionForExercise(exercise.id));
+        if (reps === null) continue;
+
+        for (const n of pristineReps[exercise.id] ?? []) {
+            if (getSetState(exercise.id, n) === 'done' || !setInputs.value[exercise.id]?.[n]) continue;
+            setInputs.value[exercise.id][n].reps = reps;
+        }
+    }
+};
+
 const initSetsForExercise = (exercise) => {
     const exId = exercise.id;
 
@@ -217,13 +254,15 @@ const initSetsForExercise = (exercise) => {
         setStates.value[exId][log.set_number] = 'done';
     }
 
-    // Série 1: herda carga/reps da última vez que o exercício foi feito.
-    // Sem histórico (exercício novo), começa zerada na meta de repetições.
+    // Série 1: herda a carga da última vez que o exercício foi feito. O REPS
+    // é sempre um inteiro: sugestão da IA → última vez → menor número da
+    // meta da ficha (nunca o texto "8-10") — ver `Utils/repTarget.js`.
     if (!setInputs.value[exId][1]) {
         setInputs.value[exId][1] = {
             weight: last?.weight ?? 0,
-            reps: last?.reps ?? exercise.target_reps ?? '',
+            reps: initialRepsFor(exercise, last, suggestionForExercise(exId)),
         };
+        markSetPristine(exId, 1);
     }
     if (!setStates.value[exId][1]) {
         setStates.value[exId][1] = 'waiting';
@@ -238,8 +277,10 @@ const initSetsForExercise = (exercise) => {
             const previous = setInputs.value[exId][n - 1];
             setInputs.value[exId][n] = {
                 weight: previous?.weight ?? last?.weight ?? 0,
-                reps: previous?.reps ?? last?.reps ?? exercise.target_reps ?? '',
+                reps: previous?.reps || initialRepsFor(exercise, last, suggestionForExercise(exId)),
             };
+            // Herdou de uma série ainda intocada: continua sendo valor inicial.
+            if (!previous || isSetPristine(exId, n - 1)) markSetPristine(exId, n);
         }
         if (!setStates.value[exId][n]) {
             setStates.value[exId][n] = 'waiting';
@@ -425,6 +466,9 @@ const markSetCompleteLocally = (exercise, setNumber, inputs) => {
 
     const nextSetNumber = setNumber + 1;
     if (!isSetSaved(exId, nextSetNumber)) {
+        // Herda do que foi registrado agora: a sugestão que chegar depois
+        // não sobrescreve mais esta série.
+        markSetTouched(exId, nextSetNumber);
         setInputs.value[exId][nextSetNumber] = {
             weight: inputs.weight !== '' && inputs.weight !== null ? inputs.weight : 0,
             reps: inputs.reps,
@@ -548,6 +592,7 @@ const openSetEdit = (exercise, setNumber) => {
 // ─── Quick weight/reps adjustments ───────────────────────────────────────────
 const adjustWeight = (exercise, setNumber, delta) => {
     const exId = exercise.id;
+    markSetTouched(exId, setNumber);
     const current = parseFloat(setInputs.value[exId]?.[setNumber]?.weight) || 0;
     // Arredonda em centésimos: o delta vem do passo do equipamento
     // (loadSteps.js) e somas de float não podem gerar 11,999999 kg.
@@ -556,6 +601,7 @@ const adjustWeight = (exercise, setNumber, delta) => {
 
 const adjustReps = (exercise, setNumber, delta) => {
     const exId = exercise.id;
+    markSetTouched(exId, setNumber);
     const current = parseInt(setInputs.value[exId]?.[setNumber]?.reps) || 0;
     setInputs.value[exId][setNumber].reps = Math.max(1, current + delta);
 };
@@ -563,11 +609,13 @@ const adjustReps = (exercise, setNumber, delta) => {
 // ─── Direct weight/reps entry (tap-to-edit on the load/reps hero) ───────────
 const setWeight = (exercise, setNumber, value) => {
     const exId = exercise.id;
+    markSetTouched(exId, setNumber);
     setInputs.value[exId][setNumber].weight = Math.max(0, value);
 };
 
 const setReps = (exercise, setNumber, value) => {
     const exId = exercise.id;
+    markSetTouched(exId, setNumber);
     setInputs.value[exId][setNumber].reps = Math.max(1, value);
 };
 
@@ -583,8 +631,9 @@ const addExtraSet = (exercise) => {
     const last = props.lastLogs?.[exId];
     setInputs.value[exId][newSetNum] = {
         weight: previous?.weight ?? last?.weight ?? 0,
-        reps: previous?.reps ?? last?.reps ?? exercise.target_reps ?? '',
+        reps: previous?.reps || initialRepsFor(exercise, last, suggestionForExercise(exId)),
     };
+    markSetTouched(exId, newSetNum);
     setStates.value[exId][newSetNum] = 'waiting';
     autoStartNextSet(exercise);
 };

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\DataTransferObjects\RepRange;
 use App\Enums\DayOfWeek;
 use App\Http\Requests\StoreWorkoutRequest;
 use App\Http\Requests\UpdateWorkoutRequest;
@@ -169,6 +170,10 @@ class WorkoutController extends Controller
                 'equipment' => $exercise->equipment?->value,
                 'target_sets' => $exercise->pivot->target_sets,
                 'target_reps' => $exercise->pivot->target_reps,
+                // Meta numérica (colunas novas ou, em fichas antigas, o texto
+                // interpretado na leitura): viaja para o cache offline junto com o texto.
+                'target_reps_min' => RepRange::fromWorkoutExercise($exercise->pivot)?->min,
+                'target_reps_max' => RepRange::fromWorkoutExercise($exercise->pivot)?->max,
                 // Necessário para que uma sessão iniciada offline a partir
                 // desta tela respeite o descanso configurado na ficha, em vez
                 // de cair no padrão de 60s.

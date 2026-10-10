@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\DataTransferObjects\OverloadSuggestion;
+use App\DataTransferObjects\RepRange;
 use App\Enums\AiTask;
 use App\Enums\Equipment;
 use App\Enums\OverloadConfidence;
@@ -162,7 +163,10 @@ class ProgressiveOverloadService
           reduções de carga. Nunca sugira um valor fora dela (ex: nunca 10,5 kg em halteres).
         - Progressão dupla: se o próximo peso válido acima da carga atual for um salto grande para o exercício
           (comum em halteres leves e em máquinas), mantenha a carga e sugira mais repetições dentro da faixa alvo
-          (target_reps); só suba para o próximo peso válido quando o usuário tiver atingido o topo da faixa.
+          (target_reps.min a target_reps.max); só suba para o próximo peso válido quando o usuário tiver atingido o
+          topo da faixa (target_reps.max).
+        - suggested_reps é sempre um número inteiro e, quando target_reps existir, fica entre target_reps.min e
+          target_reps.max. target_reps null significa ficha sem meta numérica.
         - Peso corporal (peso_corporal): não sugira carga; mantenha suggested_load igual à carga atual e progrida
           em repetições, ou adicione anilha (um valor de valid_loads) só quando fizer sentido.
         - Sem valid_loads (equipamento "outro"), sugira a carga como de costume.
@@ -252,7 +256,7 @@ class ProgressiveOverloadService
         return new OverloadSuggestion(
             exercise_id: $exerciseId,
             suggested_load: $this->safeLoad($exerciseId, $equipment, $previous['weight'] ?? null, (float) $suggestedLoad),
-            suggested_reps: (int) $suggestedReps,
+            suggested_reps: $this->safeReps($exercisesById->get($exerciseId), (float) $suggestedReps),
             previous_load: $previous['weight'] ?? null,
             previous_reps: $previous['reps'] ?? null,
             rationale: $rationale,
@@ -261,7 +265,7 @@ class ProgressiveOverloadService
     }
 
     /**
-     * @return array{exercise_id: int, name: string, target_reps: ?string, equipment: string, load_mode: string, current_load: ?float, valid_loads: ?list<float>}
+     * @return array{exercise_id: int, name: string, target_reps: ?array{min: int, max: int}, equipment: string, load_mode: string, current_load: ?float, valid_loads: ?list<float>}
      */
     private function exercisePromptEntry(Exercise $exercise, ?float $currentLoad): array
     {
@@ -271,7 +275,9 @@ class ProgressiveOverloadService
         return [
             'exercise_id' => $exercise->id,
             'name' => $exercise->name,
-            'target_reps' => $exercise->pivot?->target_reps,
+            // Meta já interpretada (min/max), nunca o texto cru da ficha: é com o
+            // topo da faixa que a progressão dupla decide quando subir a carga.
+            'target_reps' => RepRange::fromWorkoutExercise($exercise->pivot)?->toArray(),
             'equipment' => $equipment->value,
             'load_mode' => $mode->value,
             'current_load' => $currentLoad,
@@ -279,6 +285,20 @@ class ProgressiveOverloadService
                 ? $this->validLoadService->candidateLoads($equipment, $mode, $currentLoad ?? 0.0)
                 : null,
         ];
+    }
+
+    /**
+     * Não confia só na IA: as repetições sugeridas viram inteiro (mínimo 1)
+     * e, quando a ficha tem uma FAIXA (ex.: 8–10), ficam dentro dela. Meta de
+     * número único não trava: a progressão em repetições continua livre,
+     * como já era antes da faixa ser interpretada.
+     */
+    private function safeReps(?Exercise $exercise, float $suggestedReps): int
+    {
+        $reps = max(1, (int) round($suggestedReps));
+        $range = RepRange::fromWorkoutExercise($exercise?->pivot);
+
+        return $range !== null && $range->min < $range->max ? $range->clamp($reps) : $reps;
     }
 
     /**

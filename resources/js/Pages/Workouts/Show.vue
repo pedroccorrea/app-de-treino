@@ -13,6 +13,7 @@ import {
     getActiveSessionSetLogs,
     getCachedLastLogs,
 } from '@/Utils/offlineStorage';
+import { formatRepTarget } from '@/Utils/repTarget';
 import { unlockRestAlarm } from '@/Utils/restAlarm';
 import { Head, Link, router } from '@inertiajs/vue3';
 import { computed, onMounted, ref } from 'vue';
@@ -54,7 +55,7 @@ const formatTarget = (exercise) => {
         parts.push(`${exercise.target_sets} ${exercise.target_sets === 1 ? 'série' : 'séries'}`);
     }
     if (exercise.target_reps) {
-        parts.push(exercise.target_reps + ' reps');
+        parts.push(formatRepTarget(exercise.target_reps) + ' reps');
     }
     return parts.length ? parts.join(' × ') : 'Metas não definidas';
 };

@@ -45,4 +45,18 @@ class StoreWorkoutRequest extends FormRequest
             'exercises.*.order' => ['nullable', 'integer', 'min:0'],
         ];
     }
+
+    /**
+     * A meta de repetições aceita número ("10") ou faixa ("8-12"); qualquer
+     * outro texto é guardado como está e só não vira meta numérica (RepRange).
+     *
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'exercises.*.target_reps.string' => 'Informe as repetições como número (ex.: 10) ou faixa (ex.: 8-12).',
+            'exercises.*.target_reps.max' => 'A meta de repetições deve ter no máximo 50 caracteres.',
+        ];
+    }
 }

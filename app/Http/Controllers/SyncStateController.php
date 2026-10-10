@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\DataTransferObjects\RepRange;
 use App\Enums\DayOfWeek;
 use App\Models\Workout;
 use App\Models\WorkoutProgram;
@@ -114,6 +115,10 @@ class SyncStateController extends Controller
                 'equipment' => $exercise->equipment?->value,
                 'target_sets' => $exercise->pivot->target_sets,
                 'target_reps' => $exercise->pivot->target_reps,
+                // Meta numérica (colunas novas ou, em fichas antigas, o texto
+                // interpretado na leitura): viaja para o cache offline junto com o texto.
+                'target_reps_min' => RepRange::fromWorkoutExercise($exercise->pivot)?->min,
+                'target_reps_max' => RepRange::fromWorkoutExercise($exercise->pivot)?->max,
                 'rest_seconds' => $exercise->pivot->rest_seconds ?? 60,
                 'order' => $exercise->pivot->order,
             ])->values()->all(),
