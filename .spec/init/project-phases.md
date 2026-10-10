@@ -1205,16 +1205,26 @@ A IA de progressão deve sugerir somente cargas que existem no equipamento do ex
 
 # Phase 43: IA Preparada para Troca de Exercícios e de Programa
 
+> **⚠️ JÁ EXISTE TRABALHO PARCIAL DESTA PHASE NO CÓDIGO.** Uma execução anterior foi interrompida antes de terminar. Revisar, aproveitar e completar esse trabalho: NÃO começar do zero e NÃO apagar o que já existe (só ajustar o que estiver errado ou incompleto). Antes de qualquer coisa, reler o estado atual dos arquivos abaixo; esta lista é a referência de quando a nota foi escrita e pode ter mudado:
+> - Já criados: `app/Enums/MovementPattern.php`, `app/Enums/SuggestionKind.php`, a migration `database/migrations/2026_09_27_000002_add_movement_pattern_to_exercises_table.php` (coluna `movement_pattern` anulável), `app/Services/ExerciseMovementPatternService.php` (palavras-chave + IA uma única vez), `app/Services/ExerciseIdentityService.php` (mesmo exercício com grafia diferente, só na leitura) e `app/Services/StartingLoadService.php` (carga inicial a partir de até 5 parecidos, motivo em uma linha e "Primeira vez").
+> - Já alterados: `app/DataTransferObjects/OverloadSuggestion.php` (campos `kind` e `basis`; carga/reps anuláveis), `app/Models/Exercise.php` (`movement_pattern`), `app/Services/WorkoutScannerService.php` e `WorkoutSessionService::getLastLogsForExercises` (usando o `ExerciseIdentityService`).
+> - Faltava quando a nota foi escrita: (a) o `StartingLoadService` não é chamado por ninguém — o endpoint de sugestões (`WorkoutSessionController::overloadSuggestions`) só usa `ProgressiveOverloadService::analyzeWorkout`; (b) a tela da sessão ativa (`Components/WorkoutSessions/OverloadSuggestionCard.vue` / `Pages/WorkoutSessions/Active.vue`) não mostra o motivo (`basis`) nem o caso "Primeira vez" e precisa lidar com carga/reps nulos sem quebrar o "aplicar sugestão"; (c) não há testes novos; (d) o teste existente em `tests/Feature/WorkoutSessionTest.php` ("the overload suggestions endpoint returns AI recommendations ...") falha porque compara o JSON exato e agora aparecem `kind` e `basis` — atualizar o teste para o novo contrato sem perder o que ele verifica.
+> - Ponto de atenção: `ProgressiveOverloadService::analyzeWorkout` olha só as últimas sessões DESTA ficha. Um exercício que o usuário já fez em outra ficha/programa não pode ser tratado como "novo" (nem cair em "Primeira vez" ou em carga estimada por parecidos) só porque a ficha mudou — isso faz parte da Task 1. A Phase 48 vai reconstruir a progressão normal a partir do histórico do exercício; aqui basta não perder esse histórico e não classificá-lo como exercício novo.
+
 Quando o programa mudar ou um exercício novo for adicionado, a IA sugere uma carga inicial realista com base em exercícios parecidos que o usuário já fez.
 
 ## Regras Obrigatórias (Produção)
 - O Setwave está em produção (Render + Neon) com dados reais de usuários. Nenhuma mudança pode apagar, alterar ou colocar em risco dados existentes.
 - Migrations só aditivas: criar tabela nova ou adicionar coluna que aceite nulo. Nunca remover, renomear ou mudar o tipo de colunas ou tabelas. Nunca apagar ou reescrever registros existentes.
 - Seguir as regras do projeto: nada de cores hex em arquivos `.vue`; usar os tokens do `resources/css/design-tokens.css` e os componentes `Base*` (`resources/js/Components/UI/`).
+- Não mudar o comportamento do que já funciona hoje além do que a phase pede (a progressão normal da Phase 42 e o fluxo do treino em andamento continuam iguais).
 - Rodar os testes existentes e criar testes para o que for novo.
 - Não fazer deploy nem git push.
 
 ## Tasks
+0. **Reinvestigar o código antes de implementar:**
+   - Ler o trabalho parcial listado na nota acima, `app/Services/ProgressiveOverloadService.php`, a camada `app/Services/AI/`, `app/Services/ValidLoadService.php`, `app/Enums/Equipment.php`, `WorkoutSessionController` (endpoint de sugestões) e os componentes da sessão ativa que exibem a sugestão. Só então decidir o que completar.
+
 1. **Histórico e sugestões ligados ao exercício, não ao programa (verificar e corrigir se necessário):**
    - Trocar ou editar o programa não pode fazer o usuário perder o histórico de um exercício que continua existindo.
    - Se os exercícios forem identificados por nome, reconhecer o mesmo exercício quando a diferença for só maiúsculas, acentos, espaços ou abreviações comuns ("c/" = "com"), sem alterar os dados salvos.
@@ -1249,6 +1259,27 @@ Quando o programa mudar ou um exercício novo for adicionado, a IA sugere uma ca
 7. **Transição para a progressão normal:**
    - Depois que o exercício novo tiver histórico próprio, a progressão normal assume.
 
+8. **Resumo do histórico recente de cada parecido (não só a última série nem o último treino):**
+   - Complementa a Task 3: para cada exercício parecido, montar em PHP um resumo curto do histórico recente — as melhores marcas (carga × repetições e data) de várias sessões recentes, em número pequeno e limitado, e a tendência calculada em PHP (subindo, estável ou caindo).
+   - A referência de cada parecido é o melhor desempenho recente, não a última sessão. Um treino isolado mais fraco não pode puxar a sugestão para baixo.
+   - Construir esse resumo como uma peça reutilizável e testável (por exemplo, um serviço próprio), com contrato pensado para ser reaproveitado pela Phase 48 no histórico do PRÓPRIO exercício. Não espalhar essa lógica dentro do prompt.
+   - Considerar só o que já entra no histórico hoje (sessões concluídas, séries de trabalho com carga; aquecimento fora), seguindo os filtros que o código já usa.
+
+9. **Carga E repetições coerentes:**
+   - A sugestão inicial traz carga e repetições (número inteiro) coerentes entre si.
+   - Quando a ficha tiver uma faixa de repetições (ex.: "8-10"), as repetições sugeridas ficam dentro dela; com um número único, usar esse número; sem meta, um valor sensato para o padrão de movimento.
+   - Validar em PHP depois da resposta da IA (repetições inteiras, dentro da faixa quando ela existir); não confiar só na IA.
+   - Hoje `target_reps` é texto livre na ficha (ex.: "10", "8-10"). Se for preciso interpretar a faixa aqui, fazer isso em UM único lugar pequeno e reutilizável; a Phase 47 vai consolidar essa regra no app inteiro e deve poder reaproveitá-la.
+
+10. **Troca de máquina ou de equipamento:**
+   - Funcionar bem quando o exercício novo é o "mesmo movimento" com outro equipamento (ex.: Supino Reto com Barra → Supino na Máquina; agachamento livre → hack/leg press).
+   - O resumo enviado à IA informa o equipamento e a forma de registro da carga (total, por lado, por halter) do exercício novo e de cada parecido, para que as regras da Task 4 sejam aplicadas sem confusão de unidade.
+   - A carga final passa pelo serviço de cargas válidas usando o equipamento do exercício NOVO.
+
+11. **Prompt curto e custo:**
+   - O resumo continua curto e montado em PHP (até 5 parecidos × poucas sessões cada); nada de mandar o histórico inteiro.
+   - Nenhuma chamada extra à IA por série; a carga inicial dos exercícios novos de uma ficha continua agrupada em uma única chamada, como já está no trabalho parcial (além da classificação única por exercício).
+
 ## Acceptance Criteria
 1. Testes cobrindo três casos:
    - Exercício novo com exercício parecido no histórico: a IA recebe só o resumo curto (até 5 parecidos, melhor série recente de cada), a carga passa pelo serviço de cargas válidas e o motivo em uma linha é exibido.
@@ -1257,9 +1288,15 @@ Quando o programa mudar ou um exercício novo for adicionado, a IA sugere uma ca
 2. Depois que o exercício novo tem histórico próprio, a progressão normal da Phase 42 assume.
 3. Migrations aditivas apenas; nenhum dado salvo é alterado (inclusive nomes de exercícios).
 4. O resumo final descreve o que foi encontrado sobre a ligação do histórico com exercício/programa.
-5. `php artisan test` passa em 100% de toda a suíte.
-6. `tests/Architecture/ArchitecturalRulesTest.php` passa sem violações.
-7. `npm run build` compila com zero erros.
+5. O trabalho parcial que já existia foi aproveitado (não recriado do zero) e está ligado ponta a ponta: endpoint de sugestões → tela da sessão ativa, incluindo motivo em uma linha e "Primeira vez".
+6. Testes do resumo de histórico dos parecidos: com várias sessões de um parecido, um treino isolado mais fraco (o mais recente) NÃO baixa a referência enviada à IA nem a carga sugerida; a tendência (subindo/estável/caindo) é calculada corretamente.
+7. Testes de repetições: a sugestão inicial traz repetições inteiras, dentro da faixa da ficha quando ela existe (ex.: ficha "8-10" → reps entre 8 e 10), mesmo se a IA responder fora dela.
+8. Teste de troca de equipamento: exercício novo de máquina com histórico só de um parecido com barra recebe carga válida para a máquina e o motivo cita o exercício de barra.
+9. Testes garantem que o prompt não contém o histórico inteiro (quantidade limitada de parecidos e de sessões por parecido) e que não há chamada extra à IA por série.
+10. O teste existente de `tests/Feature/WorkoutSessionTest.php` sobre o endpoint de sugestões foi atualizado para o novo contrato (`kind`/`basis`) e passa.
+11. `php artisan test` passa em 100% de toda a suíte.
+12. `tests/Architecture/ArchitecturalRulesTest.php` passa sem violações.
+13. `npm run build` compila com zero erros.
 
 # Phase 44: Página de Histórico de Treinos (Somente Leitura)
 
@@ -1409,3 +1446,210 @@ No treino em andamento, tocar em um card de série concluída abre a edição da
 9. `php artisan test` passa em 100% de toda a suíte.
 10. `tests/Architecture/ArchitecturalRulesTest.php` passa sem violações.
 11. `npm run build` compila com zero erros.
+
+# Phase 47: Repetições Sempre um Número no Treino (Faixa da Ficha Vira Meta)
+
+No scan da ficha, quando a ficha dizia "8-10", a IA preencheu as repetições como "8-10" e esse texto foi parar no campo REPS do treino em andamento. O campo REPS é onde a pessoa registra quantas repetições FEZ, então precisa ser sempre um número inteiro. A faixa da ficha passa a ser a META do exercício (mínimo e máximo), usada pela IA de progressão — não o número de repetições feitas.
+
+## Regras Obrigatórias (Produção)
+- O app está em produção (Render + Neon) com dados reais de usuários. Nenhum dado existente pode ser perdido ou alterado por deploy. Migrations somente aditivas (criar tabela nova ou adicionar coluna que aceite nulo; nunca remover, renomear ou mudar o tipo de colunas/tabelas; nunca apagar ou reescrever registros existentes).
+- Fichas já salvas em produção com faixa no texto (ex.: "8-10") precisam funcionar SEM reescrever esses registros: interpretar na leitura. Se for preciso guardar mínimo e máximo, usar colunas novas que aceitam nulo, preenchidas só em gravações novas.
+- Não mudar o comportamento do que já funciona hoje além do que a phase pede. O fluxo do treino em andamento (série atual, timer, descanso, sugestão de carga, botão Finalizar, edição de série das Phases 45 e 46) deve continuar igual, exceto pelo valor inicial do REPS descrito abaixo.
+- Usar o design system existente (componentes `Base*` em `resources/js/Components/UI/`, tokens de `resources/css/design-tokens.css`, nenhum hex literal em `.vue`), mobile-first, textos em pt-BR, funcionando bem em Android e iPhone. Não criar telas novas.
+- Funcionar online e offline, como o resto do treino em andamento (ver `resources/pwa/sw.js` e o IndexedDB).
+- Rodar os testes existentes e criar testes para o que for novo. Não fazer deploy nem git push.
+
+## Tasks
+1. **Reinvestigar o código antes de implementar (as Phases 43 a 46 mexeram em partes relacionadas):**
+   - Onde a ficha guarda as repetições-alvo. Referência de quando esta phase foi escrita (confirmar): `workout_exercises.target_reps` é texto anulável (`database/migrations/2026_08_13_220003_create_workout_exercises_table.php`), lido via pivot em `Workout`/`Exercise` e no model `WorkoutExercise`.
+   - Como o scan preenche esse valor: `app/Services/WorkoutScannerService.php` (o prompt pedia "preserve faixas de repetições como string" e o valor era salvo com `(string)`).
+   - Como o treino em andamento usa esse valor: `WorkoutSessionController::show` (padrão `'10'`), `SyncStateController`, o mini-servidor do Service Worker em `resources/pwa/sw.js` (também com padrão `'10'`), e `Pages/WorkoutSessions/Active.vue`, que usava `exercise.target_reps` como valor inicial do REPS (`initSetsForExercise`, `addExtraSet`) — por isso "8-10" chegava ao campo. Ver também `LoadRepsStepper.vue`/`LoadRepsHero.vue` (+ e −), `LogSetRequest` (reps inteiro) e o editor de série criado nas Phases 45 e 46.
+   - Onde a meta já é exibida: `Components/WorkoutSessions/ExerciseActiveCard.vue` ("× ... reps"), `Components/Workouts/WorkoutCard.vue`, `Pages/Workouts/Show.vue`.
+   - Onde a ficha é criada ou editada manualmente: `Components/Workouts/WorkoutForm.vue`, `StoreWorkoutRequest`, `UpdateWorkoutRequest`, `WorkoutService`, e a edição offline de fichas (`SyncResourceMutationsRequest`/`SyncService` e o equivalente no Service Worker).
+   - Como a IA de progressão usa a faixa: `ProgressiveOverloadService` (progressão dupla da Phase 42) e o serviço de carga inicial da Phase 43, que recebiam `target_reps` cru; e se a Phase 43 já criou algum ponto único de interpretação da faixa (reaproveitar em vez de duplicar).
+
+2. **Uma regra única de interpretação da meta de repetições:**
+   - Um único lugar no backend (pequeno, reutilizável e com testes unitários) transforma o texto da meta em mínimo e máximo inteiros, ou em "sem meta numérica".
+   - Casos mínimos: número único ("10" → 10–10); faixa clara ("8-10", "8 a 10", "8–10", "8 - 10" → 8–10; faixa invertida é normalizada).
+   - Formatos que não são uma faixa clara (ex.: "12/10/8", "até a falha", "AMRAP", "10 cada lado", texto vazio) nunca quebram nada: escolher a interpretação mais simples e documentá-la no código e no resumo final (ex.: lista de números → do menor ao maior; sem número → sem meta numérica). Nunca gravar texto onde deveria ser número.
+   - Se o frontend/offline precisar interpretar dados antigos que não trazem mínimo/máximo (ex.: fichas já guardadas no IndexedDB antes desta phase), espelhar a MESMA regra em um único utilitário JS pequeno, sem espalhar parsing pelos componentes.
+
+3. **Guardar a meta sem reescrever o que já existe:**
+   - O texto original da meta continua onde está (é o que a pessoa vê como meta).
+   - Se for útil guardar mínimo e máximo, criar colunas novas anuláveis (ex.: em `workout_exercises`), preenchidas apenas nas gravações novas (scan, criação/edição manual, sincronização offline). Registros antigos ficam intactos e são interpretados na leitura pela regra da Task 2.
+
+4. **Scan da ficha:**
+   - Orientar a IA, no prompt, a separar número único de faixa (ex.: devolver mínimo e máximo, ou um número), sem perder a meta original.
+   - Validar em PHP depois da resposta (não confiar só na IA): passar sempre pela regra da Task 2; valores não numéricos nunca viram número inventado.
+
+5. **Criação e edição manual da ficha (online e offline):**
+   - Aplicar a mesma regra: aceitar número ou faixa no campo de repetições, preencher mínimo/máximo quando houver, e não quebrar com formatos estranhos (mensagem de validação amigável em pt-BR, se for o caso, sem mudar o resto do formulário).
+
+6. **REPS do treino em andamento sempre inteiro:**
+   - O campo REPS do treino em andamento e o editor de série das Phases 45 e 46 recebem sempre um número inteiro; os botões + e − e o salvar funcionam normalmente (inclusive quando a ficha tem faixa ou meta estranha).
+   - Manter o que já funciona hoje. Ordem para o valor inicial do REPS:
+     1. Sugestão da IA para o exercício (repetições sugeridas, inteiras).
+     2. Sem sugestão: as repetições da última vez que o exercício foi feito (`lastLogs`), como já funciona hoje.
+     3. Só quando não houver nenhum dos dois (exercício sem histórico): o menor número da faixa da ficha (número único → esse número). Sem meta numérica, manter o padrão atual, desde que seja um número.
+   - As sugestões chegam depois da tela abrir: só preencher séries que a pessoa ainda não tocou nem concluiu; nunca sobrescrever o que ela editou ou já registrou.
+   - Manter como está: séries seguintes continuam herdando da série anterior desta sessão; a carga inicial continua com a lógica atual; aplicar a sugestão pelo card continua funcionando.
+   - Offline (página sintetizada pelo Service Worker, sem sugestão da IA): mesma ordem a partir do item 2 (última vez; sem histórico, menor número da faixa).
+
+7. **Mostrar a faixa onde a meta já aparece:**
+   - Onde o app já mostra a meta do exercício (Task 1), exibir a faixa de forma clara (ex.: "8–10 reps"). Não criar telas nem campos novos.
+
+8. **IA de progressão usa a meta interpretada:**
+   - Enviar à IA a meta como mínimo e máximo (em vez do texto cru) na progressão normal e na carga inicial, para a progressão dupla da Phase 42 usar o topo da faixa corretamente.
+   - Depois da resposta, as repetições sugeridas são inteiras; quando houver faixa, manter dentro dela.
+   - Reaproveitar qualquer interpretação de faixa criada na Phase 43, consolidando na regra única da Task 2 (sem duas regras diferentes no código).
+
+## Acceptance Criteria
+1. Teste: scan de uma ficha com "8-10" gera a meta 8–10 (mínimo e máximo) e o REPS do treino em andamento recebe um número inteiro (8 para exercício sem sugestão da IA e sem histórico).
+2. Teste: uma ficha antiga já salva com "8-10" (registro criado como em produção, sem colunas novas preenchidas) funciona no treino em andamento e na IA de progressão SEM alterar o registro salvo.
+3. Testes unitários da regra única de interpretação cobrindo: "10", "8-10", "8 a 10", "8–10", faixa invertida, "12/10/8", "até a falha", vazio/nulo — nenhum quebra e nenhum gera texto onde deveria haver número.
+4. Teste/verificação da ordem do REPS inicial: com sugestão da IA → repetições sugeridas (inteiras, dentro da faixa quando existe); sem sugestão e com histórico → repetições da última vez (comportamento atual preservado); sem sugestão e sem histórico → menor número da faixa.
+5. Criação/edição manual da ficha (online e pela sincronização offline) segue a mesma regra, com teste.
+6. A meta aparece como faixa onde o app já a exibia; nenhuma tela nova.
+7. Os botões + e −, o salvar da série e o editor de série das Phases 45 e 46 funcionam com fichas de faixa (o valor enviado em `reps` é sempre inteiro e passa no `LogSetRequest`).
+8. Migrations, se existirem, são somente aditivas (colunas anuláveis); nenhum registro existente é reescrito.
+9. O fluxo do treino em andamento continua igual no resto (testes existentes passando).
+10. `php artisan test` passa em 100% de toda a suíte.
+11. `tests/Architecture/ArchitecturalRulesTest.php` passa sem violações.
+12. `npm run build` compila com zero erros.
+
+# Phase 48: Sugestões de Progressão que Analisam o Histórico, Não Só o Último Treino
+
+A IA de progressão deve sempre buscar manter ou melhorar a performance. Hoje ela se baseia demais no último treino: em dias mais fracos a pessoa baixa o peso ou faz menos repetições, e isso puxa as próximas sugestões para baixo. A referência passa a ser o melhor desempenho recente do exercício, não o último treino.
+
+## Regras Obrigatórias (Produção)
+- O app está em produção (Render + Neon) com dados reais de usuários. Nenhum dado existente pode ser perdido ou alterado por deploy. Migrations somente aditivas (criar tabela nova ou adicionar coluna que aceite nulo; nunca remover, renomear ou mudar o tipo de colunas/tabelas; nunca apagar ou reescrever registros existentes).
+- Não mudar o comportamento do que já funciona hoje além do que a phase pede. O fluxo do treino em andamento (série atual, timer, descanso, card de sugestão, aplicar sugestão, botão Finalizar, edição de série) deve continuar igual.
+- Manter o tom atual das sugestões (rationale curto, em pt-BR) e o custo: nenhuma chamada extra à IA por série; o prompt recebe só um resumo curto montado em PHP, nunca o histórico inteiro.
+- Toda carga sugerida continua passando pelo serviço de cargas válidas da Phase 42 (`ValidLoadService`), com a rede de segurança de arredondamento.
+- Usar o design system existente (componentes `Base*` em `resources/js/Components/UI/`, tokens de `resources/css/design-tokens.css`, nenhum hex literal em `.vue`), textos em pt-BR.
+- Rodar os testes existentes e criar testes para o que for novo. Não fazer deploy nem git push.
+
+## Tasks
+1. **Reinvestigar como a sugestão é montada hoje (as Phases 43 a 47 mexeram nisso):**
+   - `app/Services/ProgressiveOverloadService.php`, a camada `app/Services/AI/`, o que vai no prompt e como a resposta é validada; o endpoint `WorkoutSessionController::overloadSuggestions` e a exibição na sessão ativa.
+   - Referência de quando esta phase foi escrita (confirmar): `analyzeWorkout` pegava as 3 últimas sessões concluídas DESTA ficha e mandava todas as séries cruas no prompt; a "carga atual" (que ancora as cargas válidas e o `previous_load`) era a primeira série da sessão mais recente — por isso um dia fraco derrubava a âncora; e um exercício feito só em outra ficha ficava sem sugestão.
+   - O que a Phase 43 criou: serviço de carga inicial para exercícios novos, o resumo reutilizável do histórico recente (melhores marcas por sessão + tendência), a identificação de grafias equivalentes (`ExerciseIdentityService`) e a classificação de movimento.
+   - Como as Phases 45 e 46 tratam séries editadas e treinos/exercícios excluídos (ex.: soft delete) e quais filtros as consultas de histórico precisam respeitar.
+   - A meta de repetições interpretada (mínimo/máximo) da Phase 47.
+
+2. **Resumo curto do histórico do exercício, montado em PHP:**
+   - Para cada exercício da ficha que já tem histórico próprio (em qualquer ficha ou programa, incluindo grafias equivalentes do mesmo exercício), montar um resumo das últimas sessões em número pequeno e limitado: melhor série de cada sessão (carga × repetições e data), a referência (melhor desempenho recente, com critério documentado e testado) e a tendência (subindo, estável ou caindo), além de quantas sessões seguidas ficaram abaixo da referência.
+   - Reaproveitar a peça de resumo criada na Phase 43 (estender se preciso), sem duplicar lógica.
+   - Substituir no prompt as séries cruas das últimas sessões por esse resumo (mantendo só o que for útil e curto, ex.: RPE se existir).
+
+3. **Referência é o melhor desempenho recente, não o último treino:**
+   - A carga de referência usada para ancorar as cargas válidas próximas e orientar a IA é a da referência do resumo, não a da última sessão.
+   - Um treino isolado mais fraco não derruba a sugestão: a IA sugere voltar ao nível de referência ou progredir a partir dele.
+   - Rede de segurança em PHP (como a do arredondamento da Phase 42): fora do caso de queda repetida, uma sugestão abaixo da referência é levada de volta à referência (carga válida) e o ajuste fica em log.
+
+4. **Queda repetida:**
+   - Se a queda se repetir em várias sessões seguidas (limiar definido, documentado e testado), não insistir em aumentar a carga: sugerir manter a carga recente e recuperar as repetições, com o motivo em uma linha.
+   - Rede de segurança em PHP: nesse caso, nenhuma sugestão de carga acima da carga recente.
+
+5. **Histórico subindo ou estável:**
+   - Progressão normal a partir da referência, com a progressão dupla da Phase 42 usando a faixa de repetições da ficha (Phase 47): subir repetições dentro da faixa e só subir para a próxima carga válida ao atingir o topo.
+
+6. **Histórico próprio curto:**
+   - Quando o exercício tiver poucas sessões próprias (limiar definido e documentado), complementar o resumo com os exercícios parecidos da Phase 43, reaproveitando o que ela criou. Exercícios sem nenhum histórico próprio continuam com a Phase 43 (carga inicial / "Primeira vez").
+
+7. **Reflexo de edições e exclusões:**
+   - Séries editadas e treinos/exercícios excluídos no histórico (Phases 45 e 46) refletem no resumo e, portanto, nas sugestões. Calcular sempre a partir dos dados atuais, sem guardar cópias que possam ficar velhas.
+
+8. **Custo e tom:**
+   - Continua uma única chamada à IA para as sugestões da ficha (nenhuma por série); o resumo é curto e limitado; o rationale mantém o tom atual.
+
+## Acceptance Criteria
+1. Teste: histórico com várias sessões boas e um último treino isolado mais fraco → a sugestão NÃO fica abaixo da referência (volta ao nível de referência ou progride a partir dele), mesmo se a IA responder abaixo.
+2. Teste: histórico subindo → a sugestão progride (carga ou repetições, conforme a progressão dupla e a faixa da ficha).
+3. Teste: queda repetida em várias sessões seguidas → a carga sugerida não aumenta e o motivo em uma linha explica que é para manter e recuperar as repetições.
+4. Teste: toda carga sugerida é válida para o equipamento (halteres, máquina de placas, barra com anilhas), inclusive depois das redes de segurança.
+5. Teste: editar uma série ou excluir um treino do histórico (Phases 45/46) muda a referência/resumo usado na sugestão seguinte.
+6. Teste: exercício com histórico só em outra ficha recebe progressão normal a partir desse histórico (não é tratado como novo); exercício sem histórico continua com a Phase 43.
+7. Teste: o prompt contém só o resumo (quantidade limitada de sessões por exercício), não as séries cruas de todo o histórico, e o número de chamadas à IA não aumenta.
+8. Os testes existentes de progressão (Phase 42) e de carga inicial (Phase 43) continuam passando ou foram ajustados apenas no que esta phase muda de propósito.
+9. O resumo final da phase descreve como a sugestão era montada antes e como é montada agora (referência, tendência, queda repetida, limiares escolhidos).
+10. `php artisan test` passa em 100% de toda a suíte.
+11. `tests/Architecture/ArchitecturalRulesTest.php` passa sem violações.
+12. `npm run build` compila com zero erros.
+
+# Phase 49: OpenAI GPT-6 Luna como IA Principal e Gemini 3.8 Flash (Gratuito) como Reserva
+
+O app passa a usar o GPT-6 Luna da OpenAI (id na API: `gpt-6-luna`) como IA principal em TODAS as funcionalidades, inclusive o scan da ficha. O Google Gemini fica como reserva, com o modelo `gemini-3.8-flash` na camada gratuita (o Gemini não será pago). Vale no ambiente local e, depois do push, na produção. Junto com a troca: reserva que funciona de verdade, configuração de modelos limpa, HTTPS verificado, mensagem de erro do scan honesta, diagnóstico pelo `ai:doctor` e registro de uso no log.
+
+## Regras Obrigatórias (Produção)
+- O app está em produção (Render + Neon) com dados reais de usuários. Nenhum dado existente pode ser perdido ou alterado por deploy. Migrations somente aditivas (criar tabela nova ou adicionar coluna que aceite nulo; nunca remover, renomear ou mudar o tipo de colunas/tabelas; nunca apagar ou reescrever registros existentes). Esta phase não deve precisar de migration.
+- Não mudar o comportamento do que já funciona hoje além do que a phase pede: as funcionalidades de IA (scan, sugestões de progressão e carga inicial, classificações de equipamento e de movimento) continuam com os mesmos prompts, a mesma validação em PHP e a mesma degradação graciosa; muda só QUEM responde, a reserva, a configuração e os pontos listados abaixo.
+- Nunca escrever, registrar em log, exibir ou commitar o valor de chaves de API. O `.env.example` só tem nomes de variáveis e valores não secretos.
+- Usar o design system existente (componentes `Base*` em `resources/js/Components/UI/`, tokens de `resources/css/design-tokens.css`, nenhum hex literal em `.vue`), textos em pt-BR.
+- Testes nunca chamam APIs reais: todas as respostas de IA são simuladas.
+- Rodar os testes existentes e criar testes para o que for novo. Não fazer deploy nem git push.
+
+## Tasks
+1. **Reinvestigar a camada de IA antes de implementar (as Phases 42 a 48 mexeram nela):**
+   - Reler `app/Services/AI/` inteiro: `AiManager.php` (escolha de empresa, failover, regra que força o scan no Gemini), `Contracts/AiDriverInterface.php` (`generateStructured` e `analyzeImage`), `Drivers/GeminiDriver.php` + `GeminiClient.php`, `Drivers/ClaudeDriver.php`, `Drivers/GroqDriver.php`, `Support/AiModelResolver.php`, `Support/AiTimeoutResolver.php`, `Support/AiJsonSanitizer.php`; o bloco de IA de `config/services.php`; `app/Enums/AiTask.php`; `.env.example`; `app/Console/Commands/AiDoctorCommand.php`; `app/Exceptions/*` de IA; `.ai/rules/ai-integration.md`.
+   - Mapear TODOS os serviços que chamam a IA no momento (quando esta phase foi escrita: `WorkoutScannerService`, `ProgressiveOverloadService`, `ExerciseEquipmentService`, `ExerciseMovementPatternService`, `StartingLoadService`) e confirmar que todos passam pelo `AiManager`.
+   - Reler os testes de IA existentes (ex.: `AiManagerTest`, `AiTaskRoutingTest`, `AiResilienceTest`, `AiTimeoutResolverTest`, `GeminiClientTest`, `GroqDriverTest`, `WorkoutScannerTest`) — alguns verificam comportamentos que esta phase muda de propósito (ex.: scan fixo no Gemini); ajustar só esses pontos.
+   - Referência do que existia quando esta phase foi escrita (confirmar): chamadas HTTP diretas com o `Http` do Laravel, sem SDK; JSON pedido só no texto do prompt; timeouts de 6 s (texto rápido) e 180 s (imagem); só o Gemini repetia a chamada (até 3 vezes em 503/falha de rede); padrões `AI_DEFAULT_DRIVER=gemini` e `AI_FALLBACK_DRIVER=gemini` (ou seja, sem reserva real); as variáveis `GEMINI_MODEL`/`ANTHROPIC_MODEL`/`GROQ_MODEL` e o modelo escrito em `GeminiClient::model()` não tinham efeito; todos os conectores usavam `withoutVerifying()`; a chave do Gemini ia também na URL (`?key=`).
+
+2. **Novo conector OpenAI na camada existente:**
+   - Criar o driver OpenAI em `app/Services/AI/` implementando o mesmo contrato dos outros (texto e imagem) e registrado no `AiManager` como os demais. Não reescrever a lógica das funcionalidades.
+   - Seguir a documentação oficial atual da OpenAI, preferindo a Responses API: envio de imagem para o scan e resposta em JSON estruturado nativo da API. Manter a limpeza (`AiJsonSanitizer`) e toda a validação em PHP que já existe depois da resposta.
+   - Confirmar na documentação oficial o id do modelo (`gpt-6-luna`) e os parâmetros aceitos por ele; usar exatamente esse id como padrão. Se a documentação mostrar algo incompatível, não inventar outro modelo: relatar no resumo final.
+   - Variáveis, no mesmo padrão das outras empresas em `config/services.php`: `OPENAI_API_KEY`, `OPENAI_VISION_MODEL` e `OPENAI_FAST_TEXT_MODEL` (padrão `gpt-6-luna` para os dois). Usar sempre o `AiModelResolver` e o `AiTimeoutResolver`.
+   - Nas chamadas de texto rápido (sugestões, classificações), configurar o nível de raciocínio do modelo para que a resposta caiba no tempo limite atual. Se o tempo limite precisar mudar, mudar o mínimo necessário e justificar no resumo final.
+
+3. **Configuração das empresas:**
+   - Principal: `openai`. Reserva: `gemini`. Ajustar os padrões no código (`config/services.php`) para isso.
+   - Remover a regra que força o scan a ser sempre Gemini: o scan usa a principal (OpenAI) e cai para a reserva (Gemini) se falhar. A Groq continua bloqueada para scan (nem como principal nem como reserva).
+   - Os conectores de Claude e Groq continuam existindo e funcionando quando configurados; só deixam de ser padrão.
+
+4. **Gemini atualizado (reserva gratuita):**
+   - Os modelos padrão do Gemini (imagem e texto) passam a ser `gemini-3.8-flash` (o `gemini-3.5-flash` foi aposentado pelo Google).
+   - Seguir a documentação oficial atual do Gemini 3.8 Flash: remover parâmetros que ele não aceita mais (ex.: `temperature`, `top_p`, `top_k`, se forem enviados), usar um nível de raciocínio adequado para respostas rápidas e, se a API oferecer, resposta em JSON nativo — mantendo a validação em PHP.
+   - Considerar que é a camada gratuita (limites de uso mais baixos): uma falha por limite do Gemini apenas degrada como hoje, sem quebrar nada.
+
+5. **Reserva que funciona de verdade:**
+   - Qualquer falha da OpenAI (sem crédito, limite de gasto atingido, chave errada ou ausente, fora do ar, tempo esgotado, resposta vazia ou JSON inválido) faz a mesma operação ser tentada no Gemini.
+   - Em erro de crédito ou de limite de gasto (identificar pelos códigos de erro documentados pela OpenAI, não só pelo status HTTP), NÃO repetir a chamada na OpenAI: ir direto para a reserva. Outras novas tentativas, se existirem, são curtas e não podem estourar o tempo limite da funcionalidade.
+   - Se a reserva também falhar, cada funcionalidade degrada exatamente como já degrada hoje.
+
+6. **Limpeza da configuração de modelos (sem mudar o comportamento):**
+   - Alinhar o `.env.example` com os padrões reais do código (incluindo as variáveis da OpenAI), sem valores reais de chave.
+   - Remover variáveis e trechos sem efeito (ex.: `GEMINI_MODEL`, `ANTHROPIC_MODEL`, `GROQ_MODEL` e o modelo escrito em `GeminiClient` que nunca é usado), ou fazê-los funcionar — o que for mais simples e claro. Documentar a escolha no resumo.
+
+7. **Segurança:**
+   - Ligar a verificação do certificado HTTPS em todos os conectores (remover o `withoutVerifying()`). Se no Windows local der erro de certificado, NÃO desligar a verificação: explicar no resumo final o que precisa ser configurado no computador (ex.: arquivo de certificados para o PHP/cURL).
+   - Tirar a chave do Gemini da URL (`?key=`), mandando só pelo cabeçalho.
+   - Garantir que nenhuma mensagem de erro, log ou exceção contenha o valor de uma chave.
+
+8. **Mensagem de erro do scan:**
+   - Diferenciar "não deu para ler a foto" (a IA respondeu, mas não foi possível extrair uma ficha) de "o serviço de IA está indisponível agora, tente de novo em alguns minutos" (falha das empresas: crédito, chave, fora do ar, tempo esgotado). Nunca culpar a foto quando o problema é a IA.
+   - Seguir o padrão atual de mensagens (flash) do `WorkoutScannerController`, sem criar telas novas.
+
+9. **`php artisan ai:doctor`:**
+   - Passa a testar a empresa principal e a reserva configuradas (inclusive a OpenAI), mostrando para cada uma: empresa, modelos configurados, se a chave está definida (sem mostrar o valor) e se a conexão funcionou.
+
+10. **Registro de uso:**
+   - A cada chamada de IA, registrar no log: empresa, modelo, funcionalidade (qual serviço/tarefa), tokens usados (quando a API informar) e se foi a principal ou a reserva. Nunca registrar chaves, a imagem nem o prompt inteiro.
+
+## Acceptance Criteria
+1. Existe um driver OpenAI na camada `app/Services/AI/`, com o mesmo contrato dos outros, usando a API oficial (Responses API) com imagem e JSON estruturado nativo; as funcionalidades não tiveram a lógica reescrita.
+2. Padrões no código: principal `openai`, reserva `gemini`; `OPENAI_VISION_MODEL` e `OPENAI_FAST_TEXT_MODEL` com padrão `gpt-6-luna`; Gemini com padrão `gemini-3.8-flash` para imagem e texto; o scan usa a principal e cai para a reserva; a Groq continua bloqueada para scan.
+3. Testes com respostas simuladas: cada funcionalidade (scan, sugestões de progressão, carga inicial, classificação de equipamento, classificação de movimento) funciona com a OpenAI.
+4. Testes: quando a OpenAI falha (sem crédito, limite de gasto atingido, chave ausente/errada, fora do ar, tempo esgotado, JSON inválido), a mesma operação é atendida pelo Gemini.
+5. Teste: em erro de crédito e de limite de gasto, a OpenAI é chamada uma única vez (sem nova tentativa) antes de ir para o Gemini.
+6. Testes da mensagem do scan: falha das empresas → "serviço de IA indisponível, tente de novo em alguns minutos"; resposta que não vira ficha → mensagem sobre a foto. Nenhuma ficha é criada pela metade e nenhum dado existente se perde em nenhum dos casos.
+7. Nenhum conector usa `withoutVerifying()`; a chave do Gemini não aparece na URL (teste verificando a requisição simulada); nenhuma chave aparece em logs ou mensagens.
+8. Os parâmetros não aceitos pelo Gemini 3.8 Flash não são mais enviados (teste verificando o corpo da requisição simulada).
+9. `.env.example` alinhado com os padrões do código; variáveis e trechos sem efeito removidos ou funcionando.
+10. `php artisan ai:doctor` testa principal e reserva configuradas, sem mostrar valores de chaves.
+11. Cada chamada de IA gera um registro de uso com empresa, modelo, funcionalidade, tokens e principal/reserva (teste verificando o log).
+12. O resumo final lista exatamente as variáveis necessárias no `.env` local e no Render, com os valores (menos as chaves) — lembrando que o `.env` local estava com a Groq como principal (`AI_DEFAULT_DRIVER=groq`) e precisa ser ajustado — e explica o que configurar no Windows caso o HTTPS verificado falhe localmente.
+13. `php artisan test` passa em 100% de toda a suíte.
+14. `tests/Architecture/ArchitecturalRulesTest.php` passa sem violações.
+15. `npm run build` compila com zero erros.
