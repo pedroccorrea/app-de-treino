@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\Equipment;
+use App\Enums\MovementPattern;
 use App\Enums\MuscleGroup;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
@@ -12,7 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['user_id', 'name', 'primary_muscle_group', 'secondary_muscle_groups', 'equipment'])]
+#[Fillable(['user_id', 'name', 'primary_muscle_group', 'secondary_muscle_groups', 'equipment', 'movement_pattern'])]
 class Exercise extends Model
 {
     protected function casts(): array
@@ -21,6 +22,7 @@ class Exercise extends Model
             'primary_muscle_group' => MuscleGroup::class,
             'secondary_muscle_groups' => AsEnumCollection::of(MuscleGroup::class),
             'equipment' => Equipment::class,
+            'movement_pattern' => MovementPattern::class,
         ];
     }
 
@@ -31,6 +33,15 @@ class Exercise extends Model
     public function resolvedEquipment(): Equipment
     {
         return $this->equipment ?? Equipment::Other;
+    }
+
+    /**
+     * Mesma ideia do equipamento: sem classificação, o padrão de movimento é
+     * "outro" — e um exercício "outro" nunca é considerado parecido com nada.
+     */
+    public function resolvedMovementPattern(): MovementPattern
+    {
+        return $this->movement_pattern ?? MovementPattern::Other;
     }
 
     public function user(): BelongsTo

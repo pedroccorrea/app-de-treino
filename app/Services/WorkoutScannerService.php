@@ -20,6 +20,7 @@ class WorkoutScannerService
         private readonly AiManager $aiManager,
         private readonly WorkoutProgramService $workoutProgramService,
         private readonly ExerciseEquipmentService $exerciseEquipmentService,
+        private readonly ExerciseIdentityService $exerciseIdentityService,
     ) {}
 
     /**
@@ -162,8 +163,11 @@ class WorkoutScannerService
     {
         $name = trim($exerciseData['name'] ?? '');
 
+        // Mesma grafia a menos de maiúsculas, acentos, espaços ou abreviações
+        // ("c/" = "com") é o mesmo exercício: reaproveitá-lo mantém o histórico
+        // dele na ficha nova. O nome já salvo nunca é alterado.
         $matchedId = $catalog->search(
-            fn (string $existingName) => mb_strtolower($existingName) === mb_strtolower($name)
+            fn (string $existingName) => $this->exerciseIdentityService->sameExercise($existingName, $name)
         );
 
         if ($matchedId !== false) {

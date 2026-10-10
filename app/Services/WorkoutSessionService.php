@@ -11,7 +11,10 @@ use Illuminate\Support\Facades\DB;
 
 class WorkoutSessionService
 {
-    public function __construct(private readonly ExerciseEquipmentService $exerciseEquipmentService) {}
+    public function __construct(
+        private readonly ExerciseEquipmentService $exerciseEquipmentService,
+        private readonly ExerciseIdentityService $exerciseIdentityService,
+    ) {}
 
     /**
      * Inicia uma nova sessão de treino para o usuário.
@@ -118,6 +121,9 @@ class WorkoutSessionService
 
     /**
      * Busca o histórico recente (último treino) para cada exercício informado.
+     * O histórico é do exercício, não da ficha: vale a última vez que ele foi
+     * feito em qualquer treino ou programa, inclusive sob uma grafia
+     * equivalente do nome (ver ExerciseIdentityService).
      *
      * @param  array<int>  $exerciseIds
      * @return array<int, array{summary: string, weight: float|null, reps: int|null, sets: array<int, array{set_number: int, weight: float|null, reps: int, rpe: float|null}>}>
@@ -128,6 +134,8 @@ class WorkoutSessionService
             return [];
         }
 
+        $equivalentIds = $this->exerciseIdentityService->equivalentIds($user, $exerciseIds);
+
         $query = SetLog::query()
             ->with('workoutSession')
             ->whereHas('workoutSession', function ($q) use ($user, $excludeSessionId) {
@@ -136,7 +144,7 @@ class WorkoutSessionService
                     $q->where('id', '!=', $excludeSessionId);
                 }
             })
-            ->whereIn('exercise_id', $exerciseIds)
+            ->whereIn('exercise_id', collect($equivalentIds)->flatten()->unique()->values()->all())
             ->orderByDesc('created_at');
 
         /** @var Collection<int, SetLog> $logs */
@@ -145,7 +153,7 @@ class WorkoutSessionService
         $result = [];
 
         foreach ($exerciseIds as $exerciseId) {
-            $exerciseLogs = $logs->where('exercise_id', $exerciseId);
+            $exerciseLogs = $logs->whereIn('exercise_id', $equivalentIds[(int) $exerciseId] ?? [(int) $exerciseId]);
 
             if ($exerciseLogs->isEmpty()) {
                 continue;
