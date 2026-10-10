@@ -1,3 +1,6 @@
 # Invariantes: Integrações com Modelos de Linguagem (LLMs)
 1. Sanitização Rigorosa de Markdown / JSON: LLMs frequentemente envolvem a resposta JSON em blocos de markdown. O Service DEVE sanitizar a string com regex (preg_replace('/^```(?:json)?\s+|\s+```$/m', '', trim($rawResponse))) e validar json_last_error() antes de usar o array decodificado.
 2. Injeção de Enums no Prompt de Sistema: Sempre que pedir para a IA classificar uma entidade do domínio, passe os valores permitidos no prompt via array_map(fn($case) => $case->value, MuscleGroup::cases()).
+3. Toda chamada de IA passa pelo AiManager (principal → reserva). Conectores novos implementam AiProviderDriverInterface e são registrados como `create{Nome}Driver()` no AiManager; a Groq nunca atende AiTask::Vision.
+4. Segurança dos conectores: nunca usar `withoutVerifying()`, nunca colocar chave em URL, e passar todo texto de erro (corpo da resposta, mensagem de exceção) por AiSecretRedactor antes de logar ou lançar.
+5. Falhas devem ser classificadas: conteúdo vazio/JSON inválido → `XException::unreadableResponse()`; crédito/limite de gasto → `XException::billing()` (sem nova tentativa). O AiManager usa isso para escolher entre AiUnreadableResponseException e AiUnavailableException.

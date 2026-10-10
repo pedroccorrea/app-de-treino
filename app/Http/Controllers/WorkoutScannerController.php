@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Exceptions\AiUnavailableException;
 use App\Http\Requests\ScanWorkoutRequest;
 use App\Services\WorkoutScannerService;
 use Illuminate\Http\RedirectResponse;
@@ -20,9 +21,15 @@ class WorkoutScannerController extends Controller
         } catch (\Throwable $e) {
             Log::warning('Falha ao escanear e importar ficha de treino.', ['message' => $e->getMessage()]);
 
+            // Só a falha das empresas de IA vira "serviço indisponível"; o
+            // resto (resposta que não vira ficha) é sobre a foto.
+            $message = $e instanceof AiUnavailableException
+                ? WorkoutScannerService::AI_UNAVAILABLE_MESSAGE
+                : WorkoutScannerService::UNREADABLE_PHOTO_MESSAGE;
+
             return redirect()
                 ->route('workouts.index')
-                ->with('error', 'Não foi possível ler esta imagem. Tente tirar uma foto mais nítida ou aproximada.');
+                ->with('error', $message);
         }
 
         return redirect()

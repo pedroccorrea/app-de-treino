@@ -116,6 +116,8 @@ test('a suggestion whose exercise_id does not belong to the workout is discarded
     Log::shouldReceive('warning')
         ->once()
         ->with('Sugestão de sobrecarga progressiva descartada: exercise_id não pertence ao treino.', Mockery::any());
+    // Registro de uso que o AiManager grava a cada chamada de IA (Phase 49).
+    Log::shouldReceive('info')->with('Uso de IA', Mockery::any());
 
     $suggestions = app(ProgressiveOverloadService::class)->analyzeWorkout($user, $workout);
 

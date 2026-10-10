@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\AiFeature;
 use App\Enums\AiTask;
 use App\Enums\Equipment;
 use App\Models\Exercise;
@@ -131,7 +132,7 @@ class ExerciseEquipmentService
         }
 
         try {
-            $response = $this->aiManager->generateStructured($this->buildPrompt($exercises), task: AiTask::FastText);
+            $response = $this->aiManager->generateStructured($this->buildPrompt($exercises), task: AiTask::FastText, feature: AiFeature::EquipmentClassification);
         } catch (\Throwable $e) {
             Log::warning('Falha ao classificar equipamento de exercícios via IA.', [
                 'exercise_ids' => $exercises->pluck('id')->all(),

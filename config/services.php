@@ -35,18 +35,36 @@ return [
         ],
     ],
 
+    // IA principal. Modelo e nível de raciocínio por AiTask: texto rápido
+    // sem raciocínio estendido para caber no timeout de fast_text.
+    'openai' => [
+        'key' => env('OPENAI_API_KEY'),
+        'models' => [
+            'vision' => env('OPENAI_VISION_MODEL', 'gpt-6-luna'),
+            'fast_text' => env('OPENAI_FAST_TEXT_MODEL', 'gpt-6-luna'),
+        ],
+        'reasoning_effort' => [
+            'vision' => 'low',
+            'fast_text' => 'none',
+        ],
+    ],
+
+    // IA reserva (camada gratuita). Gemini 3.8 Flash aceita thinkingLevel
+    // low/medium/high ("minimal" não existe nele).
     'gemini' => [
         'key' => env('GEMINI_API_KEY'),
-        'model' => env('GEMINI_MODEL', 'gemini-3.5-flash'),
         'models' => [
-            'vision' => env('GEMINI_VISION_MODEL', 'gemini-3.5-flash'),
-            'fast_text' => env('GEMINI_FAST_TEXT_MODEL', 'gemini-3.5-flash'),
+            'vision' => env('GEMINI_VISION_MODEL', 'gemini-3.8-flash'),
+            'fast_text' => env('GEMINI_FAST_TEXT_MODEL', 'gemini-3.8-flash'),
+        ],
+        'thinking_level' => [
+            'vision' => 'medium',
+            'fast_text' => 'low',
         ],
     ],
 
     'claude' => [
         'key' => env('ANTHROPIC_API_KEY'),
-        'model' => env('ANTHROPIC_MODEL', 'claude-opus-5'),
         'models' => [
             'vision' => env('ANTHROPIC_VISION_MODEL', 'claude-opus-5'),
             'fast_text' => env('ANTHROPIC_FAST_TEXT_MODEL', 'claude-haiku-4-5-20251001'),
@@ -55,7 +73,6 @@ return [
 
     'groq' => [
         'key' => env('GROQ_API_KEY'),
-        'model' => env('GROQ_MODEL', 'openai/gpt-oss-20b'),
         'models' => [
             'vision' => env('GROQ_VISION_MODEL', 'llama-3.2-90b-vision-preview'),
             'fast_text' => env('GROQ_FAST_TEXT_MODEL', 'openai/gpt-oss-20b'),
@@ -63,7 +80,7 @@ return [
     ],
 
     'ai' => [
-        'default_driver' => env('AI_DEFAULT_DRIVER', 'gemini'),
+        'default_driver' => env('AI_DEFAULT_DRIVER', 'openai'),
         'fallback_driver' => env('AI_FALLBACK_DRIVER', 'gemini'),
         // Timeouts curtos por AiTask (segundos) para nunca deixar o usuário
         // esperando uma tela travada: FastText alimenta telas síncronas

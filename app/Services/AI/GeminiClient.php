@@ -6,20 +6,28 @@ use App\Enums\AiTask;
 use App\Exceptions\GeminiException;
 use App\Services\AI\Support\AiJsonSanitizer;
 use App\Services\AI\Support\AiModelResolver;
+use App\Services\AI\Support\AiSecretRedactor;
 use App\Services\AI\Support\AiTimeoutResolver;
+use App\Services\AI\Support\AiUsage;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * Single point of contact with the Google Gemini API. Every AI-backed
- * service (workout scanning, progressive overload, dashboard analytics)
- * goes through this client instead of calling Http::* directly, so the
- * request setup, JSON sanitization and error handling only live in one
- * place.
+ * Single point of contact with the Google Gemini API (generateContent),
+ * wrapped by GeminiDriver. Targets Gemini 3.8 Flash on the free tier: the
+ * key travels only in the `x-goog-api-key` header (never in the URL), no
+ * sampling parameters are sent (temperature/top_p/top_k were removed for
+ * Gemini 3.8), reasoning is controlled by `thinkingLevel` per AiTask and the
+ * answer is requested as native JSON (`responseMimeType`), still going
+ * through AiJsonSanitizer afterwards.
  */
 class GeminiClient
 {
+    public const DEFAULT_MODEL = 'gemini-3.8-flash';
+
+    private ?AiUsage $lastUsage = null;
+
     public function __construct()
     {
         // Large workout-sheet photos are base64-encoded in memory before
@@ -44,16 +52,19 @@ class GeminiClient
         return $this->decodeJson($this->request($prompt, $inlineImage, $task));
     }
 
-    /**
-     * Sends a trivial one-word prompt and returns Gemini's raw text answer,
-     * without requiring it to be JSON. Used by `ai:doctor` to validate SSL
-     * and API-key authentication without depending on prompt-engineering.
-     *
-     * @throws GeminiException
-     */
-    public function ping(): string
+    public function modelFor(?AiTask $task): string
     {
-        return trim($this->request('Responda apenas com a palavra: OK'));
+        return AiModelResolver::resolve('gemini', $task, self::DEFAULT_MODEL);
+    }
+
+    public function hasApiKey(): bool
+    {
+        return $this->apiKey() !== '';
+    }
+
+    public function lastUsage(): ?AiUsage
+    {
+        return $this->lastUsage;
     }
 
     /**
@@ -63,6 +74,7 @@ class GeminiClient
      */
     private function request(string $prompt, ?array $inlineImage = null, ?AiTask $task = null): string
     {
+        $this->lastUsage = null;
         $apiKey = $this->apiKey();
 
         if (empty($apiKey)) {
@@ -80,14 +92,17 @@ class GeminiClient
 
         for ($attempt = 1; $attempt <= $maxTries; $attempt++) {
             try {
-                $response = Http::withoutVerifying()
-                    ->withHeaders(['x-goog-api-key' => $apiKey])
+                $response = Http::withHeaders(['x-goog-api-key' => $apiKey])
                     ->timeout(AiTimeoutResolver::resolve($task))
                     ->post(
-                        "https://generativelanguage.googleapis.com/v1beta/models/{$this->model($task)}:generateContent?key={$apiKey}",
+                        "https://generativelanguage.googleapis.com/v1beta/models/{$this->modelFor($task)}:generateContent",
                         [
                             'contents' => [
                                 ['parts' => $parts],
+                            ],
+                            'generationConfig' => [
+                                'responseMimeType' => 'application/json',
+                                'thinkingConfig' => ['thinkingLevel' => $this->thinkingLevel($task)],
                             ],
                         ]
                     );
@@ -95,6 +110,7 @@ class GeminiClient
                 // Se a API estiver sobrecarregada, esperamos 1 segundo e tentamos de novo.
                 if ($response->status() === 503 && $attempt < $maxTries) {
                     sleep(1);
+
                     continue;
                 }
 
@@ -102,32 +118,72 @@ class GeminiClient
             } catch (Throwable $e) {
                 if ($attempt < $maxTries) {
                     sleep(1);
+
                     continue;
                 }
 
-                Log::warning('Falha de comunicação com a API do Gemini.', ['message' => $e->getMessage()]);
-                throw new GeminiException('Não foi possível comunicar com a IA no momento. Tente novamente em instantes.', previous: $e);
+                Log::warning('Falha de comunicação com a API do Gemini.', ['message' => AiSecretRedactor::redact($e->getMessage())]);
+                throw new GeminiException('Não foi possível comunicar com a IA no momento. Tente novamente em instantes.');
             }
         }
 
         if ($response->failed()) {
+            $body = AiSecretRedactor::redact($response->body());
+
             Log::warning('A API do Gemini retornou um erro.', [
                 'status' => $response->status(),
-                'body' => $response->body(),
+                'body' => $body,
             ]);
 
-            throw new GeminiException('Erro retornado pelo Google Gemini (' . $response->status() . '): ' . $response->body());
+            throw new GeminiException('Erro retornado pelo Google Gemini ('.$response->status().'): '.$body);
         }
 
-        $rawText = data_get($response->json(), 'candidates.0.content.parts.0.text');
+        $usage = data_get($response->json(), 'usageMetadata');
+        $this->lastUsage = is_array($usage)
+            ? AiUsage::fromCounts($usage['promptTokenCount'] ?? null, $usage['candidatesTokenCount'] ?? null, $usage['totalTokenCount'] ?? null)
+            : null;
 
-        if (! is_string($rawText) || trim($rawText) === '') {
+        $rawText = $this->answerText($response->json());
+
+        if (trim($rawText) === '') {
             Log::warning('A API do Gemini não retornou nenhum conteúdo de texto.');
 
-            throw new GeminiException('A IA não retornou nenhum conteúdo.');
+            throw GeminiException::unreadableResponse('A IA não retornou nenhum conteúdo.');
         }
 
         return $rawText;
+    }
+
+    /**
+     * Joins the answer's text parts, skipping "thought" parts that thinking
+     * models may include before the actual answer.
+     *
+     * @param  array<string, mixed>|null  $body
+     */
+    private function answerText(?array $body): string
+    {
+        $text = '';
+
+        foreach ((array) data_get($body, 'candidates.0.content.parts', []) as $part) {
+            if (! ($part['thought'] ?? false) && is_string($part['text'] ?? null)) {
+                $text .= $part['text'];
+            }
+        }
+
+        return $text;
+    }
+
+    /**
+     * Gemini 3.8 Flash accepts low/medium/high (not "minimal"): FastText uses
+     * the lowest level so answers fit its short timeout; Vision keeps the
+     * model's default ("medium") for reading photos.
+     */
+    private function thinkingLevel(?AiTask $task): string
+    {
+        return (string) config(
+            'services.gemini.thinking_level.'.($task ?? AiTask::Vision)->value,
+            $task === AiTask::FastText ? 'low' : 'medium',
+        );
     }
 
     /**
@@ -142,7 +198,7 @@ class GeminiClient
         if ($parsed === null) {
             Log::warning('Não foi possível interpretar a resposta JSON da IA.', ['raw_text' => $rawText]);
 
-            throw new GeminiException('Não foi possível interpretar a resposta da IA.');
+            throw GeminiException::unreadableResponse('Não foi possível interpretar a resposta da IA.');
         }
 
         return $parsed;
@@ -151,10 +207,5 @@ class GeminiClient
     private function apiKey(): string
     {
         return (string) (config('services.gemini.key') ?: env('GEMINI_API_KEY'));
-    }
-
-    private function model(?AiTask $task = null): string
-    {
-        return AiModelResolver::resolve('gemini', $task, env('GEMINI_MODEL', 'gemini-3.7-flash'));
     }
 }

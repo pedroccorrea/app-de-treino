@@ -69,7 +69,7 @@ test('scanning a workout sheet never returns a fatal 500 when Gemini times out',
 
     $response->assertStatus(302);
     $response->assertRedirect(route('workouts.index'));
-    $response->assertSessionHas('error', 'Não foi possível ler esta imagem. Tente tirar uma foto mais nítida ou aproximada.');
+    $response->assertSessionHas('error', 'O serviço de IA está indisponível agora. Tente de novo em alguns minutos.');
     expect($user->workouts()->count())->toBe(0);
 });
 

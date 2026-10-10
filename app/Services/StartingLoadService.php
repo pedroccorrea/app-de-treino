@@ -5,6 +5,7 @@ namespace App\Services;
 use App\DataTransferObjects\OverloadSuggestion;
 use App\DataTransferObjects\RecentPerformanceSummary;
 use App\DataTransferObjects\RepRange;
+use App\Enums\AiFeature;
 use App\Enums\AiTask;
 use App\Enums\MovementPattern;
 use App\Enums\OverloadConfidence;
@@ -219,7 +220,7 @@ class StartingLoadService
     private function askAi(Collection $exercises, Collection $similarByExercise): Collection
     {
         try {
-            $response = $this->aiManager->generateStructured($this->buildPrompt($exercises, $similarByExercise), task: AiTask::FastText);
+            $response = $this->aiManager->generateStructured($this->buildPrompt($exercises, $similarByExercise), task: AiTask::FastText, feature: AiFeature::StartingLoad);
         } catch (\Throwable $e) {
             Log::warning('Falha ao consultar carga inicial de exercícios novos via IA.', [
                 'exercise_ids' => $exercises->pluck('id')->all(),

@@ -3,9 +3,12 @@
 namespace App\Services;
 
 use App\DataTransferObjects\RepRange;
+use App\Enums\AiFeature;
 use App\Enums\AiTask;
 use App\Enums\MuscleGroup;
 use App\Exceptions\AiException;
+use App\Exceptions\AiUnavailableException;
+use App\Exceptions\AiUnreadableResponseException;
 use App\Models\Exercise;
 use App\Models\User;
 use App\Models\Workout;
@@ -17,6 +20,10 @@ use Illuminate\Support\Facades\Log;
 
 class WorkoutScannerService
 {
+    public const UNREADABLE_PHOTO_MESSAGE = 'Não foi possível ler esta imagem. Tente tirar uma foto mais nítida ou aproximada.';
+
+    public const AI_UNAVAILABLE_MESSAGE = 'O serviço de IA está indisponível agora. Tente de novo em alguns minutos.';
+
     public function __construct(
         private readonly AiManager $aiManager,
         private readonly WorkoutProgramService $workoutProgramService,
@@ -119,12 +126,28 @@ class WorkoutScannerService
     private function transcribeWithAi(UploadedFile $image, Collection $catalog): array
     {
         try {
-            return $this->aiManager->analyzeImage($image, $this->buildPrompt($catalog), task: AiTask::Vision);
+            $parsed = $this->aiManager->analyzeImage($image, $this->buildPrompt($catalog), task: AiTask::Vision, feature: AiFeature::WorkoutScan);
+        } catch (AiUnreadableResponseException $e) {
+            Log::warning('A IA respondeu, mas não foi possível extrair uma ficha da foto.', ['message' => $e->getMessage()]);
+
+            throw new AiException(self::UNREADABLE_PHOTO_MESSAGE, previous: $e);
         } catch (\Throwable $e) {
+            // Nenhuma empresa de IA respondeu (crédito, chave, fora do ar,
+            // tempo esgotado): o problema é o serviço, nunca a foto.
             Log::warning('Falha ao transcrever ficha de treino via IA.', ['message' => $e->getMessage()]);
 
-            throw new AiException('Não foi possível ler esta imagem. Tente tirar uma foto mais nítida ou aproximada.', previous: $e);
+            throw new AiUnavailableException(self::AI_UNAVAILABLE_MESSAGE, previous: $e);
         }
+
+        // A IA respondeu um JSON, mas sem nenhum exercício: não é uma ficha.
+        // Barrar aqui (antes da transação) evita criar uma ficha vazia.
+        if (! is_array($parsed['exercises'] ?? null) || $parsed['exercises'] === []) {
+            Log::warning('A resposta da IA não contém exercícios de uma ficha.');
+
+            throw new AiException(self::UNREADABLE_PHOTO_MESSAGE);
+        }
+
+        return $parsed;
     }
 
     /**

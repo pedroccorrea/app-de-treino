@@ -35,10 +35,8 @@ function fakeClaudeJsonResponse(array $body): void
 
 beforeEach(function () {
     config([
-        'services.gemini.model' => 'gemini-default-model',
         'services.gemini.models.vision' => 'gemini-vision-model',
         'services.gemini.models.fast_text' => 'gemini-fast-text-model',
-        'services.claude.model' => 'claude-default-model',
         'services.claude.models.vision' => 'claude-vision-model',
         'services.claude.models.fast_text' => 'claude-fast-text-model',
         'services.ai.default_driver' => 'gemini',
@@ -62,12 +60,12 @@ test('AiManager routes an AiTask::FastText request to the driver configured fast
     Http::assertSent(fn ($request) => str_contains($request->url(), 'gemini-fast-text-model'));
 });
 
-test('AiManager falls back to the provider general-purpose model when no AiTask is given', function () {
+test('AiManager uses the driver built-in default model when no AiTask is given', function () {
     fakeGeminiJsonResponse(['ok' => true]);
 
     app(AiManager::class)->generateStructured('qualquer prompt');
 
-    Http::assertSent(fn ($request) => str_contains($request->url(), 'gemini-default-model'));
+    Http::assertSent(fn ($request) => str_contains($request->url(), 'gemini-3.8-flash'));
 });
 
 test('AiManager routes an AiTask::Vision image request to the driver configured vision model', function () {

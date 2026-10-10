@@ -6,12 +6,11 @@ use App\Enums\AiTask;
 
 /**
  * Resolves which model string a provider driver should use for a given
- * AiTask, reading from config/services.php. A task-specific model
- * (services.{provider}.models.{task}) always wins; if it isn't configured,
- * the provider's general-purpose model (services.{provider}.model) is used,
- * and finally $default when neither is set. Centralizing this here keeps
- * every driver's model-selection rule identical instead of duplicating the
- * same config lookup fallback chain in each one.
+ * AiTask, reading from config/services.php (services.{provider}.models.{task}).
+ * When the task has no configured model — or no task is given at all — the
+ * driver's own $default is used. Centralizing this here keeps every driver's
+ * model-selection rule identical instead of duplicating the same config
+ * lookup in each one.
  */
 class AiModelResolver
 {
@@ -21,8 +20,6 @@ class AiModelResolver
             ? config("services.{$provider}.models.{$task->value}")
             : null;
 
-        $model = $taskModel ?: config("services.{$provider}.model");
-
-        return (string) ($model ?: $default);
+        return (string) ($taskModel ?: $default);
     }
 }
