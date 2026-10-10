@@ -78,6 +78,8 @@ defineEmits([
     'set-weight',
     'set-reps',
     'complete-set',
+    // (setNumber) — toque em uma série já concluída, para corrigi-la.
+    'edit-set',
     'next-exercise',
     'finish-workout',
     'add-extra-set',
@@ -210,10 +212,14 @@ const historyUrl = computed(() =>
         <div class="space-y-3">
             <template v-for="set in sets" :key="set.number">
 
-                <!-- ── DONE: Saved set (compact green row) ── -->
-                <div
+                <!-- ── DONE: Saved set (compact green row). Tocar abre a
+                     edição da série (Phase 46) — o pai decide o que fazer. ── -->
+                <button
                     v-if="set.state === 'done'"
-                    class="flex items-center gap-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3"
+                    type="button"
+                    :aria-label="`Editar série ${set.number}`"
+                    class="flex min-h-12 w-full items-center gap-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-left transition hover:border-emerald-500/50 active:scale-[0.99]"
+                    @click="$emit('edit-set', set.number)"
                 >
                     <span class="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 text-sm font-bold text-white flex-shrink-0">
                         ✓
@@ -225,10 +231,11 @@ const historyUrl = computed(() =>
                             × {{ setInputs[set.number]?.reps || '—' }} reps
                         </p>
                     </div>
-                    <svg class="h-5 w-5 text-emerald-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+                    <!-- Lápis: indica que o card é editável. -->
+                    <svg class="h-4 w-4 text-text-tertiary flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536M4 20h4l10.5-10.5a2.5 2.5 0 00-3.536-3.536L4.5 16.5 4 20z" />
                     </svg>
-                </div>
+                </button>
 
                 <!-- ── RUNNING: Active set — load/reps hero, steppers, complete ── -->
                 <div v-else-if="set.state === 'running'" class="flex flex-col gap-6 pt-2">

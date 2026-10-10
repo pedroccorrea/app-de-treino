@@ -3,7 +3,7 @@ import ConfirmationModal from '@/Components/ConfirmationModal.vue';
 import BaseButton from '@/Components/UI/BaseButton.vue';
 import BaseCard from '@/Components/UI/BaseCard.vue';
 import SectionLabel from '@/Components/UI/SectionLabel.vue';
-import EditSetModal from '@/Components/WorkoutHistory/EditSetModal.vue';
+import EditSetModal from '@/Components/Sets/EditSetModal.vue';
 import HistoryEmptyState from '@/Components/WorkoutHistory/HistoryEmptyState.vue';
 import HistoryExerciseCard from '@/Components/WorkoutHistory/HistoryExerciseCard.vue';
 import { useOfflineSync } from '@/Composables/useOfflineSync';

@@ -3,8 +3,9 @@ import Modal from '@/Components/Modal.vue';
 import SetEditor from '@/Components/Sets/SetEditor.vue';
 import SectionLabel from '@/Components/UI/SectionLabel.vue';
 
-// Modal de correção de uma série do histórico: só a "moldura" (título,
-// aviso de conexão) em volta do editor reutilizável `Sets/SetEditor.vue`.
+// Modal de correção de uma série já registrada — usado no histórico (Phase
+// 45) e no treino em andamento (Phase 46): só a "moldura" (título, aviso de
+// conexão) em volta do editor reutilizável `Sets/SetEditor.vue`.
 defineProps({
     show: {
         type: Boolean,

@@ -1,6 +1,7 @@
 <script setup>
 import ConfirmationModal from '@/Components/ConfirmationModal.vue';
 import Sidebar from '@/Components/Navigation/Sidebar.vue';
+import EditSetModal from '@/Components/Sets/EditSetModal.vue';
 import ExerciseActiveCard from '@/Components/WorkoutSessions/ExerciseActiveCard.vue';
 import ExerciseOverviewDrawer from '@/Components/WorkoutSessions/ExerciseOverviewDrawer.vue';
 import ExerciseStepper from '@/Components/WorkoutSessions/ExerciseStepper.vue';
@@ -8,6 +9,7 @@ import FinishWorkoutModal from '@/Components/WorkoutSessions/FinishWorkoutModal.
 import NavigationGuardModal from '@/Components/WorkoutSessions/NavigationGuardModal.vue';
 import RestTimerOverlay from '@/Components/WorkoutSessions/RestTimerOverlay.vue';
 import SessionHeader from '@/Components/WorkoutSessions/SessionHeader.vue';
+import { useCompletedSetEdit } from '@/Composables/useCompletedSetEdit';
 import { useNowTicker } from '@/Composables/useNowTicker';
 import { useOfflineSync } from '@/Composables/useOfflineSync';
 import { useRestAlarm } from '@/Composables/useRestAlarm';
@@ -491,6 +493,58 @@ const completeSet = async (exercise, setNumber) => {
     );
 };
 
+// ─── Edit a completed set (Phase 46) ─────────────────────────────────────────
+// Tocar no card de uma série concluída abre o mesmo editor do histórico
+// (`Sets/EditSetModal.vue` → `Sets/SetEditor.vue`). Salvar reenvia a série
+// pelo mesmo caminho de `completeSet()` (rota online ou `log_set` na fila),
+// que o backend aplica como `updateOrCreate` — corrige, nunca duplica.
+// Propositalmente NÃO passa por `markSetCompleteLocally()`: editar uma série
+// anterior não mexe em estados, cronômetro, descanso, alarme nem na
+// pré-carga da próxima série.
+const applyEditedSet = (exerciseId, setNumber, { weight, reps }) => {
+    setInputs.value[exerciseId][setNumber] = { weight: weight ?? '', reps };
+    upsertLocalSetLog(exerciseId, setNumber, { weight, reps });
+    recordActiveSessionSetLog({ exercise_id: exerciseId, set_number: setNumber, weight, reps });
+    notifySessionChanged();
+};
+
+const {
+    editing: editingSet,
+    showEdit: showSetEdit,
+    form: setEditForm,
+    queueing: setEditQueueing,
+    openEdit,
+    closeEdit: closeSetEdit,
+    saveEdit: saveSetEdit,
+} = useCompletedSetEdit({
+    sessionId: () => props.session.id,
+    clientSessionId: () => clientSessionId.value,
+    offlineOnly: () => props.offlineOnly,
+    isOnline,
+    queueAction,
+    onSaved: applyEditedSet,
+});
+
+// Abre o editor com os valores salvos da série (a cópia local é o que conta
+// no volume). Sem carga vira `null`, que o editor mostra como "—kg".
+const openSetEdit = (exercise, setNumber) => {
+    if (getSetState(exercise.id, setNumber) !== 'done') return;
+
+    const saved = localSetLogs.value.find(
+        (log) => log.exercise_id === exercise.id && log.set_number === setNumber,
+    ) ?? setInputs.value[exercise.id]?.[setNumber] ?? {};
+
+    const weight = saved.weight === '' || saved.weight === null || saved.weight === undefined
+        ? null
+        : parseFloat(saved.weight);
+
+    openEdit(exercise, {
+        set_number: setNumber,
+        weight: Number.isNaN(weight) ? null : weight,
+        reps: Math.max(1, parseInt(saved.reps) || 1),
+    });
+};
+
 // ─── Quick weight/reps adjustments ───────────────────────────────────────────
 const adjustWeight = (exercise, setNumber, delta) => {
     const exId = exercise.id;
@@ -835,6 +889,7 @@ watch(
                 @set-weight="(n, value) => setWeight(currentExercise, n, value)"
                 @set-reps="(n, value) => setReps(currentExercise, n, value)"
                 @complete-set="(n) => completeSet(currentExercise, n)"
+                @edit-set="(n) => openSetEdit(currentExercise, n)"
                 @next-exercise="tryNavigateTo(currentIndex + 1)"
                 @finish-workout="showFinishModal = true"
                 @add-extra-set="addExtraSet(currentExercise)"
@@ -906,6 +961,17 @@ watch(
         :danger="false"
         @confirm="currentExercise && finishExerciseEarly(currentExercise)"
         @cancel="showFinishExerciseModal = false"
+    />
+
+    <EditSetModal
+        :show="showSetEdit"
+        :set="editingSet?.set ?? null"
+        :exercise-name="editingSet?.exerciseName ?? ''"
+        :equipment="editingSet?.equipment ?? null"
+        :processing="setEditForm.processing || setEditQueueing"
+        :errors="setEditForm.errors"
+        @save="saveSetEdit"
+        @close="closeSetEdit"
     />
 
     <Sidebar :open="sidebarOpen" @close="sidebarOpen = false" @logout="logout" />
