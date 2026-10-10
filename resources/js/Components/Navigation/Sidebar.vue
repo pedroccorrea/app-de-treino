@@ -47,6 +47,12 @@ const navigation = [
         icon: 'M4 6h16M4 10h16M4 14h10M4 18h10',
     },
     {
+        name: 'Histórico',
+        route: 'history.index',
+        pattern: 'history.*',
+        icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z',
+    },
+    {
         name: 'Perfil',
         route: 'profile.edit',
         pattern: 'profile.*',

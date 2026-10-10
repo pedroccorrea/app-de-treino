@@ -5,7 +5,7 @@ import ActiveSessionBanner from '@/Components/Navigation/ActiveSessionBanner.vue
 import Sidebar from '@/Components/Navigation/Sidebar.vue';
 import Toast from '@/Components/Notifications/Toast.vue';
 import { router, usePage } from '@inertiajs/vue3';
-import { warmWorkoutsCache } from '@/Utils/cacheWarming';
+import { warmHistoryPageChunks, warmWorkoutsCache } from '@/Utils/cacheWarming';
 import { clearActiveSession, setActiveSession, setCachedAuthUser } from '@/Utils/offlineStorage';
 
 const sidebarOpen = ref(false);
@@ -96,6 +96,7 @@ watch(
 onMounted(() => {
     if (navigator.onLine) {
         warmWorkoutsCache(page.props.userWorkoutIds, page.version);
+        warmHistoryPageChunks();
     }
 });
 </script>

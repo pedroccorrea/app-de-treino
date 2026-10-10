@@ -6,6 +6,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\SyncController;
 use App\Http\Controllers\SyncStateController;
 use App\Http\Controllers\WorkoutController;
+use App\Http\Controllers\WorkoutHistoryController;
 use App\Http\Controllers\WorkoutProgramController;
 use App\Http\Controllers\WorkoutScannerController;
 use App\Http\Controllers\WorkoutSessionController;
@@ -69,6 +70,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/workout-sessions/{session}/overload-suggestions', [WorkoutSessionController::class, 'overloadSuggestions'])->name('workout-sessions.overload-suggestions');
     Route::post('/workout-sessions/{session}/sets', [WorkoutSessionController::class, 'logSet'])->name('workout-sessions.sets.store');
     Route::post('/workout-sessions/{session}/finish', [WorkoutSessionController::class, 'finish'])->name('workout-sessions.finish');
+
+    Route::get('/history', [WorkoutHistoryController::class, 'index'])->name('history.index');
+    Route::get('/history/{session}', [WorkoutHistoryController::class, 'show'])->name('history.show');
 
     Route::get('/exercises/{exercise}/history', [ExerciseHistoryController::class, 'show'])->name('exercises.history');
 

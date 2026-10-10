@@ -833,6 +833,13 @@ const PAGE_ROUTES = [
     { pattern: /^\/programs\/?$/, component: 'Programs/Index', build: buildProgramsIndexProps },
     { pattern: /^\/programs\/([^/]+)\/?$/, component: 'Programs/Show', build: buildProgramShowProps },
     { pattern: /^\/workout-sessions\/([^/]+)\/?$/, component: 'WorkoutSessions/Active', build: buildActiveSessionProps },
+    // Histórico de treinos (Phase 44): o IndexedDB não guarda sessões
+    // finalizadas, então não há como reconstruí-lo offline. `preferCache`
+    // inverte a prioridade de `networkFirstWithOfflineSynthesis`: sem rede,
+    // a última resposta real em cache vence; só sem ela entra a página
+    // montada aqui, um estado "indisponível offline" (nunca uma tela travada).
+    { pattern: /^\/history\/?$/, component: 'WorkoutHistory/Index', build: buildHistoryIndexOfflineProps, preferCache: true },
+    { pattern: /^\/history\/([^/]+)\/?$/, component: 'WorkoutHistory/Show', build: buildHistoryShowOfflineProps, preferCache: true },
 ];
 
 function matchPageRoute(pathname) {
@@ -1082,6 +1089,14 @@ async function buildProgramShowProps(params) {
  * "Treino em andamento" existir. Era por isso que o indicador sumia assim
  * que o usuário navegava offline e reaparecia ao voltar a internet.
  */
+async function buildHistoryIndexOfflineProps() {
+    return { sessions: [], pagination: { current_page: 1, has_more: false }, offline: true };
+}
+
+async function buildHistoryShowOfflineProps() {
+    return { session: null, offline: true };
+}
+
 async function buildSharedProps() {
     const [user, session, workouts] = await Promise.all([
         idbGet(STORE_META, 'auth_user'),
@@ -1244,6 +1259,11 @@ async function networkFirstWithOfflineSynthesis(request, requestUrl, cacheName, 
         cache.put(request, networkResponse.clone());
         return networkResponse;
     } catch (error) {
+        if (pageRoute?.preferCache) {
+            const preferredCachedResponse = await cache.match(request);
+            if (preferredCachedResponse) return preferredCachedResponse;
+        }
+
         if (pageRoute) {
             const offlinePage = await safeBuildOfflinePageResponse(request, requestUrl, pageRoute);
             if (offlinePage) return offlinePage;

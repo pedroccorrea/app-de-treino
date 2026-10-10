@@ -56,3 +56,20 @@ export function warmWorkoutsCache(workoutIds, version) {
         });
     });
 }
+
+/**
+ * Baixa, em segundo plano, os chunks JS das páginas de histórico
+ * (Phase 44). O Service Worker guarda tudo de `/build/assets/` que passa
+ * por ele, então depois disso a tela "Histórico indisponível offline" (ou a
+ * cópia em cache) consegue renderizar sem conexão mesmo que o usuário nunca
+ * tenha aberto o histórico neste aparelho — sem isso, o `import()` da
+ * página falharia offline e o toque em "Histórico" não faria nada.
+ */
+export function warmHistoryPageChunks() {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+
+    scheduleIdle(() => {
+        import('../Pages/WorkoutHistory/Index.vue').catch(() => {});
+        import('../Pages/WorkoutHistory/Show.vue').catch(() => {});
+    });
+}

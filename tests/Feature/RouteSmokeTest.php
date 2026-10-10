@@ -53,6 +53,7 @@ test('every authenticated route responds without a runtime error', function () {
         'workouts.show' => route('workouts.show', $workout),
         'workouts.edit' => route('workouts.edit', $workout),
         'workout-sessions.show' => route('workout-sessions.show', $session),
+        'history.index' => route('history.index'),
     ];
 
     foreach ($routes as $name => $uri) {
