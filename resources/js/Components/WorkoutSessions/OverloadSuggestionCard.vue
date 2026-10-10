@@ -24,11 +24,30 @@ const props = defineProps({
         type: String,
         default: null,
     },
+    // 'progressao' | 'carga_inicial' | 'primeira_vez' (App\Enums\SuggestionKind)
+    kind: {
+        type: String,
+        default: 'progressao',
+    },
+    // Motivo em uma linha da carga inicial, ex: "Baseado em Supino Reto com Barra (40 kg × 8)".
+    basis: {
+        type: String,
+        default: null,
+    },
 });
 
 defineEmits(['apply', 'dismiss']);
 
 const fmt = (n) => Number(n).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+
+const isFirstTime = computed(() => props.kind === 'primeira_vez' || props.suggestedLoad === null);
+const title = computed(() => {
+    if (props.kind === 'primeira_vez') return 'Primeira vez';
+    if (props.kind === 'carga_inicial') return 'Carga inicial';
+    return 'Sugestão de carga';
+});
+// Na carga inicial o rationale é o próprio motivo; mostra-se só a linha do basis.
+const description = computed(() => props.basis ?? props.rationale);
 
 const loadDisplay = computed(() => (props.suggestedLoad !== null ? fmt(props.suggestedLoad) : '—'));
 const previousDisplay = computed(() => {
@@ -73,10 +92,10 @@ const previousDisplay = computed(() => {
                     stroke-linecap="round"
                 />
             </svg>
-            <SectionLabel tone="accent">Sugestão de carga</SectionLabel>
+            <SectionLabel tone="accent">{{ title }}</SectionLabel>
         </div>
 
-        <div class="relative flex items-end gap-4">
+        <div v-if="!isFirstTime" class="relative flex items-end gap-4">
             <div class="flex flex-col gap-[5px]">
                 <SectionLabel tone="secondary">Próxima série</SectionLabel>
                 <div class="flex items-baseline gap-[7px]">
@@ -94,12 +113,17 @@ const previousDisplay = computed(() => {
             </div>
         </div>
 
-        <p v-if="rationale" class="relative m-0 max-w-[300px] text-[13.5px] leading-[1.55] text-text-body">
-            {{ rationale }}
+        <p v-if="description" class="relative m-0 max-w-[300px] text-[13.5px] leading-[1.55] text-text-body">
+            {{ description }}
         </p>
 
-        <div class="relative flex gap-2.5">
-            <BaseButton variant="primary" class="flex-1" @click="$emit('apply', { load: suggestedLoad, reps: suggestedReps })">
+        <div class="relative flex gap-2.5" :class="{ 'justify-end': isFirstTime }">
+            <BaseButton
+                v-if="!isFirstTime"
+                variant="primary"
+                class="flex-1"
+                @click="$emit('apply', { load: suggestedLoad, reps: suggestedReps })"
+            >
                 Aplicar {{ loadDisplay }} kg
             </BaseButton>
             <BaseButton variant="secondary" icon-only aria-label="Dispensar sugestão" @click="$emit('dismiss')">

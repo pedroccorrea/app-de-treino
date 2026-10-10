@@ -3,6 +3,8 @@
 namespace App\Services;
 
 use App\DataTransferObjects\OverloadSuggestion;
+use App\DataTransferObjects\RecentPerformanceSummary;
+use App\DataTransferObjects\RepRange;
 use App\Enums\AiTask;
 use App\Enums\MovementPattern;
 use App\Enums\OverloadConfidence;
@@ -19,16 +21,21 @@ use Illuminate\Support\Facades\Log;
  * programa, exercício novo na ficha). Em vez de chutar um número, busca até
  * 5 exercícios PARECIDOS que ele já fez — mesmo padrão de movimento e mesmo
  * grupo muscular principal, os mais recentes primeiro — e manda para a IA
- * só um resumo curto: o exercício novo e a melhor série recente de cada
- * parecido. Nunca o histórico inteiro.
+ * só um resumo curto montado em PHP (RecentPerformanceService): o exercício
+ * novo e, para cada parecido, a melhor série de poucas sessões recentes, a
+ * referência (melhor desempenho recente) e a tendência. Nunca o histórico
+ * inteiro, e todos os exercícios novos da ficha vão numa ÚNICA chamada.
  *
- * A carga devolvida passa pelo ValidLoadService (Phase 42) e vem sempre com
- * o motivo em uma linha ("Baseado em Supino Reto com Barra (40 kg × 8)").
- * Sem nenhum parecido, nenhum número é inventado: o usuário recebe só a
- * orientação de primeira vez.
+ * A resposta da IA é validada em PHP: repetições inteiras e dentro da faixa
+ * da ficha (RepRange), carga reajustada se as repetições mudaram e levada a
+ * um valor que existe no equipamento do exercício NOVO (ValidLoadService,
+ * Phase 42). Toda carga inicial vem com o motivo em uma linha ("Baseado em
+ * Supino Reto com Barra (40 kg × 8)"). Sem nenhum parecido, nenhum número é
+ * inventado: o usuário recebe só a orientação de primeira vez.
  *
  * Assim que o exercício novo tiver histórico próprio, ele deixa de passar
- * por aqui e a progressão normal (ProgressiveOverloadService) assume.
+ * por aqui e a progressão normal (ProgressiveOverloadService) assume — ver
+ * WorkoutSuggestionService.
  */
 class StartingLoadService
 {
@@ -37,20 +44,29 @@ class StartingLoadService
     /** Máximo de exercícios parecidos enviados à IA por exercício novo. */
     public const MAX_SIMILAR = 5;
 
+    /** Máximo de sessões resumidas por exercício parecido. */
+    public const MAX_SESSIONS_PER_SIMILAR = 3;
+
     /**
      * Quantos exercícios feitos recentemente pelo usuário entram na busca
      * por parecidos (o suficiente para cobrir um programa inteiro).
      */
     private const CANDIDATE_POOL = 40;
 
+    /** Teto de repetições quando a ficha não define uma faixa. */
+    private const MAX_REPS_WITHOUT_TARGET = 30;
+
     public function __construct(
         private readonly AiManager $aiManager,
         private readonly ValidLoadService $validLoadService,
         private readonly ExerciseMovementPatternService $movementPatternService,
+        private readonly ExerciseEquipmentService $equipmentService,
+        private readonly ExerciseIdentityService $identityService,
+        private readonly RecentPerformanceService $recentPerformanceService,
     ) {}
 
     /**
-     * @param  Collection<int, Exercise>  $exercises  exercícios da ficha SEM histórico próprio
+     * @param  Collection<int, Exercise>  $exercises  exercícios da ficha SEM histórico próprio (com pivot, para ler target_reps)
      * @return Collection<int, OverloadSuggestion>
      */
     public function suggest(User $user, Collection $exercises): Collection
@@ -67,13 +83,26 @@ class StartingLoadService
             return $exercises->map(fn (Exercise $exercise) => $this->firstTime($exercise))->values();
         }
 
-        // Palavras-chave primeiro; no máximo UMA chamada à IA para o que
-        // sobrar (exercícios novos e parecidos candidatos juntos).
+        // Palavras-chave primeiro; no máximo UMA chamada à IA por
+        // classificação (equipamento e padrão de movimento) para o que sobrar
+        // — e só para exercícios que nunca foram classificados.
+        $this->equipmentService->ensureClassified($exercises->concat($pool));
         $this->movementPatternService->ensureClassified($exercises->concat($pool));
 
-        $similarByExercise = $exercises->mapWithKeys(fn (Exercise $exercise) => [
-            $exercise->id => $this->similarExercises($user, $exercise, $pool),
+        $candidatesByExercise = $exercises->mapWithKeys(fn (Exercise $exercise) => [
+            $exercise->id => $this->similarCandidates($exercise, $pool),
         ]);
+
+        $summaries = $this->recentPerformanceService->summarize(
+            $user,
+            $candidatesByExercise->flatten(1)->pluck('id')->unique()->values()->all(),
+            self::MAX_SESSIONS_PER_SIMILAR,
+        );
+
+        $similarByExercise = $candidatesByExercise->map(fn (Collection $candidates) => $candidates
+            ->filter(fn (Exercise $candidate) => $summaries->has($candidate->id))
+            ->map(fn (Exercise $candidate) => ['exercise' => $candidate, 'summary' => $summaries->get($candidate->id)])
+            ->values());
 
         $withSimilar = $exercises->filter(fn (Exercise $exercise) => $similarByExercise[$exercise->id]->isNotEmpty())->values();
         $starting = $withSimilar->isEmpty() ? collect() : $this->askAi($withSimilar, $similarByExercise);
@@ -85,14 +114,22 @@ class StartingLoadService
 
     /**
      * Exercícios com carga registrada em sessões concluídas do usuário, do
-     * mais recente para o mais antigo.
+     * mais recente para o mais antigo. Grafias equivalentes do mesmo
+     * exercício contam uma vez só (fica a mais recente; o resumo dela já
+     * inclui o histórico das outras).
      *
      * @param  array<int, int>  $excludeIds
      * @return Collection<int, Exercise>
      */
     private function recentlyTrainedExercises(User $user, array $excludeIds): Collection
     {
-        $lastDone = $this->loggedSets($user)
+        $lastDone = SetLog::query()
+            ->join('workout_sessions', 'workout_sessions.id', '=', 'set_logs.workout_session_id')
+            ->where('workout_sessions.user_id', $user->id)
+            ->whereNotNull('workout_sessions.completed_at')
+            ->where('set_logs.is_warmup', false)
+            ->whereNotNull('set_logs.weight')
+            ->where('set_logs.weight', '>', 0)
             ->whereNotIn('set_logs.exercise_id', $excludeIds)
             ->groupBy('set_logs.exercise_id')
             ->selectRaw('set_logs.exercise_id, MAX(workout_sessions.completed_at) as last_done')
@@ -110,18 +147,18 @@ class StartingLoadService
             ->whereKey($order->keys()->all())
             ->get()
             ->sortBy(fn (Exercise $exercise) => $order[$exercise->id])
+            ->unique(fn (Exercise $exercise) => $this->identityService->normalize($exercise->name))
             ->values();
     }
 
     /**
-     * Até 5 parecidos: mesmo padrão de movimento e mesmo grupo muscular
-     * principal, já em ordem de recência (herdada do pool), cada um com a
-     * melhor série da sua sessão mais recente.
+     * Até 5 candidatos a parecido: mesmo padrão de movimento e mesmo grupo
+     * muscular principal, já em ordem de recência (herdada do pool).
      *
      * @param  Collection<int, Exercise>  $pool
-     * @return Collection<int, array{exercise: Exercise, weight: float, reps: int, date: ?string}>
+     * @return Collection<int, Exercise>
      */
-    private function similarExercises(User $user, Exercise $exercise, Collection $pool): Collection
+    private function similarCandidates(Exercise $exercise, Collection $pool): Collection
     {
         $pattern = $exercise->resolvedMovementPattern();
 
@@ -133,64 +170,12 @@ class StartingLoadService
             ->filter(fn (Exercise $candidate) => $candidate->resolvedMovementPattern() === $pattern
                 && $candidate->primary_muscle_group === $exercise->primary_muscle_group)
             ->take(self::MAX_SIMILAR)
-            ->map(fn (Exercise $candidate) => $this->bestRecentSet($user, $candidate))
-            ->filter()
             ->values();
     }
 
     /**
-     * A série mais pesada (desempate: mais repetições) da sessão concluída
-     * mais recente em que o exercício foi feito com carga.
-     *
-     * @return array{exercise: Exercise, weight: float, reps: int, date: ?string}|null
-     */
-    private function bestRecentSet(User $user, Exercise $exercise): ?array
-    {
-        $latest = $this->loggedSets($user)
-            ->where('set_logs.exercise_id', $exercise->id)
-            ->orderByDesc('workout_sessions.completed_at')
-            ->select(['set_logs.workout_session_id', 'workout_sessions.completed_at'])
-            ->first();
-
-        if ($latest === null) {
-            return null;
-        }
-
-        $best = $this->loggedSets($user)
-            ->where('set_logs.exercise_id', $exercise->id)
-            ->where('set_logs.workout_session_id', $latest->workout_session_id)
-            ->orderByDesc('set_logs.weight')
-            ->orderByDesc('set_logs.reps')
-            ->select('set_logs.*')
-            ->first();
-
-        return $best === null ? null : [
-            'exercise' => $exercise,
-            'weight' => (float) $best->weight,
-            'reps' => (int) $best->reps,
-            'date' => $latest->completed_at ? substr((string) $latest->completed_at, 0, 10) : null,
-        ];
-    }
-
-    /**
-     * Séries de trabalho com carga, em sessões concluídas do usuário.
-     *
-     * @return \Illuminate\Database\Eloquent\Builder<SetLog>
-     */
-    private function loggedSets(User $user)
-    {
-        return SetLog::query()
-            ->join('workout_sessions', 'workout_sessions.id', '=', 'set_logs.workout_session_id')
-            ->where('workout_sessions.user_id', $user->id)
-            ->whereNotNull('workout_sessions.completed_at')
-            ->where('set_logs.is_warmup', false)
-            ->whereNotNull('set_logs.weight')
-            ->where('set_logs.weight', '>', 0);
-    }
-
-    /**
      * @param  Collection<int, Exercise>  $exercises
-     * @param  Collection<int, Collection<int, array{exercise: Exercise, weight: float, reps: int, date: ?string}>>  $similarByExercise
+     * @param  Collection<int, Collection<int, array{exercise: Exercise, summary: RecentPerformanceSummary}>>  $similarByExercise
      * @return Collection<int, OverloadSuggestion> indexada por exercise_id
      */
     private function askAi(Collection $exercises, Collection $similarByExercise): Collection
@@ -228,7 +213,7 @@ class StartingLoadService
 
     /**
      * @param  Collection<int, Exercise>  $exercisesById
-     * @param  Collection<int, Collection<int, array{exercise: Exercise, weight: float, reps: int, date: ?string}>>  $similarByExercise
+     * @param  Collection<int, Collection<int, array{exercise: Exercise, summary: RecentPerformanceSummary}>>  $similarByExercise
      */
     private function toSuggestion(mixed $answer, Collection $exercisesById, Collection $similarByExercise): ?OverloadSuggestion
     {
@@ -238,9 +223,8 @@ class StartingLoadService
 
         $exerciseId = $answer['exercise_id'] ?? null;
         $load = $answer['suggested_load'] ?? null;
-        $reps = $answer['suggested_reps'] ?? null;
 
-        if (! is_numeric($exerciseId) || ! is_numeric($load) || ! is_numeric($reps) || (float) $load < 0 || (int) $reps < 1) {
+        if (! is_numeric($exerciseId) || ! is_numeric($load) || (float) $load < 0) {
             return null;
         }
 
@@ -258,21 +242,24 @@ class StartingLoadService
         $basedOnId = is_numeric($answer['based_on_exercise_id'] ?? null) ? (int) $answer['based_on_exercise_id'] : null;
         $reference = $similar->first(fn (array $item) => $item['exercise']->id === $basedOnId) ?? $similar->first();
 
-        $equipment = $exercise->resolvedEquipment();
+        [$load, $reps] = $this->coherentLoadAndReps($exercise, (float) $load, $answer['suggested_reps'] ?? null);
+
+        // A carga sai em valores que existem no equipamento do exercício NOVO.
         // Sem carga atual, a escada relativa (barra/máquina com anilhas) é
         // ancorada no zero: a carga inicial sai em múltiplos do menor par.
-        $validLoad = $this->validLoadService->roundToValid($equipment, $equipment->loadMode(), 0.0, (float) $load);
+        $equipment = $exercise->resolvedEquipment();
+        $validLoad = $this->validLoadService->roundToValid($equipment, $equipment->loadMode(), 0.0, $load);
         $basis = sprintf(
             'Baseado em %s (%s kg × %d)',
             $reference['exercise']->name,
-            $this->formatKg($reference['weight']),
-            $reference['reps'],
+            $this->formatKg($reference['summary']->best['weight']),
+            $reference['summary']->best['reps'],
         );
 
         return new OverloadSuggestion(
             exercise_id: $exercise->id,
             suggested_load: $validLoad,
-            suggested_reps: (int) $reps,
+            suggested_reps: $reps,
             previous_load: null,
             previous_reps: null,
             rationale: $basis,
@@ -283,13 +270,41 @@ class StartingLoadService
     }
 
     /**
+     * Não confia só na IA: as repetições viram inteiro e ficam dentro da
+     * faixa da ficha (com número único, exatamente ele; sem meta, um valor
+     * sensato para o padrão de movimento). Se a IA pensou a carga para outro
+     * número de repetições, a carga é reajustada pelo 1RM estimado (Epley)
+     * para continuar coerente com as repetições finais.
+     *
+     * @return array{0: float, 1: int}
+     */
+    private function coherentLoadAndReps(Exercise $exercise, float $load, mixed $aiReps): array
+    {
+        $range = RepRange::parse($exercise->pivot?->target_reps);
+        $proposed = is_numeric($aiReps) && (float) $aiReps >= 1 ? (int) round((float) $aiReps) : null;
+
+        $reps = match (true) {
+            $range !== null => $range->clamp($proposed ?? $range->min),
+            $proposed !== null => min($proposed, self::MAX_REPS_WITHOUT_TARGET),
+            default => $exercise->resolvedMovementPattern()->defaultTargetReps(),
+        };
+
+        if ($proposed !== null && $proposed !== $reps) {
+            $load = round($load * (1 + $proposed / 30) / (1 + $reps / 30), 2);
+        }
+
+        return [$load, $reps];
+    }
+
+    /**
      * @param  Collection<int, Exercise>  $exercises
-     * @param  Collection<int, Collection<int, array{exercise: Exercise, weight: float, reps: int, date: ?string}>>  $similarByExercise
+     * @param  Collection<int, Collection<int, array{exercise: Exercise, summary: RecentPerformanceSummary}>>  $similarByExercise
      */
     private function buildPrompt(Collection $exercises, Collection $similarByExercise): string
     {
         $summary = $exercises->map(function (Exercise $exercise) use ($similarByExercise) {
             $equipment = $exercise->resolvedEquipment();
+            $range = RepRange::parse($exercise->pivot?->target_reps);
 
             return [
                 'exercise_id' => $exercise->id,
@@ -297,17 +312,13 @@ class StartingLoadService
                 'equipment' => $equipment->value,
                 'load_mode' => $equipment->loadMode()->value,
                 'movement_pattern' => $exercise->resolvedMovementPattern()->value,
-                'target_reps' => $exercise->pivot?->target_reps,
+                'target_reps' => $range === null ? null : ['min' => $range->min, 'max' => $range->max],
                 'similar' => $similarByExercise[$exercise->id]->map(fn (array $item) => [
                     'exercise_id' => $item['exercise']->id,
                     'name' => $item['exercise']->name,
                     'equipment' => $item['exercise']->resolvedEquipment()->value,
                     'load_mode' => $item['exercise']->resolvedEquipment()->loadMode()->value,
-                    'best_recent_set' => [
-                        'weight' => $item['weight'],
-                        'reps' => $item['reps'],
-                        'date' => $item['date'],
-                    ],
+                    ...$item['summary']->toPromptArray(),
                 ])->values()->all(),
             ];
         })->values()->all();
@@ -318,14 +329,20 @@ class StartingLoadService
         Você é um personal trainer especialista em treinamento de força.
 
         O usuário vai fazer pela primeira vez os exercícios abaixo. Para cada um, você recebe o exercício novo
-        (nome, equipamento, forma de registro da carga e padrão de movimento) e alguns exercícios PARECIDOS que ele
-        já fez, com a melhor série recente de cada (carga em kg × repetições e data):
+        (nome, equipamento, forma de registro da carga, padrão de movimento e faixa de repetições da ficha) e alguns
+        exercícios PARECIDOS que ele já fez. Para cada parecido: best_recent_set é a melhor série recente (a
+        referência principal), recent_sessions traz a melhor série de cada uma das últimas sessões (carga em kg ×
+        repetições e data, mais recente primeiro) e trend é a tendência (subindo, estavel ou caindo):
         {$summaryJson}
 
-        Sugira uma carga inicial realista (suggested_load, em kg, na mesma forma de registro do exercício novo:
-        load_mode "por_halter" é o peso de cada halter/kettlebell, "total" é a carga total) e as repetições
-        (suggested_reps, dentro de target_reps quando informado). Ajuste a carga pelas diferenças entre o exercício
-        novo e o parecido:
+        Formas de registro da carga (load_mode): "total" é a carga total do exercício; "por_lado" é a carga de cada
+        lado; "por_halter" é o peso de CADA halter/kettlebell. Compare cargas sempre na mesma unidade: por exemplo,
+        40 kg "total" numa barra não equivale a 40 kg "por_halter".
+
+        Sugira uma carga inicial realista (suggested_load, em kg, no load_mode do exercício NOVO) e as repetições
+        (suggested_reps, número inteiro, dentro de target_reps quando informado). Use best_recent_set como
+        referência: um treino isolado mais fraco não deve baixar a sugestão. Ajuste a carga pelas diferenças entre
+        o exercício novo e o parecido:
         - Halteres usam carga por halter bem menor que a barra no mesmo movimento.
         - Máquinas guiadas costumam permitir mais carga que peso livre.
         - Unilateral usa menos carga que bilateral.

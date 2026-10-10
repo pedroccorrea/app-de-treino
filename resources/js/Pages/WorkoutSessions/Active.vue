@@ -101,7 +101,14 @@ const applyOverloadSuggestion = ({ load, reps }) => {
     const runningSet = currentSets.value.find((s) => s.state === 'running');
     if (!runningSet) return;
 
-    setInputs.value[exercise.id][runningSet.number] = { weight: load, reps };
+    // A carga inicial pode vir sem número (ex: "Primeira vez"): o que vier
+    // nulo mantém o valor que já estava na série.
+    const current = setInputs.value[exercise.id][runningSet.number] ?? {};
+    setInputs.value[exercise.id][runningSet.number] = {
+        ...current,
+        weight: load ?? current.weight,
+        reps: reps ?? current.reps,
+    };
 };
 
 // ─── Drawer (exercise overview) ───────────────────────────────────────────────

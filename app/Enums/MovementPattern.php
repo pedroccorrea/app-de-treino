@@ -46,4 +46,19 @@ enum MovementPattern: string
             self::Other => 'Outro',
         };
     }
+
+    /**
+     * Repetições sensatas para a carga inicial quando a ficha não define uma
+     * meta: compostos pesados ficam em 8, isoladores em 12 e panturrilha/core
+     * em 15.
+     */
+    public function defaultTargetReps(): int
+    {
+        return match ($this) {
+            self::HorizontalPush, self::VerticalPush, self::HorizontalPull,
+            self::VerticalPull, self::Squat, self::HipHinge => 8,
+            self::Calf, self::Core => 15,
+            default => 12,
+        };
+    }
 }

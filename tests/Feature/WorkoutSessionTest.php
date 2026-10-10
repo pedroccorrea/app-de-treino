@@ -200,6 +200,8 @@ test('the overload-suggestions endpoint returns AI recommendations for a session
                     'previous_reps' => 12,
                     'rationale' => 'Você completou as séries com facilidade no último treino. Hora de progredir a carga.',
                     'confidence' => 'high',
+                    'kind' => 'progressao',
+                    'basis' => null,
                 ],
                 [
                     'exercise_id' => $secondExercise->id,
@@ -209,6 +211,8 @@ test('the overload-suggestions endpoint returns AI recommendations for a session
                     'previous_reps' => 15,
                     'rationale' => 'Mantenha a carga e foque na cadência e controle na fase excêntrica antes de subir o peso.',
                     'confidence' => 'medium',
+                    'kind' => 'progressao',
+                    'basis' => null,
                 ],
             ],
         ]);

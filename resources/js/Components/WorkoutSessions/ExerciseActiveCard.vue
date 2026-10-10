@@ -194,6 +194,8 @@ const historyUrl = computed(() =>
             :previous-load="overloadSuggestion.previous_load"
             :previous-reps="overloadSuggestion.previous_reps"
             :rationale="overloadSuggestion.rationale"
+            :kind="overloadSuggestion.kind"
+            :basis="overloadSuggestion.basis"
             @apply="$emit('apply-overload-suggestion', $event)"
             @dismiss="$emit('dismiss-overload-suggestion')"
         />

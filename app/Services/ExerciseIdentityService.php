@@ -54,14 +54,16 @@ class ExerciseIdentityService
 
     /**
      * Para cada exercise_id informado, a lista de ids visíveis ao usuário que
-     * representam o mesmo exercício (ele próprio primeiro). Um id que também
-     * foi informado nunca é "emprestado" como equivalente de outro — cada um
-     * continua dono do próprio histórico.
+     * representam o mesmo exercício (ele próprio primeiro). Por padrão
+     * ($exclusive), um id que também foi informado nunca é "emprestado" como
+     * equivalente de outro — cada um continua dono do próprio histórico na
+     * exibição. Com $exclusive = false, todas as grafias equivalentes entram
+     * (útil para perguntar "este exercício já foi feito alguma vez?").
      *
      * @param  array<int, int>  $exerciseIds
      * @return array<int, list<int>>
      */
-    public function equivalentIds(User $user, array $exerciseIds): array
+    public function equivalentIds(User $user, array $exerciseIds, bool $exclusive = true): array
     {
         $exerciseIds = array_values(array_unique(array_map('intval', $exerciseIds)));
 
@@ -83,7 +85,7 @@ class ExerciseIdentityService
                 ? []
                 : $byKey->get($this->normalize($name), collect())
                     ->pluck('id')
-                    ->reject(fn (int $aliasId) => in_array($aliasId, $exerciseIds, true))
+                    ->reject(fn (int $aliasId) => $aliasId === $id || ($exclusive && in_array($aliasId, $exerciseIds, true)))
                     ->values()
                     ->all();
 

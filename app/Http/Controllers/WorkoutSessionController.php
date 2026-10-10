@@ -7,8 +7,8 @@ use App\Models\SetLog;
 use App\Models\User;
 use App\Models\Workout;
 use App\Models\WorkoutSession;
-use App\Services\ProgressiveOverloadService;
 use App\Services\WorkoutSessionService;
+use App\Services\WorkoutSuggestionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -93,14 +93,16 @@ class WorkoutSessionController extends Controller
      * AI-backed overload suggestions are fetched by the frontend in the
      * background after the session screen has already rendered, so a slow
      * or failing AI call never blocks opening the workout session.
-     * ProgressiveOverloadService already degrades to an empty collection on
-     * any provider/JSON failure, so this only shapes the typed DTOs into a
+     * WorkoutSuggestionService combines the normal progression (exercises
+     * with history of their own) with the starting load / "Primeira vez" of
+     * exercises that are new to the user; both degrade gracefully on any
+     * provider/JSON failure, so this only shapes the typed DTOs into a
      * plain JSON payload — no parsing happens here. The try/catch below is a
      * last-resort safety net: no matter what breaks (including something
      * outside the AI call itself), this endpoint must always answer with
      * HTTP 200 and never surface a fatal 500 in the browser console.
      */
-    public function overloadSuggestions(Request $request, WorkoutSession $session, ProgressiveOverloadService $overloadService): JsonResponse
+    public function overloadSuggestions(Request $request, WorkoutSession $session, WorkoutSuggestionService $suggestionService): JsonResponse
     {
         abort_if($session->user_id !== $request->user()->id, 403);
 
@@ -109,7 +111,7 @@ class WorkoutSessionController extends Controller
         try {
             return response()->json([
                 'suggestions' => $workout
-                    ? $this->safeOverloadSuggestions($overloadService, $request->user(), $workout)
+                    ? $this->safeOverloadSuggestions($suggestionService, $request->user(), $workout)
                     : [],
             ]);
         } catch (Throwable $e) {
@@ -126,11 +128,11 @@ class WorkoutSessionController extends Controller
     }
 
     /**
-     * @return array<int, array{exercise_id: int, suggested_load: float, suggested_reps: int, previous_load: ?float, previous_reps: ?int, rationale: string, confidence: string}>
+     * @return array<int, array{exercise_id: int, suggested_load: ?float, suggested_reps: ?int, previous_load: ?float, previous_reps: ?int, rationale: string, confidence: string, kind: string, basis: ?string}>
      */
-    private function safeOverloadSuggestions(ProgressiveOverloadService $overloadService, User $user, Workout $workout): array
+    private function safeOverloadSuggestions(WorkoutSuggestionService $suggestionService, User $user, Workout $workout): array
     {
-        return $overloadService->analyzeWorkout($user, $workout)
+        return $suggestionService->suggestionsFor($user, $workout)
             ->map(fn ($suggestion) => $suggestion->toArray())
             ->values()
             ->all();
