@@ -94,30 +94,6 @@ class WorkoutController extends Controller
             ->with('success', 'Treino atualizado com sucesso!');
     }
 
-    /**
-     * Several screens (the workouts list, a workout's own page, a program's
-     * page) can open the create/edit flow, and pass back a `return_to`
-     * path/URL so the user lands where they came from instead of always on
-     * a fixed page. Only same-app targets (relative paths or URLs under the
-     * app's own domain) are honored to avoid an open redirect.
-     */
-    private function safeRedirectTarget(?string $returnTo, string $fallback): string
-    {
-        if (! $returnTo) {
-            return $fallback;
-        }
-
-        if (str_starts_with($returnTo, '/') && ! str_starts_with($returnTo, '//')) {
-            return $returnTo;
-        }
-
-        if (str_starts_with($returnTo, config('app.url'))) {
-            return $returnTo;
-        }
-
-        return $fallback;
-    }
-
     public function reorder(Request $request, Workout $workout, WorkoutService $workoutService): RedirectResponse
     {
         abort_if($workout->user_id !== $request->user()->id, 403);

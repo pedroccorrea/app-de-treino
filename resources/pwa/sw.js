@@ -76,25 +76,49 @@ const EVICTABLE_INERTIA_PATH_PATTERNS = [
     /^\/workout-sessions(\/.*)?$/,
 ];
 
-function isEvictableInertiaPath(pathname) {
-    return EVICTABLE_INERTIA_PATH_PATTERNS.some((pattern) => pattern.test(pathname));
+// Phase 45: o histórico e a evolução por exercício são servidos do cache
+// quando offline (`preferCache`). Uma correção no histórico (série editada,
+// exercício/treino excluído) deixa essas cópias velhas — elas só entram na
+// expurgação quando o frontend pede (`includeHistory`), para que iniciar ou
+// registrar uma série não apague à toa o histórico disponível offline.
+const HISTORY_INERTIA_PATH_PATTERNS = [
+    /^\/history(\/.*)?$/,
+    /^\/exercises\/[^/]+\/history\/?$/,
+];
+
+function isEvictableInertiaPath(pathname, includeHistory = false) {
+    const patterns = includeHistory
+        ? [...EVICTABLE_INERTIA_PATH_PATTERNS, ...HISTORY_INERTIA_PATH_PATTERNS]
+        : EVICTABLE_INERTIA_PATH_PATTERNS;
+
+    return patterns.some((pattern) => pattern.test(pathname));
 }
 
-async function evictInertiaCache() {
-    const cache = await caches.open(INERTIA_CACHE);
+async function evictFromCache(cacheName, shouldEvict) {
+    const cache = await caches.open(cacheName);
     const requests = await cache.keys();
 
     await Promise.all(
         requests
-            .filter((request) => isEvictableInertiaPath(new URL(request.url).pathname))
+            .filter((request) => shouldEvict(new URL(request.url).pathname))
             .map((request) => cache.delete(request))
     );
+}
+
+async function evictInertiaCache(includeHistory = false) {
+    await evictFromCache(INERTIA_CACHE, (pathname) => isEvictableInertiaPath(pathname, includeHistory));
+
+    // Navegações de documento completo (F5) guardam o HTML com as props
+    // embutidas no `PAGE_CACHE`: as do histórico também ficam velhas.
+    if (includeHistory) {
+        await evictFromCache(PAGE_CACHE, (pathname) => HISTORY_INERTIA_PATH_PATTERNS.some((pattern) => pattern.test(pathname)));
+    }
 }
 
 self.addEventListener('message', (event) => {
     if (event.data?.type !== 'EVICT_INERTIA_CACHE') return;
 
-    event.waitUntil(evictInertiaCache());
+    event.waitUntil(evictInertiaCache(Boolean(event.data.includeHistory)));
 });
 
 // ─────────────────────────────────────────────────────────────────────────

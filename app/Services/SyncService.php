@@ -127,10 +127,13 @@ class SyncService
      * em vez de criar uma duplicata. `client_uuid` é o que torna essa busca
      * possível: é o mesmo `client_session_id` gerado no dispositivo antes de
      * a sessão existir no banco.
+     *
+     * `withTrashed`: se o treino já foi excluído do histórico (Phase 45), o
+     * reenvio deste `start_session` é confirmado sem recriá-lo.
      */
     private function startSession(User $user, array $action, Carbon $occurredAt): WorkoutSession
     {
-        $existing = WorkoutSession::query()
+        $existing = WorkoutSession::withTrashed()
             ->where('user_id', $user->id)
             ->where('client_uuid', $action['client_session_id'])
             ->first();
@@ -193,6 +196,10 @@ class SyncService
             ]);
         }
 
+        if ($this->isStaleSetAction($session, $action, $occurredAt)) {
+            return $session;
+        }
+
         $log = $session->setLogs()->updateOrCreate(
             [
                 'exercise_id' => $action['exercise_id'],
@@ -214,6 +221,38 @@ class SyncService
     }
 
     /**
+     * Um `log_set` antigo da fila offline (reenvio por reconexão instável,
+     * ou uma ação que ficou presa e só subiu agora) não pode desfazer uma
+     * correção feita no histórico (Phase 45). Nestes casos a ação é
+     * CONFIRMADA sem escrever nada — sai da fila do aparelho em vez de ficar
+     * sendo reenviada:
+     *
+     *   - o treino foi excluído do histórico;
+     *   - o exercício foi excluído deste treino (existe série dele excluída
+     *     aqui) — senão um `updateOrCreate` não enxergaria a série excluída
+     *     e criaria outra, "ressuscitando" o exercício;
+     *   - a série foi corrigida no histórico DEPOIS do instante desta ação.
+     */
+    private function isStaleSetAction(WorkoutSession $session, array $action, Carbon $occurredAt): bool
+    {
+        if ($session->trashed()) {
+            return true;
+        }
+
+        $sameExercise = $session->setLogs()->withTrashed()->where('exercise_id', $action['exercise_id']);
+
+        if ((clone $sameExercise)->onlyTrashed()->exists()) {
+            return true;
+        }
+
+        $editedAt = (clone $sameExercise)
+            ->where('set_number', $action['set_number'])
+            ->value('edited_at');
+
+        return $editedAt !== null && $occurredAt->lte(Carbon::parse($editedAt));
+    }
+
+    /**
      * Finaliza a sessão e encerra qualquer outra sessão fantasma do mesmo
      * usuário, igual a `WorkoutSessionService::finishSession`. Reenviar o
      * mesmo `finish_session` (lote retransmitido) é inofensivo: se a sessão
@@ -223,7 +262,7 @@ class SyncService
     {
         $session = $this->requireSession($session);
 
-        if ($session->completed_at === null) {
+        if ($session->completed_at === null && ! $session->trashed()) {
             $session->update(['completed_at' => $occurredAt]);
             $session->forceFill(['updated_at' => $occurredAt])->save();
 
@@ -249,6 +288,11 @@ class SyncService
      *      online), com o próprio rótulo `session-<id>` como último recurso
      *      caso o `session_id` não tenha vindo no payload.
      *
+     * As camadas 2 e 3 também encontram sessões excluídas do histórico
+     * (`withTrashed`, Phase 45): assim uma ação antiga dessa sessão é
+     * reconhecida e confirmada sem efeito (`isStaleSetAction`), em vez de
+     * ficar presa na fila sendo rejeitada.
+     *
      * @param  array<string, WorkoutSession>  $sessionsByClientId
      */
     private function resolveSession(User $user, array $sessionsByClientId, string $clientSessionId, ?int $sessionId): ?WorkoutSession
@@ -257,7 +301,7 @@ class SyncService
             return $sessionsByClientId[$clientSessionId];
         }
 
-        $byClientUuid = WorkoutSession::query()
+        $byClientUuid = WorkoutSession::withTrashed()
             ->where('user_id', $user->id)
             ->where('client_uuid', $clientSessionId)
             ->first();
@@ -285,7 +329,7 @@ class SyncService
             return null;
         }
 
-        return WorkoutSession::query()
+        return WorkoutSession::withTrashed()
             ->where('id', $sessionId)
             ->where('user_id', $user->id)
             ->first();

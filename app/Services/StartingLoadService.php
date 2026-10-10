@@ -127,6 +127,7 @@ class StartingLoadService
             ->join('workout_sessions', 'workout_sessions.id', '=', 'set_logs.workout_session_id')
             ->where('workout_sessions.user_id', $user->id)
             ->whereNotNull('workout_sessions.completed_at')
+            ->whereNull('workout_sessions.deleted_at')
             ->where('set_logs.is_warmup', false)
             ->whereNotNull('set_logs.weight')
             ->where('set_logs.weight', '>', 0)

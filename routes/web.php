@@ -73,6 +73,9 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/history', [WorkoutHistoryController::class, 'index'])->name('history.index');
     Route::get('/history/{session}', [WorkoutHistoryController::class, 'show'])->name('history.show');
+    Route::delete('/history/{session}', [WorkoutHistoryController::class, 'destroy'])->name('history.destroy');
+    Route::patch('/history/{session}/sets/{setLog}', [WorkoutHistoryController::class, 'updateSet'])->name('history.sets.update');
+    Route::delete('/history/{session}/exercises/{exercise}', [WorkoutHistoryController::class, 'destroyExercise'])->name('history.exercises.destroy');
 
     Route::get('/exercises/{exercise}/history', [ExerciseHistoryController::class, 'show'])->name('exercises.history');
 

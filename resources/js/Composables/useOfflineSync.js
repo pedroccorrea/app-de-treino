@@ -264,6 +264,22 @@ async function finishActiveSessionLocally(workoutId = null) {
     evictInertiaCache();
 }
 
+/**
+ * Uma correção no histórico foi confirmada pelo servidor (Phase 45): as
+ * cópias deste aparelho que dependem das séries ficaram velhas. Expurga as
+ * páginas Inertia cacheadas — inclusive histórico e evolução por exercício —
+ * e baixa a foto completa de novo (`lastLogs`: a "Última" do treino
+ * offline). Mesma ordem do carregamento normal do app: a fila pendente sobe
+ * ANTES da foto, para nunca sobrescrever o IndexedDB com um estado que
+ * ainda não inclui o que foi feito offline.
+ */
+async function refreshAfterHistoryChange() {
+    evictInertiaCache({ includeHistory: true });
+
+    await flushQueue();
+    await fetchAndStoreFullSyncState();
+}
+
 export function useOfflineSync() {
     registerGlobalListeners();
 
@@ -275,6 +291,7 @@ export function useOfflineSync() {
         flushQueue,
         startActiveSessionLocally,
         finishActiveSessionLocally,
-        notifySessionChanged: evictInertiaCache,
+        notifySessionChanged: () => evictInertiaCache(),
+        refreshAfterHistoryChange,
     };
 }

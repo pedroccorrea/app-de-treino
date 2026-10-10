@@ -542,6 +542,26 @@ export async function cacheLastLogs(lastLogsByExerciseId) {
     });
 }
 
+/**
+ * Igual a `cacheLastLogs`, mas SUBSTITUI o conteúdo inteiro da store em vez
+ * de mesclar. Usado só pela foto completa (`saveFullSyncState`): quando um
+ * treino ou exercício é excluído do histórico (Phase 45), um exercício pode
+ * deixar de ter "Última" — e a entrada antiga não pode sobrar aqui, senão o
+ * treino offline continuaria mostrando uma referência que não existe mais.
+ * A store só guarda dados vindos do servidor (nunca séries locais ainda não
+ * sincronizadas), então limpar antes de gravar não perde nada.
+ */
+export async function replaceLastLogs(lastLogsByExerciseId) {
+    const plainLogs = toPlainObject(lastLogsByExerciseId ?? {});
+
+    return withStore(STORE_LAST_LOGS, 'readwrite', (store) => {
+        store.clear();
+        for (const [exerciseId, log] of Object.entries(plainLogs)) {
+            store.put({ ...log, exercise_id: Number(exerciseId) });
+        }
+    });
+}
+
 export async function getCachedLastLogs() {
     const rows = await withStore(STORE_LAST_LOGS, 'readonly', (store) => requestToPromise(store.getAll()));
 
@@ -761,7 +781,7 @@ export async function saveFullSyncState(state) {
         cacheWorkoutsList(workouts),
         ...workouts.map((workout) => cacheWorkout(workout)),
         cacheExercisesCatalog(state.exercisesCatalog ?? []),
-        cacheLastLogs(state.lastLogs ?? {}),
+        replaceLastLogs(state.lastLogs ?? {}),
         setMeta('inertiaVersion', state.version ?? null),
         setMeta('lastFullSyncAt', state.syncedAt ?? new Date().toISOString()),
     ]);
