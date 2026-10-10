@@ -5,6 +5,10 @@ $phasesFile = __DIR__ . '/.spec/init/project-phases.md';
 $progressFile = __DIR__ . '/.phases/.progress';
 $manifestFile = __DIR__ . '/.phases/manifest.txt';
 $tempTaskFile = __DIR__ . '/.spec/.active_task.tmp';
+// Prompts vão para o claude via stdin (redirecionando um arquivo), nunca como argumento:
+// no Windows o PHP limita cada argumento de linha de comando a 8192 bytes (escapeshellarg).
+// Arquivos .spec/*.tmp estão no .gitignore, então não sujam a árvore nem entram em commits.
+$auditTaskFile = __DIR__ . '/.spec/.audit_task.tmp';
 
 $infraErrorPattern = '/(session limit|rate limit|usage limit|quota exceeded|Invalid API key|not authenticated|unauthorized|ECONNREFUSED|ETIMEDOUT|network error)/i';
 
@@ -66,6 +70,7 @@ while (true) {
         echo "🏁 [HARNESS CONCLUÍDO] TODAS AS FASES DO PROJETO FORAM APROVADAS!\n";
         echo str_repeat('=', 70) . "\n";
         if (file_exists($tempTaskFile)) unlink($tempTaskFile);
+        if (file_exists($auditTaskFile)) unlink($auditTaskFile);
         exit(0);
     }
 
@@ -101,7 +106,7 @@ while (true) {
 
         $implOutput = [];
         $implCode = 0;
-        exec('claude -p "Leia o arquivo .spec/.active_task.tmp e implemente todas as tarefas e critérios descritos nele criando e editando os arquivos necessários." --dangerously-skip-permissions 2>&1', $implOutput, $implCode);
+        exec('claude -p --dangerously-skip-permissions < ' . escapeshellarg($tempTaskFile) . ' 2>&1', $implOutput, $implCode);
 
         $implText = implode("\n", $implOutput);
         echo $implText . "\n";
@@ -152,7 +157,8 @@ while (true) {
                     . "FASE:\n# Phase " . $phaseText . "\n\n"
                     . "INSTRUÇÃO CRÍTICA DE FORMATO: Sua resposta DEVE começar com a palavra DONE (se aprovada) ou FALTA (se reprovada).";
 
-        $verdict = shell_exec('claude -p ' . escapeshellarg($evalPrompt) . ' --allowedTools "Read,Glob,Grep" 2>&1');
+        file_put_contents($auditTaskFile, $evalPrompt);
+        $verdict = shell_exec('claude -p --allowedTools "Read,Glob,Grep" < ' . escapeshellarg($auditTaskFile) . ' 2>&1');
         $verdictTrimmed = trim((string) $verdict);
 
         if ($verdictTrimmed === '' || preg_match($infraErrorPattern, $verdictTrimmed)) {
