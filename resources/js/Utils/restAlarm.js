@@ -10,7 +10,16 @@
 // usuário. Por isso o elemento é único (singleton, sobrevive às visitas do
 // Inertia) e `unlockRestAlarm()` é chamado no toque que inicia o treino ou a
 // série — muito antes do alarme precisar tocar.
-import { stopAudioKeepAlive, unlockAudioKeepAlive } from '@/Utils/audioAlert';
+//
+// iPhone/iPad (Phase 50): o app não toca nenhum áudio durante o treino — o
+// iOS interrompe a música de outros apps a cada `play()`, mesmo mudo. O fim
+// do descanso é avisado só na tela. A regra fica aqui, na fonte, para que
+// toda chamada (Iniciar treino, Concluir série, Testar alarme) fique protegida.
+//
+// Imports relativos com extensão: o Node também carrega este arquivo nos
+// testes (`tests/js/restAlarm.check.mjs`), onde o alias `@/` do Vite não existe.
+import { isAppleMobileDevice } from './appleMobileDevice.js';
+import { stopAudioKeepAlive, unlockAudioKeepAlive } from './audioAlert.js';
 
 const ALARM_SRC = '/sounds/rest-alarm.wav';
 
@@ -26,6 +35,7 @@ let ringing = false;
 // modo o iOS interrompe a música de outros apps, então voltar para 'auto'
 // logo depois evita pausar o Spotify do usuário durante todo o descanso.
 function setAudioSessionType(type) {
+    if (isAppleMobileDevice()) return;
     try {
         if (navigator.audioSession) navigator.audioSession.type = type;
     } catch (_) {}
@@ -64,6 +74,7 @@ function getAlarmElement() {
 // Chamar SEMPRE de dentro de um handler de toque/clique. Toca o alarme mudo
 // e pausa em seguida: é o suficiente para o navegador liberar o elemento.
 export function unlockRestAlarm() {
+    if (isAppleMobileDevice()) return;
     unlockAudioKeepAlive();
     if (unlocked) return;
 
@@ -87,6 +98,7 @@ export function unlockRestAlarm() {
 }
 
 export function playRestAlarm() {
+    if (isAppleMobileDevice()) return;
     stopAudioKeepAlive();
 
     const el = getAlarmElement();
@@ -103,6 +115,8 @@ export function playRestAlarm() {
     if (navigator.vibrate) navigator.vibrate(VIBRATION_PATTERN);
 }
 
+// Seguro no iPhone/iPad: nada tocou, o elemento não existe e o
+// `audioSession` fica intocado (ver `setAudioSessionType`).
 export function stopRestAlarm() {
     if (navigator.vibrate && ringing) navigator.vibrate(0);
     ringing = false;

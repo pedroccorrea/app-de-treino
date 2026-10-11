@@ -1,6 +1,7 @@
 <script setup>
 import BaseButton from '@/Components/UI/BaseButton.vue';
 import SectionLabel from '@/Components/UI/SectionLabel.vue';
+import { isAppleMobileDevice } from '@/Utils/appleMobileDevice';
 import { playRestAlarm } from '@/Utils/restAlarm';
 import { getKeepScreenOn, isWakeLockSupported, setKeepScreenOn } from '@/Utils/workoutPreferences';
 import { ref } from 'vue';
@@ -8,6 +9,8 @@ import { ref } from 'vue';
 // Navegador sem Screen Wake Lock API (ex: iOS < 16.4): a opção some.
 const wakeLockSupported = isWakeLockSupported();
 const keepScreenOn = ref(getKeepScreenOn());
+// iPhone/iPad: o app não toca áudio no treino (ver `Utils/restAlarm.js`).
+const isAppleMobile = isAppleMobileDevice();
 
 const toggleKeepScreenOn = () => {
     keepScreenOn.value = !keepScreenOn.value;
@@ -57,12 +60,15 @@ const toggleKeepScreenOn = () => {
         <div class="flex items-center justify-between gap-4">
             <div>
                 <p class="text-[15px] text-text-primary">Alarme do descanso</p>
-                <p class="mt-0.5 text-xs text-text-tertiary">
+                <p v-if="isAppleMobile" class="mt-0.5 text-xs text-text-tertiary">
+                    No iPhone, o fim do descanso é avisado só na tela.
+                </p>
+                <p v-else class="mt-0.5 text-xs text-text-tertiary">
                     Confira o volume antes de treinar.
                 </p>
             </div>
 
-            <BaseButton variant="secondary" class="shrink-0" @click="playRestAlarm">
+            <BaseButton v-if="!isAppleMobile" variant="secondary" class="shrink-0" @click="playRestAlarm">
                 Testar alarme
             </BaseButton>
         </div>
