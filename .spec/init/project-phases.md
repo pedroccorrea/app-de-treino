@@ -1653,3 +1653,74 @@ O app passa a usar o GPT-6 Luna da OpenAI (id na API: `gpt-6-luna`) como IA prin
 13. `php artisan test` passa em 100% de toda a suíte.
 14. `tests/Architecture/ArchitecturalRulesTest.php` passa sem violações.
 15. `npm run build` compila com zero erros.
+
+# Phase 50: iPhone e iPad Sem Aviso Sonoro no Fim do Descanso (Android Igual a Hoje)
+
+No iPhone, o áudio do descanso interrompe a música que a pessoa está ouvindo em outro app (Spotify, Apple Music etc.). Decisão: no iPhone e no iPad o app NÃO toca nenhum áudio durante o treino — o fim do descanso é avisado só na tela. No Android e nos demais aparelhos, tudo continua exatamente como hoje. Notificação push fica para uma phase futura (fora do escopo).
+
+## Regras Obrigatórias (Produção)
+- O app está em produção (Render + Neon) com dados reais de usuários. Nenhum dado existente pode ser perdido ou alterado por deploy. Esta phase é só de frontend: sem mudanças no backend e sem migrations.
+- Não mudar o comportamento do que já funciona hoje além do que a phase pede. O fluxo do treino em andamento (série atual, timer, descanso, sugestão de carga, "Finalizar exercício", edição de série, botão Finalizar) deve continuar igual em todos os aparelhos, exceto pelo áudio no iPhone/iPad.
+- Android e outros aparelhos: comportamento de áudio e vibração EXATAMENTE igual ao de hoje. Não alterar o arquivo do alarme (`public/sounds/rest-alarm.wav`), o script que o gera, o volume, a duração, o padrão de vibração nem os momentos em que o desbloqueio e o loop de silêncio acontecem.
+- Usar o design system existente (componentes `Base*` em `resources/js/Components/UI/`, tokens de `resources/css/design-tokens.css`, nenhum hex literal em `.vue`), mobile-first, textos em pt-BR.
+- Funcionar online e offline, como o resto do treino em andamento (ver `resources/pwa/sw.js` e o IndexedDB), inclusive no app instalado na tela de início.
+- Rodar os testes existentes e criar testes para o que for novo. Não fazer deploy nem git push.
+
+## Tasks
+1. **Reinvestigar o código antes de implementar:**
+   - Reler tudo o que toca o áudio, a vibração e o descanso, confirmando o estado atual (referência de quando esta phase foi escrita — confirmar):
+     * `resources/js/Utils/restAlarm.js`: alarme em `<audio>` (singleton), `unlockRestAlarm()` (toca o alarme mudo uma vez e também chama `unlockAudioKeepAlive()` a cada chamada), `playRestAlarm()` (para o loop de silêncio, põe `navigator.audioSession.type = 'playback'`, toca o WAV e vibra no Android), `stopRestAlarm()` (volta o `audioSession` para `'auto'`).
+     * `resources/js/Utils/audioAlert.js`: loop de áudio de silêncio (`<audio loop>`, volume 0,01) com Media Session "Descanso em andamento — Setwave" (`startAudioKeepAlive`, `unlockAudioKeepAlive`, `stopAudioKeepAlive`).
+     * `resources/js/Composables/useRestAlarm.js`: `armRestAlarm()` liga o loop de silêncio e agenda o `setTimeout`; `disarmRestAlarm()`.
+     * `resources/js/Pages/WorkoutSessions/Active.vue`: desbloqueio no toque de "Concluir série" (`completeSet`) e no primeiro `touchend`/`click` da página; `startRest`, `finishRestNaturally` (setTimeout + `watch` idempotentes), `endRest`, `addRestTime`; wake lock opcional.
+     * Desbloqueio no "Iniciar treino": `resources/js/Pages/Workouts/Show.vue` e `resources/js/Components/Dashboard/TodayWorkoutHero.vue`.
+     * `resources/js/Pages/Profile/Partials/WorkoutPreferencesForm.vue` (botão "Testar alarme", que chama `playRestAlarm`), `resources/js/Utils/workoutPreferences.js`, `resources/js/Composables/useWakeLock.js`, `resources/js/Composables/useNowTicker.js`, `resources/js/Components/WorkoutSessions/RestTimerOverlay.vue`.
+   - Procurar no projeto inteiro (incluindo `resources/pwa/sw.js`) qualquer outro ponto que toque áudio, use `navigator.audioSession`, `navigator.mediaSession`, `new Audio`, `AudioContext` ou `navigator.vibrate`, e incluir esses pontos na regra desta phase.
+   - Ver como o projeto já testa utilitários JS sem runner de testes JS: `tests/js/repTarget.check.mjs` executado pelo Node a partir de `tests/Feature/RepTargetJsMirrorTest.php`.
+
+2. **Detecção única de iPhone/iPad:**
+   - Criar um único utilitário JS pequeno (ex.: em `resources/js/Utils/`) que responde se o aparelho é iPhone ou iPad (iOS/iPadOS), reaproveitado por todo o código do alarme e pelo Perfil. Nenhum outro arquivo faz sua própria checagem de user agent.
+   - Precisa reconhecer: iPhone e iPad no Safari; Chrome, Firefox e Edge no iPhone/iPad (que se identificam como `CriOS`, `FxiOS`, `EdgiOS` mas rodam sobre o WebKit do iOS); o app instalado na tela de início (standalone); e o iPad com iPadOS 13+ que se identifica como Mac (ex.: user agent de Macintosh com tela sensível ao toque — `navigator.maxTouchPoints > 1` — e/ou `navigator.userAgentData.platform`, quando existir). Um Mac de verdade (sem toque) e o Android NÃO podem ser detectados como iPhone/iPad.
+   - A função deve ser fácil de testar: aceitar os dados do aparelho (user agent, plataforma, pontos de toque) como parâmetros opcionais, usando os do navegador quando não forem passados, e não quebrar fora do navegador (sem `navigator`/`window`).
+
+3. **iPhone/iPad: nenhum áudio do app durante o treino:**
+   - Aplicar a regra na fonte (nos utilitários de áudio), para que qualquer chamada atual ou futura fique protegida, sem espalhar `if` pelas páginas:
+     * `playRestAlarm()` não toca o bipe.
+     * `startAudioKeepAlive()` não toca o loop de silêncio e não registra a Media Session do descanso.
+     * `unlockRestAlarm()` e `unlockAudioKeepAlive()` não fazem nenhum `play()` (nem mudo) em nenhum toque: "Iniciar treino" (ficha e dashboard), "Concluir série" e primeiro toque da tela do treino.
+     * Nenhum código mexe em `navigator.audioSession` no iPhone/iPad.
+     * Nenhum elemento `<audio>` é sequer criado no iPhone/iPad, se for simples garantir isso.
+   - As funções de parar (`stopRestAlarm`, `stopAudioKeepAlive`, `disarmRestAlarm`) continuam podendo ser chamadas com segurança no iPhone/iPad (sem erro, sem tocar nada).
+   - A vibração já não existe no iPhone; não criar alternativa.
+
+4. **Todo o resto do descanso continua igual em todos os aparelhos:**
+   - A contagem na tela, o fim do descanso (a tela de descanso fecha e a próxima série começa sozinha), "Encerrar descanso", "+ tempo", o recálculo ao voltar para o app (tela apagada/segundo plano) e a opção "Manter tela ligada" funcionam exatamente como hoje, inclusive no iPhone/iPad, onde o descanso termina só com a mudança na tela.
+   - O disparo do fim do descanso (`setTimeout` + `watch` idempotentes) não pode depender de o áudio ter tocado.
+
+5. **Android e outros aparelhos: exatamente como hoje:**
+   - Bipe no fim do descanso, vibração, loop de silêncio com Media Session durante o descanso, desbloqueio nos mesmos toques e `audioSession` como hoje. Mesmos arquivos, volume e duração.
+
+6. **Perfil → Treino:**
+   - No iPhone/iPad: esconder o botão "Testar alarme" e mostrar, no lugar, a frase curta "No iPhone, o fim do descanso é avisado só na tela." (com o estilo de texto secundário que a seção já usa).
+   - Nos outros aparelhos, nada muda.
+   - A opção "Manter tela ligada durante o treino" continua igual em todos os aparelhos (aparece quando o aparelho suporta).
+
+7. **Testes:**
+   - Usar o mesmo jeito de testar JS que o projeto já usa: um script em `tests/js/` executado pelo Node a partir de um teste Pest (como `RepTargetJsMirrorTest`), sem adicionar runner de testes JS nem dependências novas. Se o Node precisar importar os utilitários de áudio, resolver de forma simples os imports com alias `@/` (ex.: imports relativos nesses utilitários ou um carregamento compatível no script de teste), sem mudar o comportamento no navegador.
+   - Testes da detecção com user agents reais: iPhone Safari, iPhone Chrome (`CriOS`), iPhone Firefox (`FxiOS`), iPad Safari antigo (user agent de iPad), iPad que se identifica como Mac (Macintosh + toque), app standalone no iPhone, Android Chrome (celular e tablet), Mac sem toque e Windows/computador.
+   - Testes de que, simulando iPhone/iPad (com `navigator` e `Audio` falsos no Node, contando as chamadas), `playRestAlarm`, `unlockRestAlarm`, `startAudioKeepAlive`, `unlockAudioKeepAlive`, `stopRestAlarm` e `stopAudioKeepAlive` não chamam nenhum `play()`, não criam `<audio>`, não alteram `navigator.audioSession` e não registram Media Session.
+   - Testes de que, simulando Android, o fluxo continua como hoje: `unlockRestAlarm` desbloqueia (play mudo do alarme e play/pause do silêncio), `startAudioKeepAlive` toca o loop e registra a Media Session, `playRestAlarm` toca o alarme, põe o `audioSession` em `'playback'` (quando existe) e chama `navigator.vibrate` com o mesmo padrão de hoje; `stopRestAlarm` volta para `'auto'`.
+
+## Acceptance Criteria
+1. Existe um único utilitário de detecção de iPhone/iPad, usado por todo o código do alarme e pelo Perfil; nenhum outro arquivo faz checagem própria de user agent.
+2. Testes da detecção passam para: iPhone (Safari, Chrome, Firefox, standalone), iPad, iPad que se identifica como Mac (detectado como iPad), Android (não detectado), Mac sem toque e computador Windows (não detectados).
+3. Teste: no iPhone/iPad simulado, nenhuma função de áudio do alarme toca nada — zero `play()`, nenhum `<audio>` criado, `navigator.audioSession` intocado e nenhuma Media Session registrada —, inclusive nos desbloqueios de "Iniciar treino", "Concluir série" e primeiro toque.
+4. Teste: no Android simulado, o desbloqueio, o loop de silêncio com Media Session, o bipe, o `audioSession` e a vibração acontecem exatamente como hoje.
+5. No iPhone/iPad, o descanso continua funcionando só pela tela: contagem, fim do descanso (overlay fecha e a próxima série começa), "Encerrar descanso", "+ tempo", recálculo ao voltar para o app e "Manter tela ligada".
+6. Perfil → Treino: no iPhone/iPad, o botão "Testar alarme" não aparece e aparece a frase "No iPhone, o fim do descanso é avisado só na tela."; nos outros aparelhos a seção fica igual.
+7. `public/sounds/rest-alarm.wav`, `scripts/generate-rest-alarm.mjs`, o volume, a duração e o padrão de vibração não foram alterados.
+8. Nenhuma mudança no backend e nenhuma migration.
+9. O resumo final explica como a detecção funciona (inclusive o caso do iPad que se identifica como Mac), lista os arquivos alterados e como testar manualmente num iPhone com música tocando e num Android.
+10. `php artisan test` passa em 100% de toda a suíte.
+11. `tests/Architecture/ArchitecturalRulesTest.php` passa sem violações.
+12. `npm run build` compila com zero erros.
