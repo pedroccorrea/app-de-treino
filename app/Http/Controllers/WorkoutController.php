@@ -179,6 +179,8 @@ class WorkoutController extends Controller
                 // de cair no padrão de 60s.
                 'rest_seconds' => $exercise->pivot->rest_seconds ?? 60,
                 'order' => $exercise->pivot->order,
+                // Grupo de exercício combinado (bi-set/tri-set); nulo = exercício sozinho.
+                'superset_group' => $exercise->pivot->superset_group,
             ])->values()->all(),
         ];
     }

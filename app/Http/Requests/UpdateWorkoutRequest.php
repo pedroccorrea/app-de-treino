@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Enums\DayOfWeek;
+use App\Models\WorkoutExercise;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -38,6 +39,9 @@ class UpdateWorkoutRequest extends FormRequest
             'exercises.*.target_sets' => ['nullable', 'integer', 'min:1', 'max:20'],
             'exercises.*.target_reps' => ['nullable', 'string', 'max:50'],
             'exercises.*.order' => ['nullable', 'integer', 'min:0'],
+            // Grupo de exercício combinado: opcional; o WorkoutService normaliza
+            // (só vizinhos com o mesmo número formam grupo).
+            'exercises.*.superset_group' => ['nullable', 'integer', 'min:1', 'max:'.WorkoutExercise::MAX_SUPERSET_GROUP],
         ];
     }
 
@@ -52,6 +56,9 @@ class UpdateWorkoutRequest extends FormRequest
         return [
             'exercises.*.target_reps.string' => 'Informe as repetições como número (ex.: 10) ou faixa (ex.: 8-12).',
             'exercises.*.target_reps.max' => 'A meta de repetições deve ter no máximo 50 caracteres.',
+            'exercises.*.superset_group.integer' => 'O grupo do exercício combinado deve ser um número inteiro.',
+            'exercises.*.superset_group.min' => 'O grupo do exercício combinado deve ser maior que zero.',
+            'exercises.*.superset_group.max' => 'O grupo do exercício combinado deve ser no máximo :max.',
         ];
     }
 }

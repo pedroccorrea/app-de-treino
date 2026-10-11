@@ -52,7 +52,7 @@ class Exercise extends Model
     public function workouts(): BelongsToMany
     {
         return $this->belongsToMany(Workout::class, 'workout_exercises')
-            ->withPivot(['order', 'target_sets', 'target_reps', 'target_reps_min', 'target_reps_max', 'rest_seconds', 'notes'])
+            ->withPivot(['order', 'target_sets', 'target_reps', 'target_reps_min', 'target_reps_max', 'rest_seconds', 'notes', 'superset_group'])
             ->withTimestamps()
             ->orderByPivot('order');
     }

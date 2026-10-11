@@ -59,6 +59,8 @@ class WorkoutSessionController extends Controller
                 // IndexedDB (ver `cacheWorkout` em `offlineStorage.js`) e
                 // reaproveitada por `Workouts/Show.vue`, que ordena por ele.
                 'order' => $exercise->pivot->order,
+                // Grupo de exercício combinado (bi-set/tri-set); nulo = exercício sozinho.
+                'superset_group' => $exercise->pivot->superset_group,
             ];
         })->values()->all() : [];
 

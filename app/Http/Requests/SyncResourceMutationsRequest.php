@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Models\WorkoutExercise;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -69,6 +70,21 @@ class SyncResourceMutationsRequest extends FormRequest
             'actions.*.exercises.*.target_sets' => ['nullable', 'integer', 'min:1', 'max:20'],
             'actions.*.exercises.*.target_reps' => ['nullable', 'string', 'max:50'],
             'actions.*.exercises.*.order' => ['nullable', 'integer', 'min:0'],
+            // Grupo de exercício combinado: opcional; o WorkoutService normaliza
+            // (só vizinhos com o mesmo número formam grupo).
+            'actions.*.exercises.*.superset_group' => ['nullable', 'integer', 'min:1', 'max:'.WorkoutExercise::MAX_SUPERSET_GROUP],
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'actions.*.exercises.*.superset_group.integer' => 'O grupo do exercício combinado deve ser um número inteiro.',
+            'actions.*.exercises.*.superset_group.min' => 'O grupo do exercício combinado deve ser maior que zero.',
+            'actions.*.exercises.*.superset_group.max' => 'O grupo do exercício combinado deve ser no máximo :max.',
         ];
     }
 }

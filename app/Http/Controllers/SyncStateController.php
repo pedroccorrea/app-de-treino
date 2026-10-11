@@ -121,6 +121,8 @@ class SyncStateController extends Controller
                 'target_reps_max' => RepRange::fromWorkoutExercise($exercise->pivot)?->max,
                 'rest_seconds' => $exercise->pivot->rest_seconds ?? 60,
                 'order' => $exercise->pivot->order,
+                // Grupo de exercício combinado (bi-set/tri-set); nulo = exercício sozinho.
+                'superset_group' => $exercise->pivot->superset_group,
             ])->values()->all(),
         ];
     }
