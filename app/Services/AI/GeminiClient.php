@@ -15,16 +15,16 @@ use Throwable;
 
 /**
  * Single point of contact with the Google Gemini API (generateContent),
- * wrapped by GeminiDriver. Targets Gemini 3.8 Flash on the free tier: the
+ * wrapped by GeminiDriver. Targets Gemini 3.5 Flash on the free tier: the
  * key travels only in the `x-goog-api-key` header (never in the URL), no
  * sampling parameters are sent (temperature/top_p/top_k were removed for
- * Gemini 3.8), reasoning is controlled by `thinkingLevel` per AiTask and the
+ * Gemini 3.5), reasoning is controlled by `thinkingLevel` per AiTask and the
  * answer is requested as native JSON (`responseMimeType`), still going
  * through AiJsonSanitizer afterwards.
  */
 class GeminiClient
 {
-    public const DEFAULT_MODEL = 'gemini-3.8-flash';
+    public const DEFAULT_MODEL = 'gemini-3.5-flash';
 
     private ?AiUsage $lastUsage = null;
 
@@ -174,7 +174,7 @@ class GeminiClient
     }
 
     /**
-     * Gemini 3.8 Flash accepts low/medium/high (not "minimal"): FastText uses
+     * Gemini 3.5 Flash accepts low/medium/high (not "minimal"): FastText uses
      * the lowest level so answers fit its short timeout; Vision keeps the
      * model's default ("medium") for reading photos.
      */

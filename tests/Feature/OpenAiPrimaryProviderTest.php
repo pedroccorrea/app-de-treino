@@ -23,7 +23,7 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * Phase 49: OpenAI (gpt-6-luna, Responses API) como IA principal em todas as
- * funcionalidades e Gemini 3.8 Flash (camada gratuita) como reserva. Nenhum
+ * funcionalidades e Gemini 3.5 Flash (camada gratuita) como reserva. Nenhum
  * teste chega a uma API real: OpenAI e Gemini são sempre simulados.
  */
 
@@ -139,14 +139,14 @@ beforeEach(function () {
         'services.openai.key' => 'test-openai-api-key',
         'services.openai.models.vision' => 'gpt-6-luna',
         'services.openai.models.fast_text' => 'gpt-6-luna',
-        'services.gemini.models.vision' => 'gemini-3.8-flash',
-        'services.gemini.models.fast_text' => 'gemini-3.8-flash',
+        'services.gemini.models.vision' => 'gemini-3.5-flash',
+        'services.gemini.models.fast_text' => 'gemini-3.5-flash',
     ]);
 });
 
 // ─── Padrões no código e .env.example ────────────────────────────────────────
 
-test('os padrões do código são OpenAI principal, Gemini reserva, gpt-6-luna e gemini-3.8-flash', function () {
+test('os padrões do código são OpenAI principal, Gemini reserva, gpt-6-luna e gemini-3.5-flash', function () {
     $vars = [
         'AI_DEFAULT_DRIVER', 'AI_FALLBACK_DRIVER',
         'OPENAI_VISION_MODEL', 'OPENAI_FAST_TEXT_MODEL',
@@ -179,7 +179,7 @@ test('os padrões do código são OpenAI principal, Gemini reserva, gpt-6-luna e
     expect($services['ai']['default_driver'])->toBe('openai')
         ->and($services['ai']['fallback_driver'])->toBe('gemini')
         ->and($services['openai']['models'])->toBe(['vision' => 'gpt-6-luna', 'fast_text' => 'gpt-6-luna'])
-        ->and($services['gemini']['models'])->toBe(['vision' => 'gemini-3.8-flash', 'fast_text' => 'gemini-3.8-flash'])
+        ->and($services['gemini']['models'])->toBe(['vision' => 'gemini-3.5-flash', 'fast_text' => 'gemini-3.5-flash'])
         // Variáveis sem efeito foram removidas da configuração.
         ->and($services['gemini'])->not->toHaveKey('model')
         ->and($services['claude'])->not->toHaveKey('model')
@@ -196,8 +196,8 @@ test('o .env.example está alinhado com os padrões do código e não traz valor
         ->toContain("OPENAI_VISION_MODEL=gpt-6-luna\n")
         ->toContain("OPENAI_FAST_TEXT_MODEL=gpt-6-luna\n")
         ->toContain("GEMINI_API_KEY=\n")
-        ->toContain("GEMINI_VISION_MODEL=gemini-3.8-flash\n")
-        ->toContain("GEMINI_FAST_TEXT_MODEL=gemini-3.8-flash\n")
+        ->toContain("GEMINI_VISION_MODEL=gemini-3.5-flash\n")
+        ->toContain("GEMINI_FAST_TEXT_MODEL=gemini-3.5-flash\n")
         ->not->toContain('GEMINI_MODEL=')
         ->not->toContain('ANTHROPIC_MODEL=')
         ->not->toContain('GROQ_MODEL=');
@@ -600,9 +600,9 @@ test('nenhuma chave aparece em logs ou mensagens de erro, mesmo quando a API dev
         ->not->toContain('AIzaSyFAKE');
 });
 
-// ─── Gemini 3.8 Flash ────────────────────────────────────────────────────────
+// ─── Gemini 3.5 Flash ────────────────────────────────────────────────────────
 
-test('o Gemini 3.8 Flash não recebe parâmetros que ele não aceita e pede JSON nativo com raciocínio baixo', function () {
+test('o Gemini 3.5 Flash não recebe parâmetros que ele não aceita e pede JSON nativo com raciocínio baixo', function () {
     config(['services.ai.default_driver' => 'gemini']);
     Http::fake(['generativelanguage.googleapis.com/*' => Http::response(p49GeminiBody('{"ok": true}'))]);
 
@@ -613,7 +613,7 @@ test('o Gemini 3.8 Flash não recebe parâmetros que ele não aceita e pede JSON
         $flat = json_encode($request->data());
 
         return p49IsGemini($request)
-            && str_contains($request->url(), '/models/gemini-3.8-flash:generateContent')
+            && str_contains($request->url(), '/models/gemini-3.5-flash:generateContent')
             && $config['responseMimeType'] === 'application/json'
             && $config['thinkingConfig'] === ['thinkingLevel' => 'low']
             && ! array_key_exists('temperature', $config)
@@ -693,7 +693,7 @@ test('quando a reserva atende, o registro de uso marca a falha da principal e o 
 
     Log::shouldHaveReceived('info')->with('Uso de IA', [
         'provider' => 'gemini',
-        'model' => 'gemini-3.8-flash',
+        'model' => 'gemini-3.5-flash',
         'feature' => AiFeature::WorkoutScan->value,
         'task' => 'vision',
         'role' => 'reserva',
@@ -718,7 +718,7 @@ test('ai:doctor testa a principal e a reserva sem mostrar o valor das chaves', f
         ->expectsOutputToContain('Modelo de imagem (scan): gpt-6-luna')
         ->expectsOutputToContain('OPENAI_API_KEY definida')
         ->expectsOutputToContain('IA reserva: gemini')
-        ->expectsOutputToContain('Modelo de texto rápido: gemini-3.8-flash')
+        ->expectsOutputToContain('Modelo de texto rápido: gemini-3.5-flash')
         ->expectsOutputToContain('GEMINI_API_KEY definida')
         ->doesntExpectOutputToContain('test-openai-api-key')
         ->doesntExpectOutputToContain('test-gemini-api-key')

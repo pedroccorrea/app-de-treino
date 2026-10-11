@@ -65,7 +65,7 @@ test('AiManager uses the driver built-in default model when no AiTask is given',
 
     app(AiManager::class)->generateStructured('qualquer prompt');
 
-    Http::assertSent(fn ($request) => str_contains($request->url(), 'gemini-3.8-flash'));
+    Http::assertSent(fn ($request) => str_contains($request->url(), 'gemini-3.5-flash'));
 });
 
 test('AiManager routes an AiTask::Vision image request to the driver configured vision model', function () {

@@ -49,13 +49,13 @@ return [
         ],
     ],
 
-    // IA reserva (camada gratuita). Gemini 3.8 Flash aceita thinkingLevel
+    // IA reserva (camada gratuita). Gemini 3.5 Flash aceita thinkingLevel
     // low/medium/high ("minimal" não existe nele).
     'gemini' => [
         'key' => env('GEMINI_API_KEY'),
         'models' => [
-            'vision' => env('GEMINI_VISION_MODEL', 'gemini-3.8-flash'),
-            'fast_text' => env('GEMINI_FAST_TEXT_MODEL', 'gemini-3.8-flash'),
+            'vision' => env('GEMINI_VISION_MODEL', 'gemini-3.5-flash'),
+            'fast_text' => env('GEMINI_FAST_TEXT_MODEL', 'gemini-3.5-flash'),
         ],
         'thinking_level' => [
             'vision' => 'medium',
