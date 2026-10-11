@@ -1724,3 +1724,254 @@ No iPhone, o áudio do descanso interrompe a música que a pessoa está ouvindo 
 10. `php artisan test` passa em 100% de toda a suíte.
 11. `tests/Architecture/ArchitecturalRulesTest.php` passa sem violações.
 12. `npm run build` compila com zero erros.
+
+# Phase 51: Exercícios Combinados (Bi-set/Tri-set) — Banco e Backend do Grupo na Ficha
+
+Primeira de uma série de phases (51 a 55) que trazem os exercícios combinados (bi-set, tri-set): dois ou mais exercícios feitos em sequência, sem descanso entre eles, com descanso só no fim da rodada. Esta phase cria apenas a base de dados e o backend do agrupamento na ficha. Não há nenhuma mudança visível para o usuário.
+
+Regra do grupo: cada exercício da ficha ganha um campo opcional `superset_group` (número inteiro). Exercícios com o mesmo número formam um grupo; campo vazio = exercício sozinho (como hoje). Um grupo só é válido com 2 ou mais exercícios em posições vizinhas na ficha (ordem `order` consecutiva); qualquer coisa fora disso é limpa (o exercício volta a ser sozinho).
+
+## Regras Obrigatórias (Produção)
+- O app está em produção (Render + Neon) com dados reais de usuários. Nenhum dado existente pode ser perdido ou alterado por deploy. Migrations somente aditivas (criar tabela nova ou adicionar coluna que aceite nulo; nunca remover, renomear ou mudar o tipo de colunas/tabelas; nunca apagar ou reescrever registros existentes).
+- A trava `unique(workout_id, exercise_id)` de `workout_exercises` continua exatamente como está (o mesmo exercício não aparece duas vezes na ficha, nem em grupos diferentes).
+- Fichas sem grupo (todas as que existem hoje) continuam funcionando exatamente como hoje, em todas as telas, online e offline.
+- Não mudar o comportamento do que já funciona hoje além do que a phase pede. Não criar configuração de tempo de descanso; o alarme continua como hoje (iPhone/iPad sem som, Phase 50; Android igual).
+- Cada usuário só vê e edita as próprias fichas, com checagem no backend, seguindo o padrão de autorização do projeto.
+- Textos (inclusive mensagens de validação) em pt-BR.
+- Rodar os testes existentes e criar testes para o que for novo. Não fazer deploy nem git push.
+
+## Tasks
+1. **Reinvestigar o código antes de implementar** (referência de quando esta phase foi escrita — confirmar tudo):
+   - Tabela `workout_exercises`: `database/migrations/2026_08_13_220003_create_workout_exercises_table.php` (com `unique(['workout_id', 'exercise_id'])`) e a migration aditiva da Phase 47 (`2026_10_10_000002_add_target_reps_range_to_workout_exercises_table.php`), que serve de modelo para esta.
+   - Model `app/Models/WorkoutExercise.php` (`#[Fillable]`) e os `withPivot([...])` de `Workout::exercises()` e de `Exercise` (o novo campo precisa ser lido pelo pivot).
+   - `app/Services/WorkoutService.php`: `createWorkout`, `updateWorkout` (sincroniza o pivot com `updateOrCreate` por `exercise_id`) e `reorderExercises` (rota `workouts.reorder`, usada pelo arrastar da página da ficha `Pages/Workouts/Show.vue`).
+   - Validações: `StoreWorkoutRequest`, `UpdateWorkoutRequest`, a validação de `WorkoutController::reorder` e a sincronização offline `SyncResourceMutationsRequest` + `SyncService` (ações `create_workout`/`update_workout`).
+   - Todas as respostas que levam a ficha para a tela e para o modo offline: `WorkoutController` (página da ficha, edição e helper de formatação dos exercícios), `WorkoutSessionController::show`, `SyncStateController` (estado para o IndexedDB), `DashboardController` e qualquer outro ponto que monte a lista de exercícios de uma ficha (procurar por `target_reps_min` e por `pivot->`).
+   - `WorkoutScannerService` (cria a ficha a partir do scan): nesta phase só precisa continuar funcionando (o grupo do scan é a Phase 55).
+
+2. **Migration aditiva:**
+   - Adicionar a coluna `superset_group` (inteiro pequeno sem sinal, anulável) em `workout_exercises`. Nenhum registro existente é alterado: todos ficam com nulo (= sem grupo).
+
+3. **Model e leitura:**
+   - Incluir o campo no `#[Fillable]` de `WorkoutExercise` e nos `withPivot` necessários.
+
+4. **Validação na entrada (formulários e sincronização offline):**
+   - `exercises.*.superset_group`: opcional, inteiro positivo, com limite razoável; mensagens em pt-BR. Mesma regra em `StoreWorkoutRequest`, `UpdateWorkoutRequest` e `SyncResourceMutationsRequest` (`actions.*.exercises.*.superset_group`). Payloads antigos sem o campo continuam válidos.
+
+5. **Normalização única no `WorkoutService`:**
+   - Um único método (pequeno, com testes) que recebe a lista de exercícios da ficha já na ordem final e devolve o `superset_group` limpo de cada um:
+     * Grupo com só 1 exercício → limpo (nulo).
+     * Exercícios com o mesmo número em posições NÃO vizinhas → cada trecho contínuo é avaliado separadamente; trechos com 1 exercício ficam nulos. Documentar no código a regra escolhida para o caso de dois trechos contínuos com o mesmo número (ex.: viram grupos distintos, renumerados).
+     * Renumerar os grupos válidos de forma estável (ex.: 1, 2, 3... na ordem em que aparecem), para que o número não carregue significado além de "quem está junto".
+   - Usar esse método em `createWorkout`, `updateWorkout` (inclusive quando vier da sincronização offline) e `reorderExercises` (reordenar pode separar um grupo: depois de gravar a nova ordem, normalizar de novo e gravar o resultado).
+   - Tudo dentro do `DB::transaction()` que já existe.
+
+6. **Campo em todas as respostas:**
+   - Incluir `superset_group` (nulo quando não houver) em todas as respostas encontradas na Task 1 que levam os exercícios da ficha para a tela ou para o IndexedDB, sem mudar nenhum outro campo.
+
+## Acceptance Criteria
+1. Existe uma migration somente aditiva criando `workout_exercises.superset_group` anulável; a trava `unique(workout_id, exercise_id)` continua intacta.
+2. Teste: uma ficha criada como em produção hoje (sem o campo) continua sendo lida, editada e usada no treino exatamente como antes, com `superset_group` nulo.
+3. Testes da normalização: grupo com 2 vizinhos é mantido; grupo com 1 exercício é limpo; mesmo número em posições não vizinhas não forma grupo com quem não é vizinho; tri-set vizinho é mantido; os números são renumerados de forma estável.
+4. Teste: criar e editar ficha (online e pela sincronização offline `create_workout`/`update_workout`) grava o grupo normalizado.
+5. Teste: reordenar pela rota `workouts.reorder` de forma que separa um grupo limpa o grupo que deixou de ser vizinho.
+6. Teste: `superset_group` aparece nas respostas da ficha (página da ficha, edição, treino em andamento e estado de sincronização offline).
+7. Teste: a validação rejeita valores inválidos (texto, zero, negativo) com mensagem em pt-BR e aceita payload sem o campo.
+8. Nenhuma mudança visível para o usuário (nenhum arquivo `.vue` precisa mudar nesta phase).
+9. `php artisan test` passa em 100% de toda a suíte.
+10. `tests/Architecture/ArchitecturalRulesTest.php` passa sem violações.
+11. `npm run build` compila com zero erros.
+
+# Phase 52: Exercícios Combinados — Montar o Grupo na Edição da Ficha
+
+Com a base da Phase 51 pronta, a pessoa passa a montar bi-sets/tri-sets ao criar ou editar a ficha, e a página da ficha mostra o agrupamento. Funciona online e offline.
+
+## Regras Obrigatórias (Produção)
+- O app está em produção (Render + Neon) com dados reais de usuários. Nenhum dado existente pode ser perdido ou alterado por deploy. Migrations somente aditivas (esta phase não deve precisar de migration).
+- A trava `unique(workout_id, exercise_id)` continua.
+- Fichas sem grupo continuam funcionando e aparecendo exatamente como hoje (criação, edição, página da ficha, arrastar para reordenar, online e offline).
+- O treino em andamento NÃO muda nesta phase (bi-set no treino é a Phase 53). O tempo de descanso e o alarme continuam como hoje (iPhone/iPad sem som, Phase 50; Android igual).
+- Usar o design system existente (componentes `Base*` em `resources/js/Components/UI/`, tokens de `resources/css/design-tokens.css`, nenhum hex literal em `.vue`), mobile-first, textos em pt-BR, funcionando bem em Android e iPhone.
+- Componentes pequenos com `defineProps()`/`defineEmits()`; não inchar páginas já grandes (extrair componentes quando fizer sentido).
+- Rodar os testes existentes e criar testes para o que for novo. Não fazer deploy nem git push.
+
+## Tasks
+1. **Reinvestigar o código antes de implementar** (referência de quando esta phase foi escrita — confirmar):
+   - O resultado da Phase 51: coluna `superset_group`, normalização no `WorkoutService` e onde o campo já chega nas respostas.
+   - Formulário da ficha: `resources/js/Components/Workouts/WorkoutForm.vue` (lista de exercícios com arrastar e soltar, `moveUp`/`moveDown`, `removeExercise`, recálculo de `order`), usado por `Pages/Workouts/Create.vue`, `Pages/Workouts/Edit.vue` e `Components/Workouts/CreateWorkoutModal.vue`.
+   - Página da ficha `Pages/Workouts/Show.vue` (lista dos exercícios e arrastar que chama a rota `workouts.reorder`) e `Components/Workouts/WorkoutCard.vue`.
+   - Modo offline: `resources/pwa/sw.js` (`CACHE_VERSION`, mutações `create_workout`/`update_workout`, `buildExercisesForWorkout`, `buildWorkoutShowProps`, `buildWorkoutEditProps`) e a cópia da ficha no IndexedDB (ex.: `cacheWorkout` e o estado vindo do `SyncStateController`).
+
+2. **Juntar e separar na edição da ficha:**
+   - Em cada exercício (exceto o primeiro), botão "Juntar com o de cima": coloca o exercício no mesmo grupo do exercício imediatamente acima (se o de cima não tiver grupo, cria um grupo novo com os dois). Juntar a um bi-set forma um tri-set, e assim por diante.
+   - Em exercícios que estão em grupo, botão "Separar": tira aquele exercício do grupo. Se o grupo ficar com 1 exercício, esse também volta a ser sozinho. Separar um exercício do meio de um tri-set não pode deixar um "grupo" com exercícios não vizinhos (aplicar no frontend a mesma regra da normalização do backend; o backend continua sendo a garantia final).
+   - Remover um exercício que estava em grupo segue a mesma regra.
+
+3. **Grupo como bloco visível:**
+   - Os exercícios do mesmo grupo aparecem juntos como um bloco claramente identificado (ex.: borda/fundo comum e rótulo "Bi-set", "Tri-set" ou "Combinado" para 4 ou mais).
+   - Mover (setas e arrastar) não pode quebrar o grupo sem querer: definir e documentar o comportamento (ex.: mover um exercício do grupo move o bloco inteiro, ou mover dentro do bloco só troca a ordem interna). O que não pode acontecer é um exercício de fora cair no meio do grupo e separá-lo silenciosamente.
+   - O mesmo cuidado vale para o arrastar da página da ficha (`Show.vue` → `workouts.reorder`).
+
+4. **Página da ficha mostra o agrupamento:**
+   - Em `Pages/Workouts/Show.vue`, os exercícios do grupo aparecem como um bloco com o rótulo ("Bi-set", "Tri-set"...). Fichas sem grupo continuam iguais.
+
+5. **Offline:**
+   - O Service Worker e a cópia da ficha no IndexedDB passam a carregar `superset_group` na criação/edição offline, na página da ficha e na edição sintetizadas, e na fila de mutações (sincroniza como na Phase 51).
+   - Fichas guardadas no IndexedDB antes desta mudança, sem o campo, contam como sem grupo (nunca quebram).
+   - Atualizar `CACHE_VERSION` do Service Worker.
+
+## Acceptance Criteria
+1. Na criação/edição da ficha existem "Juntar com o de cima" e "Separar", funcionando como descrito, inclusive para tri-set.
+2. O grupo aparece como um bloco visível com rótulo; mover (setas e arrastar) no formulário e na página da ficha não separa um grupo sem querer, e o comportamento escolhido está documentado no código e no resumo final.
+3. A página da ficha mostra o agrupamento; fichas sem grupo ficam iguais.
+4. Teste: salvar uma ficha com grupo (online e pela sincronização offline) grava o grupo; um grupo inválido vindo do cliente é normalizado pelo backend.
+5. Offline: criar/editar ficha com grupo funciona sem rede e sincroniza depois; ficha antiga no IndexedDB sem o campo abre normalmente como sem grupo; `CACHE_VERSION` foi atualizada.
+6. O treino em andamento não mudou nesta phase.
+7. `php artisan test` passa em 100% de toda a suíte.
+8. `tests/Architecture/ArchitecturalRulesTest.php` passa sem violações.
+9. `npm run build` compila com zero erros.
+
+# Phase 53: Exercícios Combinados — Rodada do Bi-set no Treino em Andamento
+
+A phase mais importante da série. No treino em andamento, um grupo (bi-set/tri-set) passa a aparecer como UM card por rodada, com todos os exercícios do grupo juntos. A pessoa faz os exercícios em sequência, sem descanso nem troca de tela entre eles, e registra tudo num toque só ("Concluir rodada"). Só depois começa o descanso. Esta phase cobre o card da rodada e o registro; a navegação (stepper, menu lateral, tela de descanso), reabrir o treino na posição certa e o offline completo ficam na Phase 54.
+
+## Regras Obrigatórias (Produção)
+- O app está em produção (Render + Neon) com dados reais de usuários. Nenhum dado existente pode ser perdido ou alterado por deploy. Migrations somente aditivas (esta phase não deve precisar de migration nem de mudança no backend: cada série da rodada é uma série normal, salva pelas rotas e ações que já existem).
+- Fichas sem grupo continuam funcionando EXATAMENTE como hoje no treino em andamento (série atual, valores iniciais, +/−, timer, descanso, sugestão da IA, "Finalizar exercício", edição de série, botão Finalizar).
+- A trava `unique(workout_id, exercise_id)` continua.
+- O tempo de descanso continua como hoje (não criar configuração de descanso). O alarme continua como hoje (iPhone/iPad sem som, Phase 50; Android igual).
+- Cada série continua sendo um `SetLog` normal, `updateOrCreate` por `exercise_id` + `set_number`: nunca duplicar séries, nem online nem na sincronização offline.
+- Usar o design system existente (componentes `Base*` em `resources/js/Components/UI/`, tokens de `resources/css/design-tokens.css`, nenhum hex literal em `.vue`), mobile-first, textos em pt-BR, funcionando bem em Android e iPhone, online e offline.
+- `Pages/WorkoutSessions/Active.vue` já é grande: colocar a lógica de rodadas num utilitário JS puro e o card da rodada em componente(s) próprio(s) em `Components/WorkoutSessions/`, com `defineProps()`/`defineEmits()`, reaproveitando os componentes que já existem.
+- Rodar os testes existentes e criar testes para o que for novo. Não fazer deploy nem git push.
+
+## Tasks
+1. **Reinvestigar o código antes de implementar** (referência de quando esta phase foi escrita — confirmar):
+   - `Pages/WorkoutSessions/Active.vue`: `sortedExercises`, `currentIndex` (`ref(0)`), `initSetsForExercise` (valores iniciais: sugestão da IA → última vez → menor número da faixa, via `Utils/repTarget.js`; séries seguintes herdam da anterior), `setInputs`/`setStates`/`savedSets`/`extraSets`/`finishedEarly`, `autoStartNextSet`, `startSet`, `completeSet` (online pela rota `workout-sessions.sets.store`; offline com `queueAction({ type: 'log_set', ... })`), `markSetCompleteLocally` (marca a série, `recordActiveSessionSetLog`, herda para a próxima, para o cronômetro de série e chama `startRest`), `applyEditedSet`/`openSetEdit` (editor de série das Phases 45/46), `finishExerciseEarly`, `addExtraSet`, `totalPlannedSets`/`totalDoneSets`, sugestões de sobrecarga por exercício (`suggestionForExercise`, `applyOverloadSuggestion`) e o cronômetro de série (`exerciseTimer*`).
+   - Componentes: `ExerciseActiveCard.vue`, `LoadRepsHero.vue`/`LoadRepsStepper.vue` (+/−), `CompleteSetButton.vue`, `OverloadSuggestionCard.vue`, `SetWaveProgress.vue`, `RestTimerOverlay.vue`, `Sets/EditSetModal.vue`.
+   - Como o projeto testa utilitários JS sem runner: `tests/js/*.check.mjs` executados pelo Node a partir de testes Pest (ex.: `RepTargetJsMirrorTest`).
+   - O que as Phases 51/52 entregaram: `superset_group` em cada exercício que chega ao `Active.vue` (online e na página sintetizada pelo Service Worker).
+
+2. **Lógica de rodadas num utilitário puro (com testes):**
+   - A partir da lista ordenada de exercícios, montar "blocos": exercício sozinho ou grupo (exercícios vizinhos com o mesmo `superset_group`; grupo inválido no cliente é tratado como exercícios sozinhos).
+   - Para um grupo: total de rodadas = maior número de séries entre os exercícios do grupo (contando séries extras); a rodada N inclui só os exercícios que têm a série N e que não foram finalizados ("Finalizar exercício"). Rodada atual = a primeira rodada que ainda tem algum exercício com a série N pendente.
+   - Funções pequenas e determinísticas (sem Vue), testadas por script em `tests/js/` executado por um teste Pest, sem dependências novas.
+
+3. **Card da rodada:**
+   - O grupo aparece como UM card por rodada, ex.: "Bi-set · Rodada 1 de 3" (ou "Tri-set"/"Combinado"), com uma seção por exercício da rodada: nome, carga e repetições, cada um com seus próprios controles +/− (mesmos incrementos de hoje).
+   - Os valores de cada seção vêm preenchidos pela regra que já existe (sugestão da IA → última vez → menor número da faixa; séries seguintes herdam da anterior daquele exercício). A sugestão da IA continua por exercício, dentro da seção de cada um (aplicar/dispensar como hoje).
+   - Números de séries diferentes: a rodada que só tiver um exercício restante mostra só esse exercício (o card continua indicando a rodada).
+   - O total de séries continua contado por exercício (volume e progresso certos); o card mostra "Rodada X de Y".
+
+4. **"Concluir rodada":**
+   - Um único botão "Concluir rodada" salva a série de cada exercício da rodada, cada uma como uma série normal (online pela rota que já existe; offline como `log_set` na fila, cada uma com seu próprio id de cliente), sem duplicar.
+   - Só depois de todas as séries da rodada estarem registradas (ou enfileiradas offline) começa o descanso, uma única vez. Se alguma falhar online, não iniciar o descanso, não marcar como concluída a que falhou e permitir tentar de novo sem duplicar as que já foram salvas.
+   - Não há descanso nem troca de tela entre os exercícios do grupo. O tempo de descanso usado é o mesmo de hoje (definir e documentar qual valor do grupo é usado, ex.: o do último exercício da rodada).
+   - O desbloqueio do áudio no toque continua acontecendo como hoje no "Concluir série" (no iPhone/iPad não toca nada, Phase 50).
+   - Se existir cronômetro de série, ele vale para a rodada inteira (começa na rodada e para ao concluí-la).
+   - Depois do descanso, a próxima rodada começa sozinha, como a próxima série começa hoje; ao terminar a última rodada, segue para o próximo bloco como hoje.
+
+5. **"Finalizar exercício" dentro do grupo:**
+   - Finaliza só aquele exercício; as próximas rodadas mostram só os outros. Se todos forem finalizados, o grupo termina.
+
+6. **Editar série já concluída:**
+   - Para cada exercício da rodada, as séries já concluídas continuam editáveis pelo editor que já existe (Phases 45/46), sem mudar a rodada atual, o descanso nem o cronômetro.
+
+## Acceptance Criteria
+1. Testes do utilitário de rodadas (script em `tests/js/` rodado por teste Pest): bi-set 3×3 → 3 rodadas com os 2 exercícios; bi-set 4×3 → rodada 4 só com o primeiro; tri-set; "Finalizar exercício" tira o exercício das próximas rodadas; grupo inválido (1 exercício ou não vizinhos) vira exercícios sozinhos; séries extras contam.
+2. Um grupo aparece como um único card "Bi-set · Rodada X de Y", com uma seção por exercício (nome, carga, reps e +/−), com valores iniciais pela regra existente e sugestão da IA por exercício.
+3. "Concluir rodada" registra uma série normal por exercício da rodada (teste de backend: as séries de uma rodada enviadas em sequência, online e pela sincronização `log_set`, geram exatamente um `SetLog` por exercício/série, sem duplicar ao reenviar) e só então inicia um único descanso.
+4. Não há descanso nem troca de tela entre os exercícios do grupo; o tempo de descanso e o alarme seguem como hoje.
+5. Rodada com só um exercício restante mostra só esse exercício; "Finalizar exercício" no grupo finaliza só aquele.
+6. A edição de série concluída funciona para cada exercício da rodada.
+7. Fichas sem grupo: treino em andamento exatamente igual (testes existentes passando).
+8. `php artisan test` passa em 100% de toda a suíte.
+9. `tests/Architecture/ArchitecturalRulesTest.php` passa sem violações.
+10. `npm run build` compila com zero erros.
+
+# Phase 54: Exercícios Combinados — Navegação, Descanso, Reabrir o Treino e Offline
+
+Continuação da Phase 53. Stepper, menu lateral e tela de descanso passam a entender o grupo; reabrir o treino volta para a rodada/exercício certos (para TODOS os treinos, com ou sem grupo); e o treino offline montado pelo Service Worker se comporta igual ao online.
+
+## Regras Obrigatórias (Produção)
+- O app está em produção (Render + Neon) com dados reais de usuários. Nenhum dado existente pode ser perdido ou alterado por deploy. Migrations somente aditivas (esta phase não deve precisar de migration).
+- Fichas sem grupo continuam funcionando exatamente como hoje, com UMA única exceção: ao reabrir o treino (recarregar, banner ou offline), ele volta para o exercício/série certos em vez de voltar para o primeiro exercício.
+- A trava `unique(workout_id, exercise_id)` continua. O tempo de descanso continua como hoje (sem configuração nova). O alarme continua como hoje (iPhone/iPad sem som, Phase 50; Android igual).
+- Usar o design system existente (componentes `Base*` em `resources/js/Components/UI/`, tokens de `resources/css/design-tokens.css`, nenhum hex literal em `.vue`), mobile-first, textos em pt-BR, funcionando bem em Android e iPhone, online e offline.
+- Reaproveitar o utilitário de rodadas da Phase 53 (nada de uma segunda lógica de rodadas espalhada).
+- Rodar os testes existentes e criar testes para o que for novo. Não fazer deploy nem git push.
+
+## Tasks
+1. **Reinvestigar o código antes de implementar** (referência de quando esta phase foi escrita — confirmar):
+   - O que a Phase 53 entregou (utilitário de rodadas, card da rodada, "Concluir rodada").
+   - `Components/WorkoutSessions/ExerciseStepper.vue`, `ExerciseOverviewDrawer.vue`, `NavigationGuardModal.vue` e, em `Active.vue`, `stepperExercises`, `drawerExercises`, `tryNavigateTo`/`navigateTo`.
+   - `Components/WorkoutSessions/RestTimerOverlay.vue` (mostrava "Próxima: Série N/T").
+   - Reabertura: em `Active.vue`, `currentIndex` começava em `ref(0)` e só `setStates`/`savedSets` eram reconstruídos a partir de `props.setLogs`, então reabrir voltava ao primeiro exercício. `finishedEarly` era só estado local da página (confirmar se sobrevive a recarregar). Ver também o registro local da sessão ativa no IndexedDB (`startActiveSessionLocally`, `recordActiveSessionSetLog`) e o banner global da sessão ativa.
+   - Service Worker `resources/pwa/sw.js`: `buildActiveSessionProps` (página do treino sintetizada offline, incluindo as séries guardadas na fila) e `CACHE_VERSION`.
+
+2. **Stepper e menu lateral mostram o grupo como um bloco:**
+   - No stepper, o grupo ocupa uma posição só (identificada como bi-set/tri-set), com progresso pelas rodadas.
+   - No menu lateral (visão geral dos exercícios), os exercícios do grupo aparecem juntos como um bloco com o rótulo. Navegar para o bloco abre a rodada atual dele.
+   - Fichas sem grupo: stepper e menu iguais a hoje.
+
+3. **Tela de descanso anuncia a próxima rodada:**
+   - Dentro de um grupo, a tela de descanso mostra a próxima rodada (ex.: "Próximo: Bi-set · Rodada 2 de 3"). Ao terminar a última rodada, anuncia o próximo bloco como hoje.
+   - Exercício sozinho: texto igual a hoje.
+
+4. **Reabrir o treino na posição certa (todos os treinos):**
+   - Ao abrir/reabrir o treino em andamento (recarregar, banner global ou offline), calcular a posição pelas séries já feitas: o primeiro bloco (na ordem da ficha) que ainda tem série pendente; dentro de um grupo, a rodada certa; num exercício sozinho, a próxima série pendente. Se tudo estiver feito, ficar no último bloco, como hoje ao terminar.
+   - Exercícios finalizados com "Finalizar exercício" devem continuar finalizados ao reabrir (online e offline). Se hoje isso não sobrevive a recarregar, guardar essa marca no registro local da sessão ativa (IndexedDB), sem mudança no backend, e documentar a escolha.
+   - A função de cálculo da posição é pura e testada (pode ficar no utilitário de rodadas).
+
+5. **Treino offline pelo Service Worker:**
+   - A página do treino sintetizada offline traz `superset_group` em cada exercício (fichas antigas no IndexedDB sem o campo = sem grupo) e as séries já feitas, para que rodadas, "Concluir rodada", descanso e reabertura funcionem igual ao online.
+   - Atualizar `CACHE_VERSION` do Service Worker.
+
+## Acceptance Criteria
+1. Stepper e menu lateral mostram o grupo como um bloco com rótulo; navegar para ele abre a rodada atual; fichas sem grupo iguais a hoje.
+2. Dentro de um grupo, a tela de descanso mostra "Próximo: Bi-set · Rodada X de Y"; nos outros casos, igual a hoje.
+3. Testes (script em `tests/js/` rodado por teste Pest) do cálculo da posição ao reabrir: ficha sem grupo com séries feitas no meio do 2º exercício volta para o 2º exercício na série certa; bi-set com a rodada 1 feita volta para a rodada 2; exercício finalizado não reaparece; treino todo feito fica no último bloco.
+4. Reabrir o treino (recarregar, banner ou offline) volta para a rodada/exercício certos, com ou sem grupo.
+5. Offline: treino com bi-set aberto sem rede (página do Service Worker) mostra as rodadas, conclui a rodada enfileirando uma série por exercício, descansa e sincroniza depois sem duplicar; ficha antiga sem o campo funciona como sem grupo; `CACHE_VERSION` foi atualizada.
+6. Fichas sem grupo: tudo igual a hoje, exceto a reabertura na posição certa (testes existentes passando ou ajustados só nesse ponto).
+7. `php artisan test` passa em 100% de toda a suíte.
+8. `tests/Architecture/ArchitecturalRulesTest.php` passa sem violações.
+9. `npm run build` compila com zero erros.
+
+# Phase 55: Exercícios Combinados — Scan da Ficha Reconhece Bi-set
+
+O scan da ficha (foto) passa a reconhecer exercícios combinados e já cria a ficha com o grupo montado, usando a mesma base das Phases 51 a 54.
+
+## Regras Obrigatórias (Produção)
+- O app está em produção (Render + Neon) com dados reais de usuários. Nenhum dado existente pode ser perdido ou alterado por deploy. Migrations somente aditivas (esta phase não deve precisar de migration).
+- O scan de fichas sem bi-set continua funcionando exatamente como hoje (mesmos campos, mesma validação, mesma degradação e mensagens de erro, mesma IA principal/reserva da Phase 49).
+- A trava `unique(workout_id, exercise_id)` continua.
+- Não confiar só na IA: tudo que a IA devolve passa por validação em PHP antes de gravar.
+- Testes nunca chamam APIs reais: todas as respostas de IA são simuladas.
+- Textos em pt-BR. Rodar os testes existentes e criar testes para o que for novo. Não fazer deploy nem git push.
+
+## Tasks
+1. **Reinvestigar o código antes de implementar** (referência de quando esta phase foi escrita — confirmar):
+   - `app/Services/WorkoutScannerService.php`: o prompt (formato JSON pedido, regras de `target_reps`/`target_reps_min`/`target_reps_max` da Phase 47), a limpeza/validação da resposta e a criação da ficha (`workoutExercises()->create([...])`).
+   - A normalização do grupo criada na Phase 51 no `WorkoutService` (reaproveitar; não criar uma segunda regra).
+   - Os testes do scan existentes (ex.: `tests/Feature/WorkoutScannerTest.php`) e como simulam a resposta da IA.
+
+2. **O prompt reconhece combinados:**
+   - Orientar a IA a identificar exercícios combinados na ficha: "bi-set", "tri-set", "conjugado", "super-série"/"superset", "+" ligando exercícios, chaves/colchetes agrupando linhas e marcações equivalentes.
+   - Cada exercício passa a ter um campo opcional de grupo na resposta (ex.: `superset_group`: número igual para os exercícios combinados, nulo para exercício sozinho), mantendo a ordem da ficha. Nunca inventar grupo quando não houver marcação.
+
+3. **Validação em PHP antes de gravar:**
+   - Valor de grupo não numérico/negativo vira nulo.
+   - Passar pela normalização da Phase 51: grupo com 1 exercício ou em posições não vizinhas é descartado (vira exercício sozinho).
+   - Exercícios repetidos na ficha continuam tratados como hoje (respeitando a trava única).
+
+## Acceptance Criteria
+1. Teste (resposta simulada): ficha com bi-set ("A + B") cria os dois exercícios vizinhos no mesmo grupo; tri-set cria os três no mesmo grupo.
+2. Teste: resposta com grupo de 1 exercício é gravada sem grupo.
+3. Teste: resposta com grupo em posições não vizinhas não junta exercícios que não são vizinhos.
+4. Teste: resposta com grupo inválido (texto, negativo) é gravada sem grupo e não quebra o scan.
+5. Teste: scan de ficha sem combinados continua igual (testes existentes do scan passando).
+6. O prompt menciona explicitamente "bi-set", "tri-set", "conjugado", "super-série", "+" e chaves.
+7. `php artisan test` passa em 100% de toda a suíte.
+8. `tests/Architecture/ArchitecturalRulesTest.php` passa sem violações.
+9. `npm run build` compila com zero erros.
