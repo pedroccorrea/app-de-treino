@@ -126,3 +126,24 @@ A propagação (Dashboard, Treinos, Programas, Sidebar, ConfirmationModal) reuti
 | `--text-secondary` sobre `bg-surface-overlay/40` | `Pages/Workouts/Show.vue` — linha de exercício na lista arrastável (`bg-surface-overlay/40` por cima do `BaseCard` em `--surface-raised`) | `--surface-overlay` a 40% composto sobre `--surface-raised` ≈ `rgb(23,28,41)` | 5,00:1 | ✅ Aprovado (sem ajuste, mas é a margem mais apertada da Phase 14 — evitar escurecer ainda mais esse fundo) |
 
 Nenhum par ficou abaixo de 4,5:1; nenhum ajuste de token foi necessário nesta fase.
+
+## Auditoria de contraste (Phase 52 — bloco de bi-set/tri-set)
+
+A moldura do grupo (`Components/Workouts/SupersetBlock.vue`) usa fundo **opaco**: `--accent-muted` composto sobre `--surface-raised` (via `linear-gradient(var(--accent-muted), var(--accent-muted)), var(--surface-raised)`), não `bg-accent-muted` translúcido. O motivo é que o formulário da ficha (`WorkoutForm.vue`) ainda segue o tema claro/escuro do sistema (classes `dark:`, cartão branco no tema claro) e a tinta translúcida sobre branco deixaria o rótulo com contraste ~2:1. Com o fundo opaco, o fundo efetivo é o mesmo no formulário e na página da ficha.
+
+Como os tokens são só escuros, os controles de `WorkoutFormExerciseItem.vue` têm um par claro (paleta violeta/cinza do Tailwind, sempre tingida — sem preenchimento sólido) e um par escuro (tokens). O número do exercício deixou de ser `bg-violet-600` sólido com texto branco. As setas de reordenar ficam sempre visíveis em tela de toque (`[@media(hover:hover)]:opacity-0` só esconde quando existe hover) e têm 48px de alvo (`h-12 w-12`, mínimo de `--touch-min`); o mesmo vale para "Juntar com o de cima", "Separar", a lixeira e as setas do cabeçalho do bloco (`SupersetBlock.vue`) e da página da ficha (`WorkoutExerciseList.vue`).
+
+| Par | Onde aparece | Fundo efetivo (alfa composto) | Contraste | Resultado |
+|---|---|---|---|---|
+| `--text-body` sobre a moldura | `SupersetBlock` — "Exercícios combinados" e setas do cabeçalho | `--accent-muted` sobre `--surface-raised` ≈ `rgb(37,34,65)` | 6,57:1 | ✅ (setas trocadas de `--text-secondary`, que dava 4,48:1) |
+| `--accent-text-soft` sobre `BaseBadge accent` na moldura | `SupersetBlock` — rótulo "Bi-set"/"Tri-set"/"Combinado" | `--accent-muted` sobre a moldura ≈ `rgb(51,42,91)` | 7,03:1 | ✅ |
+| `--text-primary` sobre item agrupado | `WorkoutExerciseList` (página da ficha) — nome do exercício | `--surface-overlay`/40 sobre a moldura ≈ `rgb(33,33,58)` | 13,94:1 | ✅ |
+| `--text-secondary` sobre item agrupado | `WorkoutExerciseList` — grupo muscular | mesmo fundo acima | 4,58:1 | ✅ (margem apertada — não escurecer este fundo) |
+| `--accent-text-soft` sobre item agrupado | `WorkoutExerciseList` — metas ("3 séries × 10 reps") | mesmo fundo acima | 8,44:1 | ✅ |
+| `--text-body` sobre item (agrupado / sozinho) | `WorkoutExerciseList` — setas de reordenar | `rgb(33,33,58)` / `rgb(23,28,41)` | 6,72:1 / 7,36:1 | ✅ |
+| `--accent-label` sobre número do item agrupado | `WorkoutExerciseList` — número de ordem | `--accent-muted` sobre o item ≈ `rgb(48,42,85)` | 4,88:1 | ✅ |
+| `--accent-label` sobre número (tema escuro, agrupado / sozinho) | `WorkoutFormExerciseItem` | ≈ `rgb(43,38,79)` / `rgb(39,40,73)` | 5,19:1 / 5,20:1 | ✅ |
+| `--accent-text-strong` em "Juntar com o de cima" (tema escuro) | `WorkoutFormExerciseItem` | ≈ `rgb(43,38,79)` | 11,90:1 | ✅ |
+| `gray-300` em "Separar" / `gray-400` nas setas (tema escuro) | `WorkoutFormExerciseItem` agrupado | `gray-900`/50 sobre a moldura ≈ `rgb(27,29,52)` | 11,23:1 / 6,52:1 | ✅ |
+| `violet-700` sobre `violet-100` / `violet-50` (tema claro) | `WorkoutFormExerciseItem` — número / "Juntar com o de cima" | sólido | 5,98:1 / 6,48:1 | ✅ |
+| `gray-600` / `gray-500` sobre `gray-50` (tema claro) | `WorkoutFormExerciseItem` — "Separar" / setas | `gray-50` sólido (antes `gray-50/70`, opaco para não misturar com a moldura escura) | 7,23:1 / 4,63:1 | ✅ |

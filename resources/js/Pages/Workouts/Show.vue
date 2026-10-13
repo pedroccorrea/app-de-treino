@@ -3,6 +3,7 @@ import BaseBadge from '@/Components/UI/BaseBadge.vue';
 import BaseButton from '@/Components/UI/BaseButton.vue';
 import BaseCard from '@/Components/UI/BaseCard.vue';
 import SectionLabel from '@/Components/UI/SectionLabel.vue';
+import WorkoutExerciseList from '@/Components/Workouts/WorkoutExerciseList.vue';
 import ActiveWorkoutSession from '@/Pages/WorkoutSessions/Active.vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { useOfflineSync } from '@/Composables/useOfflineSync';
@@ -13,8 +14,8 @@ import {
     getActiveSessionSetLogs,
     getCachedLastLogs,
 } from '@/Utils/offlineStorage';
-import { formatRepTarget } from '@/Utils/repTarget';
 import { unlockRestAlarm } from '@/Utils/restAlarm';
+import { normalizeExerciseList } from '@/Utils/supersetGroups';
 import { Head, Link, router } from '@inertiajs/vue3';
 import { computed, onMounted, ref } from 'vue';
 
@@ -41,87 +42,23 @@ const muscleGroups = computed(() => props.workout.muscle_groups ?? []);
 const returnTo = new URLSearchParams(window.location.search).get('return_to');
 const currentPath = window.location.pathname + window.location.search;
 
-// Drag & Drop state
 // `workout.exercises` pode faltar numa resposta sintética do Service Worker
 // (`resources/pwa/sw.js`) para uma rota ainda não visitada offline — o
-// encadeamento opcional evita que isso quebre o motor reativo do Vue.
-const exercises = ref([...(props.workout.exercises ?? [])].sort((a, b) => a.order - b.order));
-const draggingIndex = ref(null);
-const dragOverIndex = ref(null);
-
-const formatTarget = (exercise) => {
-    const parts = [];
-    if (exercise.target_sets) {
-        parts.push(`${exercise.target_sets} ${exercise.target_sets === 1 ? 'série' : 'séries'}`);
-    }
-    if (exercise.target_reps) {
-        parts.push(formatRepTarget(exercise.target_reps) + ' reps');
-    }
-    return parts.length ? parts.join(' × ') : 'Metas não definidas';
-};
+// encadeamento opcional evita que isso quebre o motor reativo do Vue. Os
+// grupos combinados passam pela mesma regra do backend; uma ficha de cache
+// offline antigo (sem `superset_group`) aparece como sem grupo.
+const exercises = ref(normalizeExerciseList(
+    [...(props.workout.exercises ?? [])]
+        .sort((a, b) => a.order - b.order)
+        .map((exercise) => ({ ...exercise })),
+));
 
 const hasExercises = computed(() => exercises.value.length > 0);
 
-// --- Drag & Drop handlers ---
-// We only start a drag if the pointer-down target is NOT an interactive element
-const DRAG_IGNORE = ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'A', 'LABEL'];
-
-const isDraggableTarget = (event) => {
-    let el = event.target;
-    while (el && el !== event.currentTarget) {
-        if (DRAG_IGNORE.includes(el.tagName)) return false;
-        el = el.parentElement;
-    }
-    return true;
-};
-
-const onDragStart = (event, index) => {
-    if (!isDraggableTarget(event)) {
-        event.preventDefault();
-        return;
-    }
-    draggingIndex.value = index;
-};
-
-const onDragOver = (e, index) => {
-    e.preventDefault();
-    dragOverIndex.value = index;
-};
-
-const onDrop = (targetIndex) => {
-    if (draggingIndex.value === null || draggingIndex.value === targetIndex) {
-        draggingIndex.value = null;
-        dragOverIndex.value = null;
-        return;
-    }
-    const reordered = [...exercises.value];
-    const [moved] = reordered.splice(draggingIndex.value, 1);
-    reordered.splice(targetIndex, 0, moved);
-    exercises.value = reordered;
-    draggingIndex.value = null;
-    dragOverIndex.value = null;
-    persistOrder();
-};
-
-const onDragEnd = () => {
-    draggingIndex.value = null;
-    dragOverIndex.value = null;
-};
-
-// --- Reorder buttons (↑ / ↓) ---
-const moveUp = (index) => {
-    if (index === 0) return;
-    const arr = [...exercises.value];
-    [arr[index - 1], arr[index]] = [arr[index], arr[index - 1]];
-    exercises.value = arr;
-    persistOrder();
-};
-
-const moveDown = (index) => {
-    if (index === exercises.value.length - 1) return;
-    const arr = [...exercises.value];
-    [arr[index], arr[index + 1]] = [arr[index + 1], arr[index]];
-    exercises.value = arr;
+// A lista (`WorkoutExerciseList`) já devolve a nova ordem sem quebrar grupos;
+// o backend normaliza de novo ao gravar.
+const onReorder = (list) => {
+    exercises.value = list;
     persistOrder();
 };
 
@@ -294,71 +231,7 @@ const startWorkout = async () => {
                             </p>
                         </div>
 
-                        <!-- Draggable list — the entire card is the drag target -->
-                        <ol v-else class="space-y-2">
-                            <li
-                                v-for="(exercise, index) in exercises"
-                                :key="exercise.id"
-                                draggable="true"
-                                @dragstart="(e) => onDragStart(e, index)"
-                                @dragover="(e) => onDragOver(e, index)"
-                                @drop="onDrop(index)"
-                                @dragend="onDragEnd"
-                                :class="[
-                                    'group flex items-center gap-3 rounded-radius-md border p-4 transition-all duration-200',
-                                    dragOverIndex === index && draggingIndex !== index
-                                        ? 'border-accent bg-accent-muted cursor-copy'
-                                        : 'border-border-subtle bg-surface-overlay/40 hover:border-border-accent cursor-grab active:cursor-grabbing',
-                                    draggingIndex === index ? 'opacity-40 scale-[0.98]' : 'opacity-100',
-                                ]"
-                            >
-                                <!-- Order number -->
-                                <span
-                                    class="flex h-7 w-7 shrink-0 select-none items-center justify-center rounded-radius-full bg-accent-muted text-xs font-bold text-accent-label"
-                                >
-                                    {{ index + 1 }}
-                                </span>
-
-                                <!-- Exercise info -->
-                                <div class="min-w-0 flex-1 select-none">
-                                    <p class="font-medium text-text-primary">
-                                        {{ exercise.name }}
-                                    </p>
-                                    <p class="mt-0.5 text-xs text-text-secondary">
-                                        {{ exercise.primary_muscle }}
-                                    </p>
-                                    <p class="mt-1.5 text-sm font-semibold text-accent-text-soft">
-                                        {{ formatTarget(exercise) }}
-                                    </p>
-                                </div>
-
-                                <!-- Reorder buttons -->
-                                <div class="flex flex-col gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-                                    <button
-                                        type="button"
-                                        @click.stop="moveUp(index)"
-                                        :disabled="index === 0"
-                                        class="rounded-radius-sm p-1 text-text-secondary transition hover:bg-accent-muted hover:text-accent-text-soft disabled:cursor-not-allowed disabled:opacity-20"
-                                        title="Mover para cima"
-                                    >
-                                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 15l7-7 7 7" />
-                                        </svg>
-                                    </button>
-                                    <button
-                                        type="button"
-                                        @click.stop="moveDown(index)"
-                                        :disabled="index === exercises.length - 1"
-                                        class="rounded-radius-sm p-1 text-text-secondary transition hover:bg-accent-muted hover:text-accent-text-soft disabled:cursor-not-allowed disabled:opacity-20"
-                                        title="Mover para baixo"
-                                    >
-                                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7" />
-                                        </svg>
-                                    </button>
-                                </div>
-                            </li>
-                        </ol>
+                        <WorkoutExerciseList v-else :exercises="exercises" @reorder="onReorder" />
                     </div>
 
                     <!-- Start Workout Footer -->

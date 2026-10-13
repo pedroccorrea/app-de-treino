@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'v11';
+const CACHE_VERSION = 'v12';
 const APP_SHELL_CACHE = `setwave-shell-${CACHE_VERSION}`;
 const STATIC_ASSETS_CACHE = `setwave-assets-${CACHE_VERSION}`;
 const INERTIA_CACHE = `setwave-inertia-${CACHE_VERSION}`;
@@ -371,6 +371,10 @@ async function buildExercisesForWorkout(exercisesInput) {
             target_reps_min: null,
             target_reps_max: null,
             order: exercise.order ?? index,
+            // Grupo combinado (bi-set/tri-set) como o formulário enviou — o
+            // formulário já aplica a regra do backend (`Utils/supersetGroups.js`),
+            // e o servidor normaliza de novo quando a fila sincronizar.
+            superset_group: exercise.superset_group ?? null,
         };
     });
 }
@@ -983,6 +987,12 @@ async function buildWorkoutShowProps(params) {
             days_of_week: [],
             days_of_week_labels: [],
             ...workout,
+            // Fichas cacheadas antes da Phase 52 não trazem `superset_group`:
+            // contam como sem grupo (exercícios sozinhos, como sempre foram).
+            exercises: (workout.exercises ?? []).map((exercise) => ({
+                ...exercise,
+                superset_group: exercise.superset_group ?? null,
+            })),
         },
     };
 }

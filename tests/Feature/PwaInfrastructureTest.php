@@ -211,8 +211,12 @@ test('sw.js never redirects a create/edit mutation back to its own dedicated for
     // fallback do redirect fazia o usuário "voltar" para o formulário em
     // branco após salvar, indistinguível de "não funcionou".
     expect($content)->toContain('resolveMutationRedirectTarget');
-    expect($content)->toMatch("/create_workout.*return.*'\\/workouts'/s");
-    expect($content)->toMatch('/update_workout.*return.*workouts\\/\\$\\{route\\.params\\[0\\]\\}/s');
+    // Quantificadores preguiçosos (`.*?`) de propósito: aceitam exatamente os
+    // mesmos textos que `.*`, mas com o sw.js maior (Phase 52) a versão gulosa
+    // estoura o limite de backtracking do PCRE ("Backtrack limit exhausted")
+    // e o `preg_match` devolve false — o teste falharia sem nada ter mudado.
+    expect($content)->toMatch("/create_workout.*?return.*?'\\/workouts'/s");
+    expect($content)->toMatch('/update_workout.*?return.*?workouts\\/\\$\\{route\\.params\\[0\\]\\}/s');
 });
 
 test('sw.js never lets a failure in offline mutation or page synthesis escape as a silent network error (Phase 38.1)', function () {

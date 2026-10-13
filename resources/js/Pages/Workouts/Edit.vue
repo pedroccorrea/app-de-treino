@@ -1,6 +1,7 @@
 <script setup>
 import WorkoutForm from '@/Components/Workouts/WorkoutForm.vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import { normalizeExerciseList } from '@/Utils/supersetGroups';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 
 const props = defineProps({
@@ -18,16 +19,21 @@ const form = useForm({
     name: props.workout.name,
     description: props.workout.description ?? '',
     days_of_week: [...(props.workout.days_of_week ?? [])],
-    exercises: [...props.workout.exercises]
-        .sort((a, b) => a.order - b.order)
-        .map((exercise) => ({
-            id: exercise.id,
-            name: exercise.name,
-            primary_muscle: exercise.primary_muscle,
-            target_sets: exercise.target_sets,
-            target_reps: exercise.target_reps,
-            order: exercise.order,
-        })),
+    // Grupos passam pela mesma regra do backend antes de aparecer: uma ficha
+    // de cache offline antigo (sem `superset_group`) abre como sem grupo.
+    exercises: normalizeExerciseList(
+        [...(props.workout.exercises ?? [])]
+            .sort((a, b) => a.order - b.order)
+            .map((exercise) => ({
+                id: exercise.id,
+                name: exercise.name,
+                primary_muscle: exercise.primary_muscle,
+                target_sets: exercise.target_sets,
+                target_reps: exercise.target_reps,
+                order: exercise.order,
+                superset_group: exercise.superset_group ?? null,
+            })),
+    ),
 });
 
 // The page that opened this edit form (e.g. the workouts list, or a

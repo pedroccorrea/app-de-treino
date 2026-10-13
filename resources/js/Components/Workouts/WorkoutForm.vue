@@ -1,9 +1,18 @@
 <script setup>
 import ExerciseSelector from '@/Components/Workouts/ExerciseSelector.vue';
+import SupersetBlock from '@/Components/Workouts/SupersetBlock.vue';
 import WeekdaySelector from '@/Components/Workouts/WeekdaySelector.vue';
+import WorkoutFormExerciseItem from '@/Components/Workouts/WorkoutFormExerciseItem.vue';
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import TextInput from '@/Components/TextInput.vue';
+import { useExerciseReorder } from '@/Composables/useExerciseReorder';
+import {
+    buildExerciseBlocks,
+    joinWithPrevious,
+    removeExerciseAt,
+    separateFromGroup,
+} from '@/Utils/supersetGroups';
 import { Link } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 
@@ -60,14 +69,28 @@ const addExercise = (exercise) => {
         target_sets: 3,
         target_reps: '10',
         order: props.form.exercises.length,
+        superset_group: null,
     });
 };
 
+// Blocos para exibir: exercício sozinho = bloco de 1; bi-set/tri-set = bloco
+// com rótulo. Regra de mover/juntar/separar: `Utils/supersetGroups.js`.
+const blocks = computed(() => buildExerciseBlocks(props.form.exercises));
+
+const setExercises = (list) => {
+    props.form.exercises = list;
+};
+
 const removeExercise = (index) => {
-    props.form.exercises.splice(index, 1);
-    props.form.exercises.forEach((exercise, order) => {
-        exercise.order = order;
-    });
+    setExercises(removeExerciseAt(props.form.exercises, index));
+};
+
+const joinExercise = (index) => {
+    setExercises(joinWithPrevious(props.form.exercises, index));
+};
+
+const separateExercise = (index) => {
+    setExercises(separateFromGroup(props.form.exercises, index));
 };
 
 const removeExerciseById = (exercise) => {
@@ -86,68 +109,27 @@ const toggleExercise = (exercise) => {
     }
 };
 
-// ─── Drag & Drop ─────────────────────────────────────────────────────────────
-const draggingIndex = ref(null);
-const dragOverIndex = ref(null);
+// ─── Drag & Drop + setas ─────────────────────────────────────────────────────
+// Sozinho pula o bloco vizinho inteiro; dentro de um grupo só troca a ordem
+// interna; arrastar um exercício do grupo para fora leva o bloco inteiro.
+const {
+    draggingIndex,
+    dragOverIndex,
+    onDragStart,
+    onDragOver,
+    onDragEnd,
+    onDrop,
+    canMove,
+    move,
+    canMoveBlock,
+    moveBlock,
+} = useExerciseReorder(() => props.form.exercises, setExercises);
 
-// Ignore drag when clicking inside interactive elements
-const DRAG_IGNORE = ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'A', 'LABEL'];
+const blockContains = (block, index) => index !== null && block.items.some((item) => item.index === index);
 
-const isDraggableTarget = (event) => {
-    let el = event.target;
-    while (el && el !== event.currentTarget) {
-        if (DRAG_IGNORE.includes(el.tagName)) return false;
-        el = el.parentElement;
-    }
-    return true;
-};
-
-const onDragStart = (event, index) => {
-    if (!isDraggableTarget(event)) {
-        event.preventDefault();
-        return;
-    }
-    draggingIndex.value = index;
-};
-
-const onDragOver = (e, index) => {
-    e.preventDefault();
-    dragOverIndex.value = index;
-};
-
-const onDragEnd = () => {
-    draggingIndex.value = null;
-    dragOverIndex.value = null;
-};
-
-const onDrop = (targetIndex) => {
-    if (draggingIndex.value === null || draggingIndex.value === targetIndex) {
-        onDragEnd();
-        return;
-    }
-    const arr = [...props.form.exercises];
-    const [moved] = arr.splice(draggingIndex.value, 1);
-    arr.splice(targetIndex, 0, moved);
-    arr.forEach((ex, i) => { ex.order = i; });
-    props.form.exercises = arr;
-    onDragEnd();
-};
-
-const moveUp = (index) => {
-    if (index === 0) return;
-    const arr = [...props.form.exercises];
-    [arr[index - 1], arr[index]] = [arr[index], arr[index - 1]];
-    arr.forEach((ex, i) => { ex.order = i; });
-    props.form.exercises = arr;
-};
-
-const moveDown = (index) => {
-    if (index === props.form.exercises.length - 1) return;
-    const arr = [...props.form.exercises];
-    [arr[index], arr[index + 1]] = [arr[index + 1], arr[index]];
-    arr.forEach((ex, i) => { ex.order = i; });
-    props.form.exercises = arr;
-};
+// Algo de fora do bloco está sendo arrastado sobre ele.
+const isBlockHighlighted = (block) =>
+    blockContains(block, dragOverIndex.value) && !blockContains(block, draggingIndex.value);
 </script>
 
 <template>
@@ -305,122 +287,45 @@ const moveDown = (index) => {
             <!-- Exercises list with drag & drop -->
             <div v-else class="mt-6 space-y-4">
                 <TransitionGroup
-                    tag="ul"
+                    tag="div"
                     name="exercise-list"
                     class="space-y-3"
                 >
-                    <li
-                        v-for="(exercise, index) in form.exercises"
-                        :key="exercise.id"
-                        draggable="true"
-                        @dragstart="(e) => onDragStart(e, index)"
-                        @dragover="(e) => onDragOver(e, index)"
-                        @drop="onDrop(index)"
-                        @dragend="onDragEnd"
-                        :class="[
-                            'group rounded-2xl border p-4 transition-all duration-200',
-                            dragOverIndex === index && draggingIndex !== index
-                                ? 'border-violet-500 bg-violet-500/5 dark:bg-violet-500/10 cursor-copy'
-                                : 'border-gray-200 bg-gray-50/70 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-900/50 cursor-grab active:cursor-grabbing',
-                            draggingIndex === index ? 'opacity-40 scale-[0.98]' : 'opacity-100',
-                        ]"
+                    <SupersetBlock
+                        v-for="(block, blockIndex) in blocks"
+                        :key="block.key"
+                        :label="block.label"
+                        :can-move-up="canMoveBlock(blockIndex, -1)"
+                        :can-move-down="canMoveBlock(blockIndex, 1)"
+                        :highlighted="isBlockHighlighted(block)"
+                        @move-up="moveBlock(blockIndex, -1)"
+                        @move-down="moveBlock(blockIndex, 1)"
                     >
-                        <div class="flex items-start justify-between gap-3 mb-3">
-                            <div class="flex items-center gap-3 select-none">
-                                <span
-                                    class="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-600 text-xs font-bold text-white"
-                                >
-                                    {{ index + 1 }}
-                                </span>
-                                <div>
-                                    <p
-                                        class="text-sm font-bold text-gray-900 dark:text-gray-100"
-                                    >
-                                        {{ exercise.name }}
-                                    </p>
-                                    <span
-                                        class="inline-block mt-0.5 rounded-md bg-gray-200/80 px-2 py-0.5 text-[11px] font-medium text-gray-700 dark:bg-gray-700 dark:text-gray-300"
-                                    >
-                                        {{ exercise.primary_muscle }}
-                                    </span>
-                                </div>
-                            </div>
-
-                            <!-- Reorder + Remove buttons -->
-                            <div class="flex items-center gap-1">
-                                <div
-                                    class="flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                                >
-                                    <button
-                                        type="button"
-                                        @click.stop="moveUp(index)"
-                                        :disabled="index === 0"
-                                        class="rounded-md p-1 text-gray-400 transition hover:bg-violet-500/10 hover:text-violet-500 disabled:opacity-20 disabled:cursor-not-allowed"
-                                        title="Mover para cima"
-                                    >
-                                        <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 15l7-7 7 7" />
-                                        </svg>
-                                    </button>
-                                    <button
-                                        type="button"
-                                        @click.stop="moveDown(index)"
-                                        :disabled="index === form.exercises.length - 1"
-                                        class="rounded-md p-1 text-gray-400 transition hover:bg-violet-500/10 hover:text-violet-500 disabled:opacity-20 disabled:cursor-not-allowed"
-                                        title="Mover para baixo"
-                                    >
-                                        <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7" />
-                                        </svg>
-                                    </button>
-                                </div>
-
-                                <!-- Trash icon (remove exercise) -->
-                                <button
-                                    type="button"
-                                    @click.stop="removeExercise(index)"
-                                    class="rounded-lg p-1.5 text-gray-400 transition hover:bg-red-500/10 hover:text-red-500 focus:outline-none"
-                                    title="Remover exercício"
-                                >
-                                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                    </svg>
-                                </button>
-                            </div>
-                        </div>
-
-                        <div class="grid grid-cols-2 gap-3 pt-2 border-t border-gray-200/60 dark:border-gray-800">
-                            <div>
-                                <label
-                                    class="block text-xs font-semibold text-gray-600 dark:text-gray-400"
-                                >
-                                    Séries
-                                </label>
-                                <input
-                                    v-model.number="exercise.target_sets"
-                                    type="number"
-                                    min="1"
-                                    max="20"
-                                    placeholder="3"
-                                    class="mt-1 block w-full rounded-xl border-gray-300 py-1.5 text-sm shadow-sm focus:border-violet-500 focus:ring-violet-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
-                                />
-                            </div>
-
-                            <div>
-                                <label
-                                    class="block text-xs font-semibold text-gray-600 dark:text-gray-400"
-                                >
-                                    Repetições
-                                </label>
-                                <input
-                                    v-model="exercise.target_reps"
-                                    type="text"
-                                    placeholder="10 ou 8-12"
-                                    class="mt-1 block w-full rounded-xl border-gray-300 py-1.5 text-sm shadow-sm focus:border-violet-500 focus:ring-violet-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
-                                />
-                            </div>
-                        </div>
-                    </li>
+                        <ul class="space-y-2">
+                            <WorkoutFormExerciseItem
+                                v-for="{ exercise, index } in block.items"
+                                :key="exercise.id"
+                                :exercise="exercise"
+                                :number="index + 1"
+                                :can-move-up="canMove(index, -1)"
+                                :can-move-down="canMove(index, 1)"
+                                :can-join="blockIndex > 0 && block.items[0].index === index"
+                                :grouped="block.label !== null"
+                                :dragging="draggingIndex === index"
+                                :drag-over="dragOverIndex === index && draggingIndex !== index && !isBlockHighlighted(block)"
+                                draggable="true"
+                                @dragstart="(e) => onDragStart(e, index)"
+                                @dragover="(e) => onDragOver(e, index)"
+                                @drop="onDrop(index)"
+                                @dragend="onDragEnd"
+                                @move-up="move(index, -1)"
+                                @move-down="move(index, 1)"
+                                @remove="removeExercise(index)"
+                                @join="joinExercise(index)"
+                                @separate="separateExercise(index)"
+                            />
+                        </ul>
+                    </SupersetBlock>
                 </TransitionGroup>
 
                 <button
