@@ -29,6 +29,7 @@ class WorkoutScannerService
         private readonly WorkoutProgramService $workoutProgramService,
         private readonly ExerciseEquipmentService $exerciseEquipmentService,
         private readonly ExerciseIdentityService $exerciseIdentityService,
+        private readonly WorkoutService $workoutService,
     ) {}
 
     /**
@@ -59,6 +60,8 @@ class WorkoutScannerService
                 $workout->programs()->syncWithoutDetaching([$workout->workout_program_id]);
             }
 
+            $supersetGroups = $this->supersetGroups($parsed['exercises'] ?? []);
+
             foreach ($parsed['exercises'] ?? [] as $index => $exerciseData) {
                 $exercise = $this->resolveExercise($exerciseData, $catalog, $user);
 
@@ -71,6 +74,7 @@ class WorkoutScannerService
                     'target_reps' => $targetReps,
                     ...RepRange::columnsFor($targetReps),
                     'notes' => $exerciseData['notes'] ?? null,
+                    'superset_group' => $supersetGroups[$index],
                 ]);
             }
 
@@ -120,8 +124,42 @@ class WorkoutScannerService
     }
 
     /**
+     * Grupo combinado (bi-set/tri-set) de cada exercício, na mesma chave da
+     * lista da IA. Não confia na IA: só inteiro positivo vale como grupo
+     * (texto, negativo, zero, fração ou booleano viram exercício sozinho) e,
+     * em seguida, a regra única da ficha (WorkoutService::normalizeSupersetGroups)
+     * descarta grupo de 1 exercício e nunca junta quem não é vizinho.
+     *
+     * @param  array<int|string, mixed>  $exercises
+     * @return array<int|string, ?int>
+     */
+    private function supersetGroups(array $exercises): array
+    {
+        $groups = array_map(function (mixed $exerciseData): ?int {
+            $group = is_array($exerciseData) ? ($exerciseData['superset_group'] ?? null) : null;
+
+            if (! is_int($group) && ! is_string($group)) {
+                return null;
+            }
+
+            $group = filter_var(is_string($group) ? trim($group) : $group, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+
+            return $group === false ? null : $group;
+        }, $exercises);
+
+        if ($groups === []) {
+            return [];
+        }
+
+        return array_combine(
+            array_keys($groups),
+            $this->workoutService->normalizeSupersetGroups(array_values($groups)),
+        );
+    }
+
+    /**
      * @param  Collection<int, string>  $catalog
-     * @return array{workout_name?: string, exercises?: array<int, array{name: string, target_sets?: int, target_reps?: int|string, target_reps_min?: ?int, target_reps_max?: ?int, muscle_group?: string, notes?: string}>}
+     * @return array{workout_name?: string, exercises?: array<int, array{name: string, target_sets?: int, target_reps?: int|string, target_reps_min?: ?int, target_reps_max?: ?int, muscle_group?: string, notes?: string, superset_group?: mixed}>}
      */
     private function transcribeWithAi(UploadedFile $image, Collection $catalog): array
     {
@@ -201,6 +239,13 @@ class WorkoutScannerService
              * Sem número claro (ex: "até a falha", "AMRAP"): "target_reps" com o texto e "target_reps_min"/"target_reps_max" null. NUNCA invente números.
            - Se houver notas de método/técnica adicionais (ex: "Drop-set na última", "Rest-pause", "Pico de contração 2s"), coloque no campo "notes".
 
+        6. EXERCÍCIOS COMBINADOS (BI-SET, TRI-SET, CONJUGADO, SUPER-SÉRIE):
+           - Identifique exercícios feitos em sequência, sem descanso entre eles. A ficha costuma marcar isso com: "bi-set", "tri-set", "conjugado", "conjugada", "super-série", "superset", um "+" ligando os exercícios (ex: "Rosca Direta + Tríceps Corda"), chaves "{" ou colchetes "[" agrupando linhas, ou marcações equivalentes (numeração como "1A/1B", traços ou setas ligando linhas).
+           - Quando um único item da ficha juntar exercícios com "+", liste CADA exercício como um item separado em "exercises", um logo após o outro.
+           - Exercícios combinados recebem o MESMO número inteiro no campo "superset_group" (o primeiro combinado da ficha usa 1, o seguinte usa 2, e assim por diante). Exercício sozinho recebe "superset_group": null.
+           - Os exercícios de um mesmo grupo DEVEM ficar vizinhos na lista, mantendo a ordem em que aparecem na ficha.
+           - NUNCA invente grupo: sem marcação clara de combinado na ficha, use "superset_group": null.
+
         Exercícios já cadastrados no catálogo:
         {$catalogList}
 
@@ -215,7 +260,8 @@ class WorkoutScannerService
               "target_reps_min": number ou null,
               "target_reps_max": number ou null,
               "muscle_group": "string",
-              "notes": "string opcional"
+              "notes": "string opcional",
+              "superset_group": number ou null
             }
           ]
         }
