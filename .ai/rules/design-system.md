@@ -147,3 +147,15 @@ Como os tokens são só escuros, os controles de `WorkoutFormExerciseItem.vue` t
 | `gray-300` em "Separar" / `gray-400` nas setas (tema escuro) | `WorkoutFormExerciseItem` agrupado | `gray-900`/50 sobre a moldura ≈ `rgb(27,29,52)` | 11,23:1 / 6,52:1 | ✅ |
 | `violet-700` sobre `violet-100` / `violet-50` (tema claro) | `WorkoutFormExerciseItem` — número / "Juntar com o de cima" | sólido | 5,98:1 / 6,48:1 | ✅ |
 | `gray-600` / `gray-500` sobre `gray-50` (tema claro) | `WorkoutFormExerciseItem` — "Separar" / setas | `gray-50` sólido (antes `gray-50/70`, opaco para não misturar com a moldura escura) | 7,23:1 / 4,63:1 | ✅ |
+
+## Auditoria de contraste (Phase 53 — card da rodada do bi-set/tri-set)
+
+O card da rodada (`Components/WorkoutSessions/SupersetRoundCard.vue`) põe uma seção por exercício (`SupersetRoundSection.vue`) direto sobre o fundo da tela do treino (`bg-gray-950`), com `bg-surface-overlay/40` + `border-border-subtle`. O cabeçalho "Bi-set · Rodada X de Y" é um `BaseCard` (pares já auditados). Para caber 2–3 exercícios sem tirar o "Concluir rodada" do alcance do polegar, a carga/reps de cada seção usa `LoadRepsHero compact` (52px, mesma regra de `tabular-nums`). Botões das séries feitas e "Finalizar exercício" têm 48px de alvo (`min-h-12`).
+
+| Par | Onde aparece | Fundo efetivo (alfa composto) | Contraste | Resultado |
+|---|---|---|---|---|
+| `--text-secondary` sobre a seção | grupo muscular, "kg × reps" das séries feitas | `--surface-overlay`/40 sobre `gray-950` ≈ `rgb(13,17,30)` | 5,53:1 | ✅ |
+| `--text-tertiary` sobre a seção | "Série N de T", "Analisando histórico..." | mesmo fundo | 5,85:1 | ✅ |
+| `--accent-label` sobre a seção | "Finalizar exercício" | mesmo fundo | 6,92:1 | ✅ |
+| `--text-secondary` sobre o botão de série feita | "40kg × 10" no chip verde | `emerald-500`/10 sobre a seção ≈ `rgb(13,34,40)` | 4,85:1 | ✅ (margem apertada — não escurecer) |
+| `--danger` sobre o fundo da tela | erro "Não foi possível salvar..." | `gray-950` | ≈ 7:1 | ✅ |

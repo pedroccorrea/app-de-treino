@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import { Link } from '@inertiajs/vue3';
 import BaseCard from '@/Components/UI/BaseCard.vue';
+import BlockDoneActions from '@/Components/WorkoutSessions/BlockDoneActions.vue';
 import CompleteSetButton from '@/Components/WorkoutSessions/CompleteSetButton.vue';
 import LoadRepsHero from '@/Components/WorkoutSessions/LoadRepsHero.vue';
 import LoadRepsStepper from '@/Components/WorkoutSessions/LoadRepsStepper.vue';
@@ -306,37 +307,14 @@ const historyUrl = computed(() =>
         </div>
 
         <!-- Exercise done feedback + actions -->
-        <div v-if="isExerciseDone" class="mt-4 space-y-3">
-            <div class="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-center">
-                <p class="text-2xl">🎉</p>
-                <p class="mt-1 font-bold text-emerald-400">Exercício concluído!</p>
-                <p class="text-xs text-gray-500 mt-0.5">
-                    {{ isFinishedEarly ? 'Só as séries feitas foram registradas.' : 'Todas as séries foram registradas.' }}
-                </p>
-            </div>
-
-            <button
-                v-if="!isLastExercise"
-                @click="$emit('next-exercise')"
-                class="flex w-full items-center justify-center gap-2 rounded-2xl bg-gray-800 py-3.5 text-sm font-bold text-white transition hover:bg-gray-700"
-            >
-                Próximo Exercício →
-            </button>
-            <button
-                v-else
-                @click="$emit('finish-workout')"
-                class="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-orange-500 to-red-500 py-3.5 text-sm font-bold text-white shadow-lg shadow-orange-500/25 transition hover:from-orange-600 hover:to-red-600"
-            >
-                🔥 Finalizar Treino
-            </button>
-
-            <button
-                @click="$emit('add-extra-set')"
-                class="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-gray-700 py-2.5 text-sm text-gray-400 transition hover:border-violet-500/50 hover:text-violet-400"
-            >
-                + Adicionar série extra
-            </button>
-        </div>
+        <BlockDoneActions
+            v-if="isExerciseDone"
+            :description="isFinishedEarly ? 'Só as séries feitas foram registradas.' : 'Todas as séries foram registradas.'"
+            :is-last="isLastExercise"
+            @next="$emit('next-exercise')"
+            @finish-workout="$emit('finish-workout')"
+            @add-extra="$emit('add-extra-set')"
+        />
 
         <button
             v-else-if="canAddExtraSet"

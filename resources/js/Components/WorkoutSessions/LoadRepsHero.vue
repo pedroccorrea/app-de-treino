@@ -1,5 +1,5 @@
 <script setup>
-import { nextTick, ref } from 'vue';
+import { computed, nextTick, ref } from 'vue';
 import BaseBadge from '@/Components/UI/BaseBadge.vue';
 import SectionLabel from '@/Components/UI/SectionLabel.vue';
 
@@ -20,12 +20,18 @@ const props = defineProps({
         type: String,
         default: null,
     },
+    // Números de 52px para caber uma seção por exercício no card da rodada
+    // de um bi-set/tri-set (Phase 53). Fora dele, o herói de 82px de sempre.
+    compact: {
+        type: Boolean,
+        default: false,
+    },
 });
 
 const emit = defineEmits(['update:load', 'update:reps']);
 
-const numberClass = 'text-[82px] font-medium leading-[0.86] tracking-[-0.045em] text-text-primary [font-variant-numeric:tabular-nums]';
-const inputClass = `${numberClass} border-b border-accent bg-transparent focus:outline-none`;
+const numberClass = computed(() => `${props.compact ? 'text-[52px]' : 'text-[82px]'} font-medium leading-[0.86] tracking-[-0.045em] text-text-primary [font-variant-numeric:tabular-nums]`);
+const inputClass = computed(() => `${numberClass.value} border-b border-accent bg-transparent focus:outline-none`);
 
 // ─── Carga: tap to edit ─────────────────────────────────────────────────────
 const editingLoad = ref(false);
@@ -125,7 +131,7 @@ const commitReps = () => {
             </div>
         </div>
 
-        <div v-if="lastText" class="mt-[22px] flex items-center gap-2.5">
+        <div v-if="lastText" :class="compact ? 'mt-3' : 'mt-[22px]'" class="flex items-center gap-2.5">
             <span class="text-xs tracking-[0.03em] text-text-tertiary">Última: {{ lastText }}</span>
             <BaseBadge v-if="deltaText" tone="accent">{{ deltaText }}</BaseBadge>
         </div>
