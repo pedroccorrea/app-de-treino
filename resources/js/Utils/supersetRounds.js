@@ -107,3 +107,57 @@ export function extraRoundExercises(exercises, status) {
 
     return active.length > 0 ? active : reachedLast;
 }
+
+/**
+ * Progresso de um bloco pelas rodadas (Phase 54) — usado no stepper e no
+ * menu lateral: `current` é a rodada atual (`null` quando o grupo terminou)
+ * e `done` quantas rodadas já foram concluídas.
+ *
+ * @returns {{ current: number|null, total: number, done: number }}
+ */
+export function roundProgress(exercises, status) {
+    const total = totalRounds(exercises, status);
+    const current = currentRound(exercises, status);
+
+    return { current, total, done: current === null ? total : current - 1 };
+}
+
+/**
+ * Onde reabrir o treino em andamento (Phase 54) — vale para TODOS os
+ * treinos, com ou sem grupo. Calculado só pelas séries já feitas (e pelos
+ * exercícios encerrados com "Finalizar exercício"):
+ * - o primeiro bloco, na ordem da ficha, que ainda tem série pendente;
+ * - dentro de um grupo, a rodada atual (`currentRound`);
+ * - num exercício sozinho, a primeira série ainda não feita;
+ * - tudo feito: o último bloco, como fica hoje ao terminar o treino.
+ *
+ * `index` é o índice (na lista ordenada) do primeiro exercício do bloco —
+ * o mesmo `currentIndex` que a navegação usa.
+ *
+ * @returns {{ index: number, blockIndex: number, round: number|null, setNumber: number|null }}
+ */
+export function resumePosition(exercises, status) {
+    const blocks = buildSessionBlocks(exercises);
+
+    for (let blockIndex = 0; blockIndex < blocks.length; blockIndex++) {
+        const block = blocks[blockIndex];
+
+        if (block.isGroup) {
+            const round = currentRound(block.exercises, status);
+            if (round !== null) return { index: block.indexes[0], blockIndex, round, setNumber: null };
+            continue;
+        }
+
+        const exercise = block.exercises[0];
+        if (status.isFinished(exercise)) continue;
+
+        const total = status.totalSets(exercise);
+        for (let n = 1; n <= total; n++) {
+            if (!status.isSetDone(exercise, n)) return { index: block.indexes[0], blockIndex, round: null, setNumber: n };
+        }
+    }
+
+    const last = blocks.length - 1;
+
+    return { index: last >= 0 ? blocks[last].indexes[0] : 0, blockIndex: Math.max(0, last), round: null, setNumber: null };
+}

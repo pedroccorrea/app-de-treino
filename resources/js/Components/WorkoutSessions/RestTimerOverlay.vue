@@ -21,14 +21,11 @@ defineProps({
         type: Number,
         default: null,
     },
-    // Bi-set/tri-set (Phase 53): a próxima é uma rodada, não uma série.
-    // Quando informado, tem prioridade sobre nextSetNumber.
-    nextRoundNumber: {
-        type: Number,
-        default: null,
-    },
-    totalRounds: {
-        type: Number,
+    // Bi-set/tri-set (Phases 53-54): a próxima é uma rodada, não uma série —
+    // ex.: "Bi-set · Rodada 2 de 3" (`roundTitle`). Quando informado, tem
+    // prioridade sobre nextSetNumber.
+    nextRoundTitle: {
+        type: String,
         default: null,
     },
 });
@@ -78,10 +75,10 @@ defineEmits(['end-rest', 'add-time']);
                     </div>
 
                     <p
-                        v-if="nextRoundNumber"
+                        v-if="nextRoundTitle"
                         class="mt-4 text-center text-xs text-gray-500"
                     >
-                        Próxima: Rodada {{ nextRoundNumber }}<template v-if="totalRounds">/{{ totalRounds }}</template>
+                        Próximo: {{ nextRoundTitle }}
                     </p>
                     <p
                         v-else-if="nextSetNumber"

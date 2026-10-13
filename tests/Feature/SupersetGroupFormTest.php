@@ -258,7 +258,7 @@ test('ficha com grupo criada e editada offline é gravada com o grupo quando a f
 test('o Service Worker carrega superset_group nas fichas offline e teve o CACHE_VERSION atualizado', function () {
     $sw = file_get_contents(resource_path('pwa/sw.js'));
 
-    expect($sw)->toContain("const CACHE_VERSION = 'v12';")
+    expect($sw)->toContain("const CACHE_VERSION = 'v13';")
         ->and($sw)->toContain('superset_group: exercise.superset_group ?? null');
 
     // Tanto na ficha montada offline (criação/edição) quanto na página

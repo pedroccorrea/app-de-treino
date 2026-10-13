@@ -1,15 +1,24 @@
 <script setup>
+import BaseBadge from '@/Components/UI/BaseBadge.vue';
+import ExerciseOverviewItem from '@/Components/WorkoutSessions/ExerciseOverviewItem.vue';
+
+// Visão geral do treino, um item por BLOCO (Phase 54): exercício sozinho
+// igual a sempre; os exercícios de um bi-set/tri-set aparecem juntos numa
+// moldura com o rótulo e a rodada. Tocar no bloco emite o índice do primeiro
+// exercício dele — a página abre a rodada atual do grupo.
 defineProps({
     show: {
         type: Boolean,
         default: false,
     },
-    exercises: {
-        // Each item: { id, name, primary_muscle, done, doneCount, totalSets }
+    blocks: {
+        // Cada item: { key, index, label, status, done, exercises }
+        // `exercises`: [{ id, number, name, primary_muscle, done, doneCount, totalSets }]
+        // `label`/`status` ("Rodada 2 de 3", "Concluído") só nos grupos.
         type: Array,
         required: true,
     },
-    currentIndex: {
+    currentBlock: {
         type: Number,
         required: true,
     },
@@ -37,35 +46,52 @@ defineEmits(['close', 'select']);
                         </div>
                         <ul class="space-y-2">
                             <li
-                                v-for="(ex, idx) in exercises"
-                                :key="ex.id"
-                                @click="$emit('select', idx)"
+                                v-for="(block, idx) in blocks"
+                                :key="block.key"
+                                @click="$emit('select', block.index)"
                                 :class="[
-                                    'flex items-center gap-3 rounded-2xl border p-3 cursor-pointer transition',
-                                    idx === currentIndex
+                                    'rounded-2xl border p-3 cursor-pointer transition',
+                                    idx === currentBlock
                                         ? 'border-violet-500 bg-violet-500/10'
-                                        : ex.done
+                                        : block.done
                                           ? 'border-emerald-500/30 bg-emerald-500/10'
-                                          : 'border-gray-800 hover:border-gray-700',
+                                          : block.label
+                                            ? 'border-border-accent hover:border-accent'
+                                            : 'border-gray-800 hover:border-gray-700',
                                 ]"
                             >
-                                <span :class="[
-                                    'flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold',
-                                    ex.done
-                                        ? 'bg-emerald-500 text-white'
-                                        : idx === currentIndex
-                                          ? 'bg-violet-600 text-white'
-                                          : 'bg-gray-800 text-gray-400',
-                                ]">
-                                    {{ ex.done ? '✓' : (idx + 1) }}
-                                </span>
-                                <div class="min-w-0 flex-1">
-                                    <p class="text-sm font-semibold text-white truncate">{{ ex.name }}</p>
-                                    <p class="text-xs text-gray-500">{{ ex.primary_muscle }}</p>
-                                </div>
-                                <p class="text-xs text-gray-500 shrink-0">
-                                    {{ ex.doneCount }}/{{ ex.totalSets }}
-                                </p>
+                                <!-- Bi-set/tri-set: o grupo inteiro como um bloco só. -->
+                                <template v-if="block.label">
+                                    <div class="mb-3 flex items-center justify-between gap-2">
+                                        <BaseBadge tone="accent">{{ block.label }}</BaseBadge>
+                                        <span class="text-xs text-text-secondary [font-variant-numeric:tabular-nums]">
+                                            {{ block.status }}
+                                        </span>
+                                    </div>
+                                    <div class="space-y-3">
+                                        <ExerciseOverviewItem
+                                            v-for="ex in block.exercises"
+                                            :key="ex.id"
+                                            :number="ex.number"
+                                            :name="ex.name"
+                                            :primary-muscle="ex.primary_muscle"
+                                            :done="ex.done"
+                                            :current="idx === currentBlock"
+                                            :done-count="ex.doneCount"
+                                            :total-sets="ex.totalSets"
+                                        />
+                                    </div>
+                                </template>
+                                <ExerciseOverviewItem
+                                    v-else
+                                    :number="block.exercises[0].number"
+                                    :name="block.exercises[0].name"
+                                    :primary-muscle="block.exercises[0].primary_muscle"
+                                    :done="block.exercises[0].done"
+                                    :current="idx === currentBlock"
+                                    :done-count="block.exercises[0].doneCount"
+                                    :total-sets="block.exercises[0].totalSets"
+                                />
                             </li>
                         </ul>
                     </div>

@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'v12';
+const CACHE_VERSION = 'v13';
 const APP_SHELL_CACHE = `setwave-shell-${CACHE_VERSION}`;
 const STATIC_ASSETS_CACHE = `setwave-assets-${CACHE_VERSION}`;
 const INERTIA_CACHE = `setwave-inertia-${CACHE_VERSION}`;
@@ -1046,10 +1046,18 @@ async function buildActiveSessionProps(params) {
             rest_seconds: exercise.rest_seconds ?? 60,
             notes: exercise.notes ?? null,
             order: exercise.order ?? index,
+            // Bi-set/tri-set (Phase 54): sem o grupo, o treino offline
+            // mostraria os exercícios do grupo como sozinhos. Fichas
+            // cacheadas antes da Phase 52 não trazem o campo = sem grupo.
+            superset_group: exercise.superset_group ?? null,
         })),
         setLogs: await collectSessionSetLogs(session),
         lastLogs: await getCachedLastLogsMap(),
         offlineOnly: session.offline_only === true,
+        // Exercícios encerrados pelo "Finalizar exercício" (Phase 54): marca só
+        // de interface, guardada no registro local da sessão ativa
+        // (`recordActiveSessionFinishedExercise`), para reabrir sem eles.
+        finishedExerciseIds: Array.isArray(session.finished_exercise_ids) ? session.finished_exercise_ids : [],
     };
 }
 

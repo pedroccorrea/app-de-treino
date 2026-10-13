@@ -159,3 +159,14 @@ O card da rodada (`Components/WorkoutSessions/SupersetRoundCard.vue`) põe uma s
 | `--accent-label` sobre a seção | "Finalizar exercício" | mesmo fundo | 6,92:1 | ✅ |
 | `--text-secondary` sobre o botão de série feita | "40kg × 10" no chip verde | `emerald-500`/10 sobre a seção ≈ `rgb(13,34,40)` | 4,85:1 | ✅ (margem apertada — não escurecer) |
 | `--danger` sobre o fundo da tela | erro "Não foi possível salvar..." | `gray-950` | ≈ 7:1 | ✅ |
+
+## Auditoria de contraste (Phase 54 — stepper e visão geral com bi-set/tri-set)
+
+A visão geral do treino (`Components/WorkoutSessions/ExerciseOverviewDrawer.vue`, fundo `gray-900`) mostra cada grupo como um bloco: moldura `border-border-accent` sem preenchimento (o mesmo fundo dos itens sozinhos), `BaseBadge tone="accent"` com o rótulo e a rodada em `--text-secondary`. No bloco atual / concluído, o fundo é o mesmo tingido que o item sozinho já usava (`violet-500/10`, `emerald-500/10`). As linhas dos exercícios (`ExerciseOverviewItem.vue`) mantêm as classes de antes. No stepper (`ExerciseStepper.vue`) o grupo é uma cápsula com um traço por rodada, nas mesmas cores das bolinhas de sempre (sem texto novo).
+
+| Par | Onde aparece | Fundo efetivo (alfa composto) | Contraste | Resultado |
+|---|---|---|---|---|
+| `--text-secondary` sobre o drawer | "Rodada 2 de 3" / "Concluído" no bloco | `gray-900` ≈ `rgb(17,24,39)` | 5,22:1 | ✅ |
+| `--text-secondary` sobre o bloco atual | mesmo texto, bloco em foco | `violet-500`/10 sobre `gray-900` ≈ `rgb(29,31,60)` | 4,70:1 | ✅ |
+| `--text-secondary` sobre o bloco concluído | mesmo texto, grupo terminado | `emerald-500`/10 sobre `gray-900` ≈ `rgb(17,40,48)` | 4,51:1 | ✅ (margem apertada — não escurecer) |
+| `--accent-text-soft` sobre `BaseBadge accent` | rótulo "Bi-set"/"Tri-set" no drawer | `--accent-muted` sobre `gray-900` / bloco atual / concluído | 8,24:1 / 7,36:1 / 7,20:1 | ✅ |

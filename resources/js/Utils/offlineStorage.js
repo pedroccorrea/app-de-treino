@@ -401,7 +401,24 @@ export async function setActiveSession(session) {
  * permite sair da tela do treino, navegar pelo app e voltar depois com todas
  * as séries já feitas marcadas, mesmo sem nenhuma conexão (Phase 38).
  */
-export async function recordActiveSessionSetLog(log) {
+export function recordActiveSessionSetLog(log) {
+    return serializeActiveSessionWrite(() => writeActiveSessionSetLog(log));
+}
+
+// As gravações da sessão ativa leem o registro, alteram e regravam. "Concluir
+// rodada" (Phase 53) registra várias séries seguidas sem esperar cada
+// gravação: sem esta fila, duas leituras simultâneas fariam a segunda
+// gravação apagar a primeira. Cada gravação espera a anterior (com ou sem erro).
+let activeSessionWrites = Promise.resolve();
+
+function serializeActiveSessionWrite(write) {
+    const next = activeSessionWrites.then(write, write);
+    activeSessionWrites = next.catch(() => {});
+
+    return next;
+}
+
+async function writeActiveSessionSetLog(log) {
     const session = await getActiveSession();
     if (!session) return;
 
@@ -424,6 +441,31 @@ export async function recordActiveSessionSetLog(log) {
     }
 
     return setMeta('active_session', { ...session, set_logs: logs });
+}
+
+/**
+ * Marca (ou desmarca) um exercício encerrado pelo "Finalizar exercício" na
+ * sessão ativa local (Phase 54). Essa decisão é só de interface — o backend
+ * não tem onde guardá-la e as séries não feitas simplesmente nunca viram
+ * SetLog —, então é aqui que ela sobrevive a recarregar a página, ao banner
+ * global e ao treino offline (o Service Worker repassa a lista como a prop
+ * `finishedExerciseIds`). Some junto com o registro ao finalizar o treino.
+ */
+export function recordActiveSessionFinishedExercise(exerciseId, finished = true) {
+    return serializeActiveSessionWrite(() => writeActiveSessionFinishedExercise(exerciseId, finished));
+}
+
+async function writeActiveSessionFinishedExercise(exerciseId, finished) {
+    const session = await getActiveSession();
+    if (!session) return;
+
+    const current = Array.isArray(session.finished_exercise_ids) ? session.finished_exercise_ids : [];
+    const others = current.filter((id) => String(id) !== String(exerciseId));
+
+    return setMeta('active_session', {
+        ...session,
+        finished_exercise_ids: finished ? [...others, exerciseId] : others,
+    });
 }
 
 /**

@@ -15,7 +15,14 @@ import { useNowTicker } from '@/Composables/useNowTicker';
 import { useOfflineSync } from '@/Composables/useOfflineSync';
 import { useRestAlarm } from '@/Composables/useRestAlarm';
 import { useWakeLock } from '@/Composables/useWakeLock';
-import { cacheLastLogs, cacheWorkout, generateUuid, recordActiveSessionSetLog } from '@/Utils/offlineStorage';
+import {
+    cacheLastLogs,
+    cacheWorkout,
+    generateUuid,
+    getActiveSession,
+    recordActiveSessionFinishedExercise,
+    recordActiveSessionSetLog,
+} from '@/Utils/offlineStorage';
 import { initialRepsFor, suggestedRepsFor } from '@/Utils/repTarget';
 import { playRestAlarm, stopRestAlarm, unlockRestAlarm } from '@/Utils/restAlarm';
 import {
@@ -24,8 +31,11 @@ import {
     currentRound,
     extraRoundExercises,
     pendingRoundExercises,
+    resumePosition,
     roundExercises,
+    roundProgress,
     roundRestSeconds,
+    roundTitle,
     totalRounds,
 } from '@/Utils/supersetRounds';
 import { getKeepScreenOn } from '@/Utils/workoutPreferences';
@@ -61,6 +71,11 @@ const props = defineProps({
     // sincronização, mesmo que a conexão volte no meio do treino: só a
     // sincronização em lote sabe criar a sessão real a partir do zero.
     offlineOnly: { type: Boolean, default: false },
+    // Exercícios encerrados pelo "Finalizar exercício" (Phase 54). Só a
+    // página montada offline pelo Service Worker manda (lida do registro
+    // local da sessão ativa); online o servidor não conhece essa marca e a
+    // página a lê do mesmo registro (IndexedDB) logo depois de montar.
+    finishedExerciseIds: { type: Array, default: () => [] },
 });
 
 // ─── Sorted exercises ─────────────────────────────────────────────────────────
@@ -397,6 +412,16 @@ const currentGroupTotalRounds = computed(() =>
     currentGroup.value ? totalRounds(currentGroup.value.exercises, roundStatus) : 0,
 );
 
+// Tela de descanso (Phase 54): "Próximo: Bi-set · Rodada 2 de 3". O descanso
+// começa depois de registrar a rodada, então a rodada atual já é a próxima.
+// Depois da última rodada não há próxima (`null`): a tela fica como no fim
+// de um exercício sozinho.
+const nextRoundTitle = computed(() =>
+    currentGroup.value && currentGroupRound.value !== null
+        ? roundTitle(currentGroup.value.label, currentGroupRound.value, currentGroupTotalRounds.value)
+        : null,
+);
+
 // Exercícios exibidos no card: os da rodada atual, ou todos quando o grupo
 // terminou (só para consultar/editar as séries feitas).
 const currentRoundExercises = computed(() => {
@@ -490,18 +515,52 @@ const volumeDisplay = computed(() =>
 );
 
 // ─── View models for the "dumb" presentational components ────────────────────
-const stepperExercises = computed(() =>
-    sortedExercises.value.map((ex) => ({ id: ex.id, name: ex.name, done: isExerciseDone(ex) })),
+// Stepper e menu lateral contam BLOCOS (Phase 54): um bi-set/tri-set é uma
+// posição só, com o progresso pelas rodadas. Sem grupo, cada bloco é um
+// exercício e tudo fica igual a antes. `index` é o do primeiro exercício do
+// bloco — navegar para ele abre a rodada atual do grupo.
+const hasGroups = computed(() => sessionBlocks.value.some((block) => block.isGroup));
+
+const currentBlockIndex = computed(() =>
+    Math.max(0, sessionBlocks.value.findIndex((block) => block.indexes.includes(currentIndex.value))),
 );
 
-const drawerExercises = computed(() =>
-    sortedExercises.value.map((ex) => ({
-        id: ex.id,
-        name: ex.name,
-        primary_muscle: ex.primary_muscle,
-        done: isExerciseDone(ex),
-        doneCount: savedSets.value[ex.id]?.size ?? 0,
-        totalSets: totalSetsForExercise(ex),
+const blockSummaries = computed(() =>
+    sessionBlocks.value.map((block) => {
+        const rounds = block.isGroup ? roundProgress(block.exercises, roundStatus) : null;
+
+        return {
+            key: block.key,
+            index: block.indexes[0],
+            label: block.label,
+            name: block.exercises.map((ex) => ex.name).join(' + '),
+            rounds,
+            done: rounds ? rounds.current === null : isExerciseDone(block.exercises[0]),
+            exercises: block.exercises.map((ex, position) => ({
+                id: ex.id,
+                number: block.indexes[position] + 1,
+                name: ex.name,
+                primary_muscle: ex.primary_muscle,
+                done: isExerciseDone(ex),
+                doneCount: savedSets.value[ex.id]?.size ?? 0,
+                totalSets: totalSetsForExercise(ex),
+            })),
+        };
+    }),
+);
+
+const stepperSteps = computed(() =>
+    blockSummaries.value.map(({ key, index, label, name, rounds, done }) => ({ key, index, label, name, rounds, done })),
+);
+
+const drawerBlocks = computed(() =>
+    blockSummaries.value.map(({ key, index, label, rounds, done, exercises }) => ({
+        key,
+        index,
+        label,
+        done,
+        exercises,
+        status: rounds ? (rounds.current ? `Rodada ${rounds.current} de ${rounds.total}` : 'Concluído') : null,
     })),
 );
 
@@ -552,6 +611,7 @@ const savingSet = ref(null);
 // `markSetCompleteLocally()` e de cada série do "Concluir rodada".
 const recordSetLocally = (exercise, setNumber, inputs) => {
     const exId = exercise.id;
+    positionTouched = true;
     if (!savedSets.value[exId]) savedSets.value[exId] = new Set();
     savedSets.value[exId].add(setNumber);
     setStates.value[exId][setNumber] = 'done';
@@ -811,8 +871,12 @@ const setReps = (exercise, setNumber, value) => {
 const appendExtraSet = (exercise) => {
     const exId = exercise.id;
     // Uma série extra depois de "Finalizar exercício" reabre o exercício:
-    // ele volta a exigir a conclusão dessa nova série.
-    delete finishedEarly.value[exId];
+    // ele volta a exigir a conclusão dessa nova série (e a marca guardada
+    // para reabrir o treino some junto).
+    if (finishedEarly.value[exId]) {
+        delete finishedEarly.value[exId];
+        recordActiveSessionFinishedExercise(exId, false);
+    }
     extraSets.value[exId] = (extraSets.value[exId] ?? 0) + 1;
     const newSetNum = totalSetsForExercise(exercise);
     const previous = setInputs.value[exId]?.[newSetNum - 1];
@@ -870,9 +934,26 @@ const finishExerciseModalTitle = computed(() => {
     return `Finalizar ${name} com ${targetDoneSetsCount.value} de ${target ? totalSetsForExercise(target) : 0} séries feitas?`;
 });
 
-const finishExerciseEarly = (exercise) => {
+// Aplica a marca de encerrado no estado da tela: a série em execução volta a
+// "waiting" e o total planejado encolhe até a última série feita — assim o
+// progresso do cabeçalho, o drawer e o stepper contam só o que foi feito.
+// Usado pelo modal e ao reabrir o treino (marca guardada no IndexedDB).
+const markExerciseFinished = (exercise) => {
     const exId = exercise.id;
+
+    for (const n in setStates.value[exId] ?? {}) {
+        if (setStates.value[exId][n] === 'running') setStates.value[exId][n] = 'waiting';
+    }
+
+    const doneNumbers = [...(savedSets.value[exId] ?? [])];
+    const lastDone = doneNumbers.length ? Math.max(...doneNumbers) : 0;
+    extraSets.value[exId] = lastDone - (exercise.target_sets ?? 3);
+    finishedEarly.value[exId] = true;
+};
+
+const finishExerciseEarly = (exercise) => {
     showFinishExerciseModal.value = false;
+    positionTouched = true;
 
     // Dentro de um grupo, encerra só este exercício: o cronômetro é da
     // rodada e continua valendo para os outros.
@@ -880,17 +961,13 @@ const finishExerciseEarly = (exercise) => {
     const inGroup = block !== null;
 
     // Descarta a série em execução: volta a "waiting" e o cronômetro zera.
-    for (const n in setStates.value[exId] ?? {}) {
-        if (setStates.value[exId][n] === 'running') setStates.value[exId][n] = 'waiting';
-    }
+    markExerciseFinished(exercise);
     if (!inGroup) resetExerciseTimer();
 
-    // O total planejado encolhe até a última série feita — assim o
-    // progresso do cabeçalho, o drawer e o stepper contam só o que foi feito.
-    const doneNumbers = [...(savedSets.value[exId] ?? [])];
-    const lastDone = doneNumbers.length ? Math.max(...doneNumbers) : 0;
-    extraSets.value[exId] = lastDone - (exercise.target_sets ?? 3);
-    finishedEarly.value[exId] = true;
+    // A marca é só de interface (nada vai ao servidor): fica no registro
+    // local da sessão ativa para sobreviver a recarregar a página, ao banner
+    // global e ao treino offline (Phase 54).
+    recordActiveSessionFinishedExercise(exercise.id, true);
 
     // A partir daqui `isExerciseDone()` é true: o card cai no mesmo estado
     // de "Exercício concluído" que a última série concluída produz, com o
@@ -908,6 +985,59 @@ const finishExerciseEarly = (exercise) => {
     }
 };
 
+// ─── Reabrir o treino na posição certa (Phase 54) ────────────────────────────
+// Recarregar, voltar pelo banner global ou abrir offline remonta esta página
+// do zero: a posição é recalculada pelas séries já feitas (e pelos
+// exercícios encerrados) com `resumePosition()` — o primeiro bloco com algo
+// pendente, na rodada/série certa; tudo feito, o último bloco.
+//
+// `positionTouched` vira true na primeira ação da pessoa (navegar, concluir,
+// finalizar exercício): a partir daí a marca de encerrado que chegar do
+// IndexedDB (leitura assíncrona, só online) é aplicada sem mudar a tela.
+let positionTouched = false;
+
+// Aplica as marcas de "Finalizar exercício" guardadas; true se alguma era nova.
+const restoreFinishedExercises = (ids) => {
+    if (!Array.isArray(ids) || ids.length === 0) return false;
+
+    let changed = false;
+    for (const exercise of sortedExercises.value) {
+        if (finishedEarly.value[exercise.id]) continue;
+        if (!ids.some((id) => String(id) === String(exercise.id))) continue;
+
+        markExerciseFinished(exercise);
+        changed = true;
+    }
+
+    return changed;
+};
+
+const resumeSession = () => {
+    // Nada fica "running" fora do bloco onde o treino vai reabrir.
+    for (const states of Object.values(setStates.value)) {
+        for (const n in states) {
+            if (states[n] === 'running') states[n] = 'waiting';
+        }
+    }
+    resetExerciseTimer();
+
+    currentIndex.value = resumePosition(sortedExercises.value, roundStatus).index;
+    autoStartAt(currentIndex.value);
+};
+
+// Online o servidor não conhece a marca de encerrado: ela vem do registro
+// local da sessão ativa. Só vale se o registro é DESTA sessão.
+const restoreFinishedFromLocalSession = async () => {
+    try {
+        const local = await getActiveSession();
+        if (!local || String(local.id) !== String(props.session.id)) return;
+
+        if (restoreFinishedExercises(local.finished_exercise_ids) && !positionTouched) resumeSession();
+    } catch (_) {
+        // Sem IndexedDB (navegação privada antiga etc.): segue sem a marca.
+    }
+};
+
 // ─── Navigation ───────────────────────────────────────────────────────────────
 const tryNavigateTo = (index) => {
     if (index < 0 || index >= totalExercises.value) return;
@@ -921,6 +1051,7 @@ const tryNavigateTo = (index) => {
 };
 
 const navigateTo = (index) => {
+    positionTouched = true;
     resetExerciseTimer();
     currentIndex.value = index;
     showNavGuard.value = false;
@@ -1052,7 +1183,10 @@ const finishWorkout = async () => {
 // ─── Lifecycle ────────────────────────────────────────────────────────────────
 onMounted(() => {
     sortedExercises.value.forEach((ex) => initSetsForExercise(ex));
-    autoStartAt(currentIndex.value);
+    // Reabre na rodada/série certa (Phase 54) em vez de no primeiro exercício.
+    restoreFinishedExercises(props.finishedExerciseIds);
+    resumeSession();
+    restoreFinishedFromLocalSession();
     // Opt-in em Perfil → "Manter tela ligada durante o treino".
     if (getKeepScreenOn()) requestWakeLock();
 
@@ -1147,8 +1281,9 @@ watch(
         />
 
         <ExerciseStepper
-            :exercises="stepperExercises"
-            :current-index="currentIndex"
+            :steps="stepperSteps"
+            :current-step="currentBlockIndex"
+            :has-groups="hasGroups"
             @navigate="tryNavigateTo"
         />
 
@@ -1235,16 +1370,15 @@ watch(
         :percent="restPercent"
         :next-set-number="currentGroup ? null : currentNextWaitingSet"
         :total-sets="currentTotalSets"
-        :next-round-number="currentGroupRound"
-        :total-rounds="currentGroupTotalRounds"
+        :next-round-title="nextRoundTitle"
         @end-rest="endRest"
         @add-time="addRestTime"
     />
 
     <ExerciseOverviewDrawer
         :show="showDrawer"
-        :exercises="drawerExercises"
-        :current-index="currentIndex"
+        :blocks="drawerBlocks"
+        :current-block="currentBlockIndex"
         @close="showDrawer = false"
         @select="navigateTo"
     />
